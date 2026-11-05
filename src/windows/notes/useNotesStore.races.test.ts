@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
     saveOrder: vi.fn(),
     saveSettings: vi.fn(async () => ({})),
     deleteNote: vi.fn(),
+    listReminders: vi.fn(async () => []),
   },
 }));
 vi.mock("../../lib/api", () => ({ api: h.api }));
