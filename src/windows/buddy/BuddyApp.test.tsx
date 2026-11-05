@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_SETTINGS, type Settings } from "../../types";
+import { DEFAULT_SETTINGS, type Reminder, type Settings } from "../../types";
 
 const startDragging = vi.fn(() => Promise.resolve());
 
@@ -14,21 +14,28 @@ vi.mock("../../lib/api", () => ({
     onSettingsChanged: vi.fn(),
     toggleNotes: vi.fn(() => Promise.resolve()),
     showBuddyMenu: vi.fn(() => Promise.resolve()),
+    listReminders: vi.fn(),
+    onRemindersChanged: vi.fn(),
+    openNote: vi.fn(() => Promise.resolve()),
+    loadSkin: vi.fn(),
+    onSkinsChanged: vi.fn(() => Promise.resolve(() => {})),
   },
 }));
 
 import { api } from "../../lib/api";
-import { BUDDY_LABEL, BuddyApp } from "./BuddyApp";
+import { BUDDY_ALERT_LABEL, BUDDY_LABEL, BuddyApp, dueReminders } from "./BuddyApp";
 
 const mockedApi = vi.mocked(api);
 let settingsListener: ((s: Settings) => void) | null = null;
+let remindersListener: ((r: Reminder[]) => void) | null = null;
+let reducedMotion = false;
 const unlisten = vi.fn();
 
 function stubMatchMedia() {
   vi.stubGlobal(
     "matchMedia",
     vi.fn((query: string) => ({
-      matches: false,
+      matches: query.includes("reduce") ? reducedMotion : false,
       media: query,
       onchange: null,
       addEventListener: vi.fn(),
@@ -53,9 +60,16 @@ async function renderApp() {
 }
 
 beforeEach(() => {
+  reducedMotion = false;
   stubMatchMedia();
   vi.clearAllMocks();
   settingsListener = null;
+  remindersListener = null;
+  mockedApi.listReminders.mockResolvedValue([]);
+  mockedApi.onRemindersChanged.mockImplementation((cb) => {
+    remindersListener = cb;
+    return Promise.resolve(() => {});
+  });
   mockedApi.loadSettings.mockResolvedValue(settings());
   mockedApi.onSettingsChanged.mockImplementation((cb) => {
     settingsListener = cb;
@@ -235,5 +249,111 @@ describe("BuddyApp", () => {
     expect(screen.getByTestId("smiley")).toHaveClass("hopping");
     act(() => vi.advanceTimersByTime(400));
     expect(screen.getByTestId("smiley")).not.toHaveClass("hopping");
+  });
+});
+
+const NOTE_A = "11111111-1111-4111-8111-111111111111";
+const NOTE_B = "22222222-2222-4222-8222-222222222222";
+const NOTE_C = "33333333-3333-4333-8333-333333333333";
+const reminder = (noteId: string, patch: Partial<Reminder> = {}): Reminder => ({
+  noteId,
+  at: "2026-11-05T10:00:00+01:00",
+  repeat: "none",
+  state: "due",
+  firedAt: "2026-11-05T10:00:00+01:00",
+  ...patch,
+});
+
+describe("BuddyApp reminder alert", () => {
+  const dueList = [
+    reminder(NOTE_A, { firedAt: "2026-11-05T12:00:00+01:00" }),
+    reminder(NOTE_B, { firedAt: "2026-11-05T09:30:00+01:00" }),
+    reminder(NOTE_C, { state: "scheduled", firedAt: null, at: "2026-11-01T08:00:00+01:00" }),
+  ];
+
+  it("sorts due reminders oldest first and ignores the others", () => {
+    expect(dueReminders(dueList).map((r) => r.noteId)).toEqual([NOTE_B, NOTE_A]);
+  });
+
+  it("shows a badge with the due count, wiggles and changes the label", async () => {
+    mockedApi.listReminders.mockResolvedValue(dueList);
+    render(<BuddyApp />);
+    const badge = await screen.findByTestId("reminder-badge");
+    expect(badge).toHaveTextContent("2");
+    expect(badge).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("button", { name: BUDDY_ALERT_LABEL })).toBeInTheDocument();
+    expect(screen.getByTestId("smiley")).toHaveClass("alerting");
+  });
+
+  it("click and Enter open the oldest due note instead of toggling", async () => {
+    mockedApi.listReminders.mockResolvedValue(dueList);
+    render(<BuddyApp />);
+    const btn = await screen.findByRole("button", { name: BUDDY_ALERT_LABEL });
+    down(btn);
+    up(btn);
+    fireEvent.keyDown(btn, { key: "Enter" });
+    expect(mockedApi.openNote).toHaveBeenCalledTimes(2);
+    expect(mockedApi.openNote).toHaveBeenCalledWith(NOTE_B);
+    expect(mockedApi.toggleNotes).not.toHaveBeenCalled();
+  });
+
+  it("drag still moves the window while a reminder is due", async () => {
+    mockedApi.listReminders.mockResolvedValue(dueList);
+    render(<BuddyApp />);
+    const btn = await screen.findByRole("button", { name: BUDDY_ALERT_LABEL });
+    down(btn, 100, 100);
+    move(btn, 120, 100);
+    up(btn);
+    expect(startDragging).toHaveBeenCalledTimes(1);
+    expect(mockedApi.openNote).not.toHaveBeenCalled();
+  });
+
+  it("without due reminders: no badge, click toggles notes", async () => {
+    mockedApi.listReminders.mockResolvedValue([dueList[2]]);
+    const btn = await renderApp();
+    await act(async () => {});
+    expect(screen.queryByTestId("reminder-badge")).toBeNull();
+    expect(screen.getByTestId("smiley")).not.toHaveClass("alerting");
+    down(btn);
+    up(btn);
+    expect(mockedApi.toggleNotes).toHaveBeenCalledTimes(1);
+    expect(mockedApi.openNote).not.toHaveBeenCalled();
+  });
+
+  it("reminders-changed updates the alert live", async () => {
+    await renderApp();
+    await act(async () => {});
+    act(() => remindersListener!([reminder(NOTE_A)]));
+    expect(screen.getByTestId("reminder-badge")).toHaveTextContent("1");
+    act(() => remindersListener!([reminder(NOTE_A, { state: "done" })]));
+    expect(screen.queryByTestId("reminder-badge")).toBeNull();
+    expect(screen.getByRole("button", { name: BUDDY_LABEL })).toBeInTheDocument();
+  });
+
+  it("reduced motion: badge but no wiggle", async () => {
+    reducedMotion = true;
+    mockedApi.listReminders.mockResolvedValue(dueList);
+    render(<BuddyApp />);
+    await screen.findByTestId("reminder-badge");
+    expect(screen.getByTestId("smiley")).not.toHaveClass("alerting");
+  });
+
+  it("quiet mode: no wiggle, one pulse when a reminder becomes due", async () => {
+    mockedApi.loadSettings.mockResolvedValue(settings({ animate: false }));
+    await renderApp();
+    await act(async () => {});
+    vi.useFakeTimers();
+    act(() => remindersListener!([reminder(NOTE_A)]));
+    const smiley = screen.getByTestId("smiley");
+    expect(smiley).not.toHaveClass("alerting");
+    expect(smiley).toHaveClass("pulse");
+    act(() => vi.advanceTimersByTime(800));
+    expect(smiley).not.toHaveClass("pulse");
+  });
+
+  it("renders the configured built-in skin", async () => {
+    mockedApi.loadSettings.mockResolvedValue(settings({ skin: "robot" }));
+    render(<BuddyApp />);
+    expect(await screen.findByTestId("skin-robot")).toBeInTheDocument();
   });
 });
