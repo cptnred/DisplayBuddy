@@ -85,7 +85,7 @@ pub struct Settings {
     buddy_position: Option<WindowPosition>,   // { x: i32, y: i32 } physical px
     notes_size: Option<WindowSize>,           // { width: f64, height: f64 } logical px
     autostart: bool, active_note_id: Option<String>,
-    notes_pinned: bool, hide_notes_on_blur: bool, global_shortcut: bool,
+    notes_pinned: bool, hide_notes_on_blur: bool, global_shortcut: bool, click_through: bool,
 }
 ```
 Defaults identical to `DEFAULT_SETTINGS` in `types.ts`. `Settings::sanitized()` clamps
@@ -150,7 +150,7 @@ All commands return `Result<T, String>` (error string is German-free technical t
 | Label | Created | Config |
 |---|---|---|
 | `buddy` | tauri.conf (hidden) | 96×96 (resized to `buddy.size`), no decorations, transparent, alwaysOnTop, skipTaskbar, not resizable, no shadow, `focus:false`. Rust positions it in setup (saved position if it lies on any monitor, else bottom-right of primary monitor work area with 24 px margin) and then shows it. |
-| `notes` | tauri.conf (hidden) | 420×520, min 320×360, no decorations (own title bar with `data-tauri-drag-region` / `startDragging`), alwaysOnTop, skipTaskbar, resizable. Shown/hidden only, never re-created. |
+| `notes` | tauri.conf (hidden) | 420×520, min 320×360, no decorations (own title bar, drag via `startDragging()` on `[data-drag-region]` only), alwaysOnTop, skipTaskbar, resizable. Shown/hidden only, never re-created. |
 | `settings` | on demand (Rust `WebviewWindowBuilder`) | `settings.html`, decorated, 520×640, resizable, normal z-order, in taskbar. |
 
 Notes placement (Rust, `windows.rs`, pure helper `compute_notes_position(buddy_rect, notes_size, work_area, gap) -> (x, y)` (all physical px, gap = 12 × scale factor) unit-tested): prefer left of the buddy if it fits, else right, gap 12 px; vertically align bottom of notes with bottom of buddy, clamped into the work area of the monitor the buddy is on.

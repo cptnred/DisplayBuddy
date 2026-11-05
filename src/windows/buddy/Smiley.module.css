@@ -1,7 +1,7 @@
 /*
  * Smiley animations: transform / opacity only, all CSS (no JS loops).
  * Durations are divided by --speed (0.5..2, set inline from config.animationSpeed).
- * Geometry budget (viewBox 100): face r=41 (+0.8 stroke) × hover 1.05 + bob ≈1 + hop 3.5 < 50.
+ * Geometry budget (viewBox 100): face r=41 (+0.8 stroke) × hover 1.05 + bob 2 % + hop 3.5 < 50.
  */
 .root {
   --speed: 1;
@@ -28,7 +28,6 @@
 }
 
 .hop,
-.bob,
 .scale,
 .eyes {
   transform-box: view-box;
@@ -38,12 +37,17 @@
   transform-origin: 50px 92px;
 }
 
-.bob {
-  transform-origin: 50px 92px;
+/* Idle bob runs on the outer <svg> box (not an inner <g>), so WebView2 can composite it
+   on the GPU instead of repainting the SVG every frame. */
+.svg {
+  transform-origin: 50% 92%;
 }
 
 .scale {
   transform-origin: 50px 50px;
+}
+
+.animated .scale {
   transition: transform 220ms cubic-bezier(0.3, 1.35, 0.6, 1);
 }
 
@@ -66,8 +70,9 @@
 }
 
 /* ---- hover ---------------------------------------------------------------- */
-.hovered .scale,
-.preview:hover .scale {
+/* Scale-up only with animations on ("Ruhiger Modus" keeps the size still). */
+.animated.hovered .scale,
+.animated.preview:hover .scale {
   transform: scale(1.05);
 }
 
@@ -87,8 +92,9 @@
 }
 
 /* ---- animations (only when config.animate) -------------------------------- */
-.animated .bob {
+.animated .svg {
   animation: bob calc(3.6s / var(--speed)) ease-in-out infinite;
+  will-change: transform;
 }
 
 .animated .eyes.blink {
@@ -105,7 +111,7 @@
     transform: translateY(0) scale(1, 1);
   }
   50% {
-    transform: translateY(-0.8px) scale(1.012, 1.018);
+    transform: translateY(-2%) scale(1.012, 1.018);
   }
 }
 
@@ -139,18 +145,17 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bob,
   .hop,
   .eyes,
-  .animated .bob,
+  .animated .svg,
   .animated .eyes.blink,
   .animated.hopping .hop {
     animation: none !important;
   }
 
   .scale,
-  .hovered .scale,
-  .preview:hover .scale {
+  .animated.hovered .scale,
+  .animated.preview:hover .scale {
     transform: none !important;
     transition: none !important;
   }

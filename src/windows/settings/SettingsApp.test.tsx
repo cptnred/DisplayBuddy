@@ -87,3 +87,21 @@ test("external settings-changed updates the form", async () => {
   act(() => listeners[0]({ ...DEFAULT_SETTINGS, buddy: { ...DEFAULT_SETTINGS.buddy, size: 160 } }));
   expect(screen.getByText("160 px")).toBeInTheDocument();
 });
+
+test("click-through checkbox saves immediately", async () => {
+  await setup();
+  fireEvent.click(screen.getByLabelText(/transparenten Ecken/));
+  expect(api.saveSettings).toHaveBeenCalledWith({ clickThrough: true });
+});
+
+test("unsaved slider value survives an unrelated settings-changed broadcast", async () => {
+  vi.useFakeTimers();
+  try {
+    await setup();
+    fireEvent.change(screen.getByRole("slider", { name: "Größe" }), { target: { value: "150" } });
+    act(() => listeners[0]({ ...DEFAULT_SETTINGS, activeNoteId: "x" }));
+    expect(screen.getByText("150 px")).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});

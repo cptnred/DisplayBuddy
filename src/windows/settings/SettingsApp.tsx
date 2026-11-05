@@ -53,7 +53,12 @@ export function SettingsApp() {
       .getAutostart()
       .then((on) => alive && setSettings((s) => ({ ...s, autostart: on })))
       .catch(() => undefined);
-    const unlisten = api.onSettingsChanged((s) => setSettings(s));
+    // Re-apply not yet saved local edits on top, so a slider being dragged doesn't snap back
+    // when another window (e.g. carousel navigation) broadcasts settings-changed.
+    const unlisten = api.onSettingsChanged((s) => {
+      const p = pending.current;
+      setSettings({ ...s, ...p, buddy: { ...s.buddy, ...(p.buddy ?? {}) } } as Settings);
+    });
     return () => {
       alive = false;
       void unlisten.then((u) => u());
@@ -283,6 +288,14 @@ export function SettingsApp() {
             onChange={(e) => update({ hideNotesOnBlur: e.target.checked }, true)}
           />
           <span>Notizen bei Fokusverlust ausblenden (außer angeheftet)</span>
+        </label>
+        <label className={styles.check}>
+          <input
+            type="checkbox"
+            checked={settings.clickThrough}
+            onChange={(e) => update({ clickThrough: e.target.checked }, true)}
+          />
+          <span>Klicks auf die transparenten Ecken des Buddys durchlassen (experimentell)</span>
         </label>
       </section>
 

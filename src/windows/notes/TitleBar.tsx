@@ -27,11 +27,12 @@ const stroke = {
   strokeLinejoin: "round",
 } as const;
 
-/** Starts a native window drag when the empty title-bar area is pressed with the primary button. */
+/** Single drag mechanism (Tauri's built-in data-tauri-drag-region script is deliberately not
+ * used, so a press never starts two native drags). Starts a native window drag when the empty title-bar area is pressed with the primary button. */
 function onDragMouseDown(e: MouseEvent<HTMLElement>) {
   if (e.button !== 0) return;
   const target = e.target as HTMLElement;
-  if (!target.hasAttribute("data-tauri-drag-region")) return;
+  if (!target.hasAttribute("data-drag-region")) return;
   try {
     void getCurrentWindow()
       .startDragging()
@@ -43,14 +44,14 @@ function onDragMouseDown(e: MouseEvent<HTMLElement>) {
 
 export function TitleBar({ pinned, canDelete, onNew, onDelete, onTogglePin, onClose }: TitleBarProps) {
   return (
-    <header className={styles.bar} data-tauri-drag-region onMouseDown={onDragMouseDown}>
+    <header className={styles.bar} data-drag-region onMouseDown={onDragMouseDown}>
       <button type="button" className={styles.newButton} aria-label="Neue Notiz" title="Neue Notiz (Strg+N)" onClick={onNew}>
         <Icon>
           <path d="M8 3.5v9M3.5 8h9" {...stroke} strokeWidth={1.8} />
         </Icon>
         <span>Neue Notiz</span>
       </button>
-      <span className={styles.drag} data-tauri-drag-region />
+      <span className={styles.drag} data-drag-region />
       <button
         type="button"
         className={styles.iconButton}

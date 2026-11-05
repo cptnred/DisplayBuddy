@@ -124,8 +124,10 @@ export function createNotesController(): NotesController {
       setFailing(id, false);
     } catch (error) {
       console.error("[notes] retry failed, keeping change pending", error);
-      // keep it pending (unless a newer snapshot is already queued)
-      if (!saver.pending().includes(id)) saver.schedule(id, note);
+      // Keep the change pending – with the *latest* state of this note, never the failed
+      // snapshot: a newer one may already be chained behind this run (not in pending()).
+      const latest = state.notes.find((n) => n.id === id) ?? note;
+      if (!deleted.has(id) && !saver.pending().includes(id)) saver.schedule(id, latest);
     }
   };
 
@@ -139,12 +141,15 @@ export function createNotesController(): NotesController {
     activeIdSaver.schedule("activeNoteId", note ? note.id : null);
   };
 
-  const persistOrder = async () => {
-    try {
-      await api.saveOrder(state.notes.map((n) => n.id));
-    } catch (error) {
-      reportActionError("Reihenfolge konnte nicht gespeichert werden", error);
-    }
+  // Order saves are serialized: async commands run concurrently on the Rust side, so two
+  // quick reorders could otherwise be applied out of order. The ids are captured now.
+  let orderTail: Promise<void> = Promise.resolve();
+  const persistOrder = (): Promise<void> => {
+    const ids = state.notes.map((n) => n.id);
+    orderTail = orderTail
+      .then(() => api.saveOrder(ids))
+      .catch((error: unknown) => reportActionError("Reihenfolge konnte nicht gespeichert werden", error));
+    return orderTail;
   };
 
   let loadPromise: Promise<void> | null = null;
@@ -268,7 +273,7 @@ export function createNotesController(): NotesController {
     },
 
     async flushAll() {
-      await Promise.all([saver.flush(), activeIdSaver.flush()]);
+      await Promise.all([saver.flush(), activeIdSaver.flush(), orderTail]);
     },
 
     connect() {

@@ -174,7 +174,7 @@ export function Smiley({ config, hovered = false, hopping = false, preview = fal
           </radialGradient>
         </defs>
         <g className={styles.hop}>
-          <g className={styles.bob}>
+          <g>
             <g className={styles.scale}>
               <circle
                 data-testid="smiley-face"
