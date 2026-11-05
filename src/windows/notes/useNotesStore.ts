@@ -2,7 +2,14 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { api } from "../../lib/api";
 import { insertAfter, move, normalizeIndex, removeAt } from "../../lib/carousel";
 import { createKeyedDebouncer } from "../../lib/debounce";
-import { NOTE_COLORS, NOTE_SCHEMA_VERSION, type Note, type NoteColor } from "../../types";
+import {
+  NOTE_COLORS,
+  NOTE_SCHEMA_VERSION,
+  type Note,
+  type NoteColor,
+  type Reminder,
+  type ReminderRepeat,
+} from "../../types";
 import { emptyDoc } from "./docText";
 
 /** Autosave debounce per note (docs/PLAN.md §8). */
@@ -27,6 +34,16 @@ export interface NotesState {
   saveError: boolean;
   /** Transient German message for failed non-save actions (delete, order). */
   actionError: string | null;
+  /** Reminders by note id (Rust owns them; replaced on every `reminders-changed`). */
+  reminders: Record<string, Reminder>;
+}
+
+export const REMINDER_ERROR_TEXT = "Erinnerung konnte nicht gespeichert werden";
+
+function reminderMap(list: Reminder[]): Record<string, Reminder> {
+  const map: Record<string, Reminder> = {};
+  for (const r of list) map[r.noteId] = r;
+  return map;
 }
 
 const COLOR_ORDER = Object.keys(NOTE_COLORS) as NoteColor[];
@@ -65,6 +82,12 @@ export interface NotesController {
   moveActive(delta: -1 | 1): void;
   setPinned(pinned: boolean): void;
   flushAll(): Promise<void>;
+  /** `at` = RFC 3339 or null (remove). Resolves false on error (action banner shown). */
+  setReminder(noteId: string, at: string | null, repeat: ReminderRepeat): Promise<boolean>;
+  ackReminder(noteId: string): Promise<boolean>;
+  snoozeReminder(noteId: string, minutes: number): Promise<boolean>;
+  /** Selects the note with this id (waits for the initial load). False if unknown. */
+  openNote(noteId: string): Promise<boolean>;
   /** Subscribes to backend events + page lifecycle; returns cleanup. */
   connect(): () => void;
 }
@@ -82,11 +105,43 @@ export function createNotesController(): NotesController {
     pinned: false,
     saveError: false,
     actionError: null,
+    reminders: {},
   };
   const listeners = new Set<() => void>();
   const failing = new Set<string>();
   const deleted = new Set<string>();
   let createQueued = false;
+  /** Bumped by every reminders update so a late initial list never overwrites newer data. */
+  let remindersVersion = 0;
+  const replaceReminders = (list: Reminder[]) => {
+    remindersVersion++;
+    set({ reminders: reminderMap(list) });
+  };
+  const putReminder = (noteId: string, r: Reminder | null) => {
+    remindersVersion++;
+    const reminders = { ...state.reminders };
+    if (r) reminders[r.noteId] = r;
+    else delete reminders[noteId];
+    set({ reminders });
+  };
+  const loadReminders = async () => {
+    const version = remindersVersion;
+    try {
+      const list = await api.listReminders();
+      if (version === remindersVersion) replaceReminders(list);
+    } catch (error) {
+      console.error("[notes] loading reminders failed", error);
+    }
+  };
+  const reminderAction = async (noteId: string, run: () => Promise<Reminder | null>): Promise<boolean> => {
+    try {
+      putReminder(noteId, await run());
+      return true;
+    } catch (error) {
+      reportActionError(REMINDER_ERROR_TEXT, error);
+      return false;
+    }
+  };
   let actionErrorTimer: ReturnType<typeof setTimeout> | null = null;
 
   const set = (patch: Partial<NotesState>) => {
@@ -179,7 +234,10 @@ export function createNotesController(): NotesController {
 
     load() {
       // idempotent: React StrictMode runs mount effects twice
-      loadPromise ??= doLoad();
+      if (!loadPromise) {
+        loadPromise = doLoad();
+        void loadReminders();
+      }
       return loadPromise;
     },
 
@@ -276,6 +334,19 @@ export function createNotesController(): NotesController {
       await Promise.all([saver.flush(), activeIdSaver.flush(), orderTail]);
     },
 
+    setReminder: (noteId, at, repeat) => reminderAction(noteId, () => api.setReminder(noteId, at, repeat)),
+    ackReminder: (noteId) => reminderAction(noteId, () => api.ackReminder(noteId)),
+    snoozeReminder: (noteId, minutes) => reminderAction(noteId, () => api.snoozeReminder(noteId, minutes)),
+
+    async openNote(noteId) {
+      // queued behind the initial load (the event may arrive while the window is still loading)
+      await ctrl.load();
+      const idx = state.notes.findIndex((n) => n.id === noteId);
+      if (idx < 0) return false;
+      ctrl.select(idx);
+      return true;
+    },
+
     connect() {
       let disposed = false;
       const subs = [
@@ -290,6 +361,7 @@ export function createNotesController(): NotesController {
         api.onSettingsChanged((s) => {
           if (s.notesPinned !== state.pinned) set({ pinned: s.notesPinned });
         }),
+        api.onRemindersChanged((list) => replaceReminders(list)),
       ];
       const onUnload = () => void ctrl.flushAll();
       window.addEventListener("beforeunload", onUnload);
@@ -324,6 +396,10 @@ export interface NotesStore extends NotesState {
   moveActive: NotesController["moveActive"];
   setPinned: NotesController["setPinned"];
   flushAll: NotesController["flushAll"];
+  setReminder: NotesController["setReminder"];
+  ackReminder: NotesController["ackReminder"];
+  snoozeReminder: NotesController["snoozeReminder"];
+  openNote: NotesController["openNote"];
 }
 
 /** React binding: loads on mount, subscribes to backend events, cleans up on unmount. */
@@ -349,5 +425,9 @@ export function useNotesStore(): NotesStore {
     moveActive: ctrl.moveActive,
     setPinned: ctrl.setPinned,
     flushAll: ctrl.flushAll,
+    setReminder: ctrl.setReminder,
+    ackReminder: ctrl.ackReminder,
+    snoozeReminder: ctrl.snoozeReminder,
+    openNote: ctrl.openNote,
   };
 }
