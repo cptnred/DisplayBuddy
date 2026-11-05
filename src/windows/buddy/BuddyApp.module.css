@@ -1,0 +1,39 @@
+/* The buddy window is transparent: only the smiley itself is visible. */
+:global(html),
+:global(body),
+:global(#root) {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+.root {
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  overflow: hidden;
+}
+
+.buddy {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  height: 100vh;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+/* Subtle circular focus ring, drawn inside the window so it is never clipped. */
+.buddy:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.75);
+  outline-offset: -3px;
+}
