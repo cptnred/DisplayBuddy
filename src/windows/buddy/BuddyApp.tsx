@@ -37,7 +37,7 @@ export function dueReminders(reminders: Reminder[]): Reminder[] {
 }
 
 function BellBadge({ count, size }: { count: number; size: number }) {
-  const style = { fontSize: Math.min(20, Math.max(9, size * 0.13)) } as CSSProperties;
+  const style = { fontSize: Math.min(20, Math.max(10, size * 0.13)) } as CSSProperties;
   return (
     <span className={styles.badge} style={style} aria-hidden="true" data-testid="reminder-badge">
       <svg viewBox="0 0 24 24" focusable="false">
