@@ -1,0 +1,258 @@
+/* NoteEditor: toolbar on top, scrollable content below. Background stays transparent
+   (the note card colour comes from the parent). */
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: transparent;
+  --editor-ink: #1f2328;
+  --editor-muted: rgba(31, 35, 40, 0.5);
+  --editor-hover: rgba(31, 35, 40, 0.08);
+  --editor-pressed: rgba(31, 35, 40, 0.15);
+}
+
+/* ---------- Toolbar ---------- */
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  padding: 4px 6px;
+  border-bottom: 1px solid rgba(31, 35, 40, 0.1);
+  flex: 0 0 auto;
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.group + .group {
+  padding-left: 6px;
+  border-left: 1px solid rgba(31, 35, 40, 0.12);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--editor-ink);
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--editor-hover);
+}
+
+.button[aria-pressed="true"],
+.button[aria-expanded="true"] {
+  background: var(--editor-pressed);
+}
+
+.button:disabled {
+  color: var(--editor-muted);
+  opacity: 0.6;
+  cursor: default;
+}
+
+.button svg {
+  display: block;
+  flex: none;
+}
+
+.select {
+  height: 28px;
+  max-width: 96px;
+  padding: 0 4px;
+  border: 1px solid rgba(31, 35, 40, 0.18);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--editor-ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.select:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+/* ---------- Colour palette popover ---------- */
+.colorWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.palette {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.16),
+    0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(4, 24px);
+  gap: 6px;
+}
+
+.swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+}
+
+.swatch[aria-pressed="true"] {
+  outline: 2px solid var(--editor-ink);
+  outline-offset: 2px;
+}
+
+.swatch:hover {
+  transform: scale(1.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swatch:hover {
+    transform: none;
+  }
+}
+
+.removeColor {
+  padding: 4px 6px;
+  border: 1px solid rgba(31, 35, 40, 0.18);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--editor-ink);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.removeColor:hover {
+  background: var(--editor-hover);
+}
+
+/* ---------- Content area ---------- */
+.content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  cursor: text;
+}
+
+.content :global(.ProseMirror) {
+  min-height: 100%;
+  padding: 10px 14px 16px;
+  outline: none;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--editor-ink);
+  user-select: text;
+  -webkit-user-select: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  caret-color: currentColor;
+}
+
+.content :global(.ProseMirror p) {
+  margin: 0 0 0.35em;
+}
+
+.content :global(.ProseMirror > :last-child) {
+  margin-bottom: 0;
+}
+
+/* Placeholder (see placeholder.ts). */
+.content :global(.ProseMirror .is-editor-empty::before) {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--editor-muted);
+  pointer-events: none;
+}
+
+/* Lists */
+.content :global(.ProseMirror ul),
+.content :global(.ProseMirror ol) {
+  margin: 0.2em 0 0.4em;
+  padding-left: 1.5em;
+}
+
+.content :global(.ProseMirror li > p) {
+  margin: 0.1em 0;
+}
+
+.content :global(.ProseMirror li::marker) {
+  color: rgba(31, 35, 40, 0.7);
+}
+
+/* Task lists */
+.content :global(.ProseMirror ul[data-type="taskList"]) {
+  list-style: none;
+  padding-left: 0.15em;
+}
+
+.content :global(.ProseMirror ul[data-type="taskList"] ul[data-type="taskList"]) {
+  margin: 0;
+  padding-left: 1.4em;
+}
+
+.content :global(.ProseMirror li[data-type="taskItem"]) {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45em;
+}
+
+.content :global(.ProseMirror li[data-type="taskItem"] > label) {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  /* One line of 15px × 1.5 → centre the checkbox on the first text line. */
+  height: calc(1.5em + 0.2em);
+  user-select: none;
+}
+
+.content :global(.ProseMirror li[data-type="taskItem"] > label input) {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #2b2f36;
+  cursor: pointer;
+}
+
+.content :global(.ProseMirror li[data-type="taskItem"] > div) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Checked items: only the item's own text, not nested (possibly unchecked) children. */
+.content :global(.ProseMirror li[data-checked="true"] > div > p) {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
