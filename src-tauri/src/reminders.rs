@@ -265,13 +265,8 @@ fn show_toast(app: &AppHandle, title: &str, body: &str, sound: bool) {
 /// System "asterisk" sound (used when the toast is off but the sound is on).
 #[cfg(windows)]
 fn beep() {
-    // `MessageBeep` lives in windows-sys' `Win32_System_Diagnostics_Debug` feature,
-    // which is not enabled; user32 is linked anyway, so declare it directly.
-    #[link(name = "user32")]
-    unsafe extern "system" {
-        fn MessageBeep(utype: u32) -> i32;
-    }
-    const MB_ICONASTERISK: u32 = 0x40;
+    use windows_sys::Win32::System::Diagnostics::Debug::MessageBeep;
+    use windows_sys::Win32::UI::WindowsAndMessaging::MB_ICONASTERISK;
     // SAFETY: plain Win32 call without pointers.
     if unsafe { MessageBeep(MB_ICONASTERISK) } == 0 {
         log::warn!("MessageBeep failed");
