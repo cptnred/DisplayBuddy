@@ -1,13 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "../../styles/base.css";
-
-function Placeholder() {
-  return <div>settings</div>;
-}
+import { SettingsApp } from "./SettingsApp";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <Placeholder />
+    <SettingsApp />
   </React.StrictMode>,
 );

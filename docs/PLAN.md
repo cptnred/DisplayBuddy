@@ -168,9 +168,9 @@ Optional (only after core): click-through for transparent corners (polling threa
 ## 8. Frontend component contracts
 
 ### Buddy (`src/windows/buddy/`)
-* `Smiley.tsx`: `export function Smiley(props: { config: BuddyConfig; hovered?: boolean; hopping?: boolean; preview?: boolean })` – pure SVG, CSS-Module animations (transform/opacity only). Respects `config.animate`, `animationSpeed` (CSS var `--speed`), `prefers-reduced-motion`. Opacity applied via CSS. Blink scheduler random 3–7 s (disabled when not animating).
+* `Smiley.tsx`: `export function Smiley(props: { config: BuddyConfig; hovered?: boolean; hopping?: boolean; preview?: boolean; className?: string })` – pure SVG, CSS-Module animations (transform/opacity only). Respects `config.animate`, `animationSpeed` (CSS var `--speed`), `prefers-reduced-motion`. Opacity applied via CSS. Blink scheduler random 3–7 s (disabled when not animating).
 * `dragClick.ts`: pure `createDragClickTracker({ threshold = 4 })` with `down(x,y)`, `move(x,y) → "drag" | null` (returns "drag" exactly once when distance > threshold), `up() → "click" | "none"`. Tested.
-* `BuddyApp.tsx`: loads settings (`api.loadSettings`), listens to `api.onSettingsChanged`; pointerdown/move/up → `getCurrentWindow().startDragging()` on drag, `api.toggleNotes()` on click; `contextmenu` → `api.showBuddyMenu()` (preventDefault). Keyboard: buddy has `role="button"`, `aria-label="Display Buddy – Notizen öffnen"`, Enter/Space → toggle. (Exception to the api.ts rule: `getCurrentWindow` from `@tauri-apps/api/window` is allowed here.)
+* `BuddyApp.tsx`: loads settings (`api.loadSettings`), listens to `api.onSettingsChanged`; pointerdown/move/up → `getCurrentWindow().startDragging()` on drag, `api.toggleNotes()` on click; `contextmenu` → `api.showBuddyMenu()` (preventDefault). Keyboard: buddy has `role="button"`, `aria-label="Display Buddy – Notizen öffnen oder schließen"`, Enter/Space → toggle. (Exception to the api.ts rule: `getCurrentWindow` from `@tauri-apps/api/window` is allowed here.)
 
 ### Editor (`src/components/editor/`)
 * `extensions.ts`: `export function createExtensions(): Extensions` – StarterKit (link/code/codeBlock/blockquote/heading/horizontalRule disabled), TextStyle, Color, FontSize, TaskList, TaskItem `{ nested: true }`. Used by NoteEditor **and** by notes previews (`generateHTML`).
