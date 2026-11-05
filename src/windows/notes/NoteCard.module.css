@@ -108,3 +108,8 @@
     transition: none;
   }
 }
+
+.previewBadge {
+  display: flex;
+  flex: none;
+}

@@ -37,6 +37,12 @@ const h = vi.hoisted(() => {
     onNotesHidden: on("notesHidden"),
     onNoteCreateRequest: on("noteCreateRequest"),
     onFlushRequest: on("flushRequest"),
+    onRemindersChanged: on("remindersChanged"),
+    onOpenNote: on("openNote"),
+    listReminders: vi.fn(),
+    setReminder: vi.fn(),
+    ackReminder: vi.fn(),
+    snoozeReminder: vi.fn(),
   };
   return { api, handlers, unlisten };
 });
@@ -118,6 +124,7 @@ beforeEach(() => {
   api.saveSettings.mockImplementation(async (patch: Partial<Settings>) => ({ ...DEFAULT_SETTINGS, ...patch }));
   api.hideNotes.mockResolvedValue(undefined);
   api.flushDone.mockResolvedValue(undefined);
+  api.listReminders.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -388,7 +395,7 @@ describe("NotesApp / useNotesStore", () => {
     const { unmount } = await setup([A()]);
     unmount();
     await tick();
-    // 5 store/app subscriptions (hidden, flush, create, settings, shown)
-    expect(h.unlisten).toHaveBeenCalledTimes(5);
+    // 7 store/app subscriptions (hidden, flush, create, settings, reminders, shown, open-note)
+    expect(h.unlisten).toHaveBeenCalledTimes(7);
   });
 });

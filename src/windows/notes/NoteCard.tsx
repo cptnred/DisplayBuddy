@@ -64,11 +64,25 @@ export interface ActiveNoteCardProps {
   onTitleChange: (title: string) => void;
   onColorChange: (color: NoteColor) => void;
   onContentChange: (doc: JSONContent) => void;
+  /** Rendered in the header between title and colour picker (reminder bell). */
+  headerExtra?: ReactNode;
+  /** Rendered above the header (due-reminder banner). */
+  banner?: ReactNode;
 }
 
-export function ActiveNoteCard({ note, Editor, autoFocusEditor, onTitleChange, onColorChange, onContentChange }: ActiveNoteCardProps) {
+export function ActiveNoteCard({
+  note,
+  Editor,
+  autoFocusEditor,
+  onTitleChange,
+  onColorChange,
+  onContentChange,
+  headerExtra,
+  banner,
+}: ActiveNoteCardProps) {
   return (
     <div className={styles.face} style={{ background: noteColorValue(note.color) }} data-note-id={note.id}>
+      {banner}
       <div className={styles.header}>
         <input
           className={styles.title}
@@ -79,6 +93,7 @@ export function ActiveNoteCard({ note, Editor, autoFocusEditor, onTitleChange, o
           spellCheck={false}
           onChange={(e) => onTitleChange(e.target.value)}
         />
+        {headerExtra}
         <ColorPicker value={note.color} onChange={onColorChange} />
       </div>
       <div className={styles.editor} data-editor-slot="">
@@ -105,9 +120,10 @@ export function DefaultPreview({ note }: { note: Note }) {
   );
 }
 
-export function PreviewNoteCard({ note, children }: { note: Note; children: ReactNode }) {
+export function PreviewNoteCard({ note, children, badge }: { note: Note; children: ReactNode; badge?: ReactNode }) {
   return (
     <div className={`${styles.face} ${styles.preview}`} style={{ background: noteColorValue(note.color) }}>
+      {badge && <div className={styles.previewBadge}>{badge}</div>}
       {children}
     </div>
   );

@@ -9,6 +9,9 @@ export interface TitleBarProps {
   onDelete: () => void;
   onTogglePin: () => void;
   onClose: () => void;
+  /** Opens the search panel (Strg+F). */
+  onSearch?: () => void;
+  searchOpen?: boolean;
 }
 
 function Icon({ children }: { children: ReactNode }) {
@@ -42,7 +45,7 @@ function onDragMouseDown(e: MouseEvent<HTMLElement>) {
   }
 }
 
-export function TitleBar({ pinned, canDelete, onNew, onDelete, onTogglePin, onClose }: TitleBarProps) {
+export function TitleBar({ pinned, canDelete, onNew, onDelete, onTogglePin, onClose, onSearch, searchOpen = false }: TitleBarProps) {
   return (
     <header className={styles.bar} data-drag-region onMouseDown={onDragMouseDown}>
       <button type="button" className={styles.newButton} aria-label="Neue Notiz" title="Neue Notiz (Strg+N)" onClick={onNew}>
@@ -52,6 +55,21 @@ export function TitleBar({ pinned, canDelete, onNew, onDelete, onTogglePin, onCl
         <span>Neue Notiz</span>
       </button>
       <span className={styles.drag} data-drag-region />
+      {onSearch && (
+        <button
+          type="button"
+          className={`${styles.iconButton} ${searchOpen ? styles.pressed : ""}`}
+          aria-label="Suchen (Strg+F)"
+          aria-expanded={searchOpen}
+          title="Notizen durchsuchen (Strg+F)"
+          onClick={onSearch}
+        >
+          <Icon>
+            <circle cx="7" cy="7" r="4.3" {...stroke} strokeWidth={1.6} />
+            <path d="M10.2 10.2 13.5 13.5" {...stroke} strokeWidth={1.7} />
+          </Icon>
+        </button>
+      )}
       <button
         type="button"
         className={styles.iconButton}

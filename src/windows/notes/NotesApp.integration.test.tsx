@@ -23,6 +23,9 @@ const h = vi.hoisted(() => {
     onNotesHidden: vi.fn(async () => () => undefined),
     onNoteCreateRequest: vi.fn(async () => () => undefined),
     onFlushRequest: vi.fn(async () => () => undefined),
+    onRemindersChanged: vi.fn(async () => () => undefined),
+    onOpenNote: vi.fn(async () => () => undefined),
+    listReminders: vi.fn(async () => []),
   };
   return { api };
 });
