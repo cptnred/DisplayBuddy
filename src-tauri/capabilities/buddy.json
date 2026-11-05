@@ -2,13 +2,18 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "buddy",
   "description": "Buddy window: drag, listen for settings, toggle notes, context menu",
-  "windows": ["buddy"],
+  "windows": [
+    "buddy"
+  ],
   "permissions": [
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "core:window:allow-start-dragging",
     "allow-load-settings",
     "allow-toggle-notes",
-    "allow-show-buddy-menu"
+    "allow-show-buddy-menu",
+    "allow-list-reminders",
+    "allow-open-note",
+    "allow-load-skin"
   ]
 }

@@ -25,8 +25,14 @@ pub fn save_note(state: State<'_, AppState>, note: Note) -> Result<Note, String>
 }
 
 #[tauri::command(async)]
-pub fn delete_note(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    lock(&state.storage).delete_note(&id).map_err(err)
+pub fn delete_note(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    lock(&state.storage).delete_note(&id).map_err(err)?;
+    crate::reminders::on_note_deleted(&app, &id);
+    Ok(())
 }
 
 #[tauri::command(async)]

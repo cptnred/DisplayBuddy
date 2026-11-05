@@ -70,7 +70,7 @@ impl From<serde_json::Error> for StorageError {
 pub type Result<T> = std::result::Result<T, StorageError>;
 
 /// Result of reading one JSON file.
-enum Read<T> {
+pub enum Read<T> {
     Missing,
     /// Unparseable; the file has already been moved aside.
     Corrupt,
@@ -309,7 +309,7 @@ impl Storage {
 }
 
 /// Reads and parses a JSON file; unparseable files are moved aside.
-fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Read<T>> {
+pub fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Read<T>> {
     let bytes = match fs::read(path) {
         Ok(b) => b,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Read::Missing),
@@ -360,7 +360,7 @@ fn corrupt_target(path: &Path) -> PathBuf {
 
 /// `<file>.tmp` + `sync_all` + `rename` (replaces the target atomically, also on
 /// Windows where `std::fs::rename` uses `MoveFileExW(MOVEFILE_REPLACE_EXISTING)`).
-fn write_json_atomic<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<()> {
+pub fn write_json_atomic<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<()> {
     let bytes = serde_json::to_vec_pretty(value)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;

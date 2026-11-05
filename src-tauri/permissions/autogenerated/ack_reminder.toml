@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ack-reminder"
+description = "Enables the ack_reminder command without any pre-configured scope."
+commands.allow = ["ack_reminder"]
+
+[[permission]]
+identifier = "deny-ack-reminder"
+description = "Denies the ack_reminder command without any pre-configured scope."
+commands.deny = ["ack_reminder"]

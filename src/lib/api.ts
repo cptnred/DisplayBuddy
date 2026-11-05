@@ -5,7 +5,17 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { EVENTS, type Note, type Settings } from "../types";
+import {
+  EVENTS,
+  type Note,
+  type Reminder,
+  type ReminderRepeat,
+  type Settings,
+  type ShortcutList,
+  type ShortcutsData,
+  type SkinData,
+  type SkinInfo,
+} from "../types";
 
 /** Deep-partial patch for save_settings (only `buddy` is nested). */
 export type SettingsPatch = Partial<Omit<Settings, "buddy" | "schemaVersion">> & {
@@ -40,6 +50,42 @@ export const api = {
   flushDone: () => invoke<void>("flush_done"),
   quitApp: () => invoke<void>("quit_app"),
 
+  // ---- v2: reminders (Rust owns reminders.json + the scheduler) ------------
+  listReminders: () => invoke<Reminder[]>("list_reminders"),
+  /** Sets/replaces the reminder of a note; `at` = RFC 3339. `at: null` removes it. */
+  setReminder: (noteId: string, at: string | null, repeat: ReminderRepeat) =>
+    invoke<Reminder | null>("set_reminder", { noteId, at, repeat }),
+  /** „Erledigt“: non-repeating → done; repeating → next occurrence scheduled. */
+  ackReminder: (noteId: string) => invoke<Reminder | null>("ack_reminder", { noteId }),
+  /** „Später“: reschedule `minutes` from now (state → scheduled). */
+  snoozeReminder: (noteId: string, minutes: number) =>
+    invoke<Reminder>("snooze_reminder", { noteId, minutes }),
+  /** Shows the notes window and emits `open-note` for this note. */
+  openNote: (noteId: string) => invoke<void>("open_note", { noteId }),
+
+  // ---- v2: shortcut bar --------------------------------------------------------
+  listShortcuts: () => invoke<ShortcutsData>("list_shortcuts"),
+  /** Native file/folder picker (Rust side); adds the picked entries to `items`. */
+  pickShortcuts: (folder: boolean) => invoke<ShortcutsData>("pick_shortcuts", { folder }),
+  /** Adds a web link to `bookmarks` (http/https only; name defaults to host). */
+  addBookmark: (name: string, url: string) => invoke<ShortcutsData>("add_bookmark", { name, url }),
+  updateShortcut: (id: string, name: string, target?: string) =>
+    invoke<ShortcutsData>("update_shortcut", { id, name, target: target ?? null }),
+  removeShortcut: (id: string) => invoke<ShortcutsData>("remove_shortcut", { id }),
+  reorderShortcuts: (list: ShortcutList, ids: string[]) =>
+    invoke<ShortcutsData>("reorder_shortcuts", { list, ids }),
+  /** Opens a stored shortcut by id (path via shell, URL in the default browser). */
+  openShortcut: (id: string) => invoke<void>("open_shortcut", { id }),
+  /** PNG data URL of the file's shell icon (Windows), null if unavailable. Cached by Rust. */
+  shortcutIcon: (id: string) => invoke<string | null>("shortcut_icon", { id }),
+
+  // ---- v2: skins ---------------------------------------------------------------------
+  listSkins: () => invoke<SkinInfo[]>("list_skins"),
+  /** Native file picker (png/svg/gif/webp/json ≤ 5 MB); null if cancelled. */
+  importSkin: () => invoke<SkinInfo | null>("import_skin"),
+  deleteSkin: (id: string) => invoke<void>("delete_skin", { id }),
+  loadSkin: (id: string) => invoke<SkinData>("load_skin", { id }),
+
   // ---- events --------------------------------------------------------------
   onSettingsChanged: (cb: (s: Settings) => void): Promise<UnlistenFn> =>
     listen<Settings>(EVENTS.settingsChanged, (e) => cb(e.payload)),
@@ -47,6 +93,16 @@ export const api = {
   onNotesHidden: (cb: () => void) => listen(EVENTS.notesHidden, () => cb()),
   onNoteCreateRequest: (cb: () => void) => listen(EVENTS.noteCreateRequest, () => cb()),
   onFlushRequest: (cb: () => void) => listen(EVENTS.flushRequest, () => cb()),
+  onRemindersChanged: (cb: (r: Reminder[]) => void) =>
+    listen<Reminder[]>(EVENTS.remindersChanged, (e) => cb(e.payload)),
+  onOpenNote: (cb: (noteId: string) => void) =>
+    listen<{ noteId: string }>(EVENTS.openNote, (e) => cb(e.payload.noteId)),
+  onShortcutsChanged: (cb: (d: ShortcutsData) => void) =>
+    listen<ShortcutsData>(EVENTS.shortcutsChanged, (e) => cb(e.payload)),
+  onShortcutDrag: (cb: (state: "enter" | "leave" | "drop") => void) =>
+    listen<{ state: "enter" | "leave" | "drop" }>(EVENTS.shortcutDrag, (e) => cb(e.payload.state)),
+  onSkinsChanged: (cb: (s: SkinInfo[]) => void) =>
+    listen<SkinInfo[]>(EVENTS.skinsChanged, (e) => cb(e.payload)),
 };
 
 export type Api = typeof api;

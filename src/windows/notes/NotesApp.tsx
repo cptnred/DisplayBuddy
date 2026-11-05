@@ -14,6 +14,8 @@ export type { NoteEditorProps } from "./NoteCard";
 export interface NotesAppProps {
   Editor: ComponentType<NoteEditorProps>;
   renderPreview?: (note: Note) => ReactNode;
+  /** Rendered below the carousel (v2: the shortcut bar). */
+  footer?: ReactNode;
 }
 
 const defaultRenderPreview = (note: Note) => <DefaultPreview note={note} />;
@@ -26,7 +28,7 @@ function focusActiveEditor() {
   target?.focus();
 }
 
-export function NotesApp({ Editor, renderPreview = defaultRenderPreview }: NotesAppProps) {
+export function NotesApp({ Editor, renderPreview = defaultRenderPreview, footer }: NotesAppProps) {
   const store = useNotesStore();
   const [confirmOpen, setConfirmOpen] = useState(false);
   /** Focus the editor of the next mounted active card (keyboard navigation, new note). */
@@ -165,6 +167,8 @@ export function NotesApp({ Editor, renderPreview = defaultRenderPreview }: Notes
           />
         )}
       </main>
+
+      {footer}
 
       <ConfirmDialog
         open={confirmOpen}

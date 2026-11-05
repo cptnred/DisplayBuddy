@@ -82,6 +82,8 @@ pub enum MouthStyle {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct BuddyConfig {
+    /// "smiley" | "cat" | "robot" | "ghost" | <uuid of an imported skin>.
+    pub skin: String,
     pub face_color: String,
     pub eye_style: EyeStyle,
     pub mouth_style: MouthStyle,
@@ -95,10 +97,18 @@ pub struct BuddyConfig {
 }
 
 pub const DEFAULT_FACE_COLOR: &str = "#FFD54A";
+pub const DEFAULT_SKIN: &str = "smiley";
+pub const BUILTIN_SKINS: [&str; 4] = ["smiley", "cat", "robot", "ghost"];
+
+/// Built-in skin name or the id of an imported skin (canonical uuid).
+pub fn is_valid_skin(skin: &str) -> bool {
+    BUILTIN_SKINS.contains(&skin) || is_valid_note_id(skin)
+}
 
 impl Default for BuddyConfig {
     fn default() -> Self {
         Self {
+            skin: DEFAULT_SKIN.to_string(),
             face_color: DEFAULT_FACE_COLOR.to_string(),
             eye_style: EyeStyle::Round,
             mouth_style: MouthStyle::Smile,
@@ -138,6 +148,10 @@ pub struct Settings {
     pub global_shortcut: bool,
     /// Experimental: clicks on the transparent corners of the buddy pass through.
     pub click_through: bool,
+    pub reminder_notification: bool,
+    pub reminder_sound: bool,
+    pub shortcut_bar_collapsed: bool,
+    pub shortcut_bar_tab: ShortcutList,
 }
 
 impl Default for Settings {
@@ -153,6 +167,10 @@ impl Default for Settings {
             hide_notes_on_blur: false,
             global_shortcut: true,
             click_through: false,
+            reminder_notification: true,
+            reminder_sound: true,
+            shortcut_bar_collapsed: false,
+            shortcut_bar_tab: ShortcutList::Items,
         }
     }
 }
@@ -186,6 +204,9 @@ impl Settings {
         b.animation_speed = clamp_f64(b.animation_speed, SPEED_MIN, SPEED_MAX, d.animation_speed);
         if !is_hex_color(&b.face_color) {
             b.face_color = d.face_color;
+        }
+        if !is_valid_skin(&b.skin) {
+            b.skin = d.skin;
         }
         self.schema_version = SETTINGS_SCHEMA_VERSION;
         self.notes_size = self.notes_size.and_then(|s| {
@@ -282,6 +303,123 @@ pub fn merge_patch(target: &mut Value, patch: &Value) {
     }
 }
 
+// ---- v2 data types (mirror of src/types.ts) -------------------------------------------
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ShortcutList {
+    #[default]
+    Items,
+    Bookmarks,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ReminderRepeat {
+    #[default]
+    None,
+    Daily,
+    Weekdays,
+    Weekly,
+    Monthly,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ReminderState {
+    #[default]
+    Scheduled,
+    Due,
+    Done,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Reminder {
+    pub note_id: String,
+    /// RFC 3339 with offset.
+    pub at: String,
+    #[serde(default)]
+    pub repeat: ReminderRepeat,
+    #[serde(default)]
+    pub state: ReminderState,
+    #[serde(default)]
+    pub fired_at: Option<String>,
+}
+
+pub const REMINDERS_SCHEMA_VERSION: u32 = 1;
+
+/// File format of `reminders.json`.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct RemindersFile {
+    pub schema_version: u32,
+    pub reminders: Vec<Reminder>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ShortcutKind {
+    File,
+    Folder,
+    Program,
+    Url,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Shortcut {
+    pub id: String,
+    pub kind: ShortcutKind,
+    pub name: String,
+    pub target: String,
+}
+
+pub const SHORTCUTS_SCHEMA_VERSION: u32 = 1;
+
+/// File format of `shortcuts.json` and payload of `shortcuts-changed`.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ShortcutsData {
+    pub schema_version: u32,
+    pub items: Vec<Shortcut>,
+    pub bookmarks: Vec<Shortcut>,
+}
+
+impl Default for ShortcutsData {
+    fn default() -> Self {
+        Self {
+            schema_version: SHORTCUTS_SCHEMA_VERSION,
+            items: Vec::new(),
+            bookmarks: Vec::new(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SkinKind {
+    Image,
+    Lottie,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkinInfo {
+    pub id: String,
+    pub name: String,
+    pub kind: SkinKind,
+    pub mime: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkinData {
+    pub info: SkinInfo,
+    /// image: data URL; lottie: JSON text.
+    pub data: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -295,7 +433,8 @@ mod tests {
             json!({
                 "schemaVersion": 1,
                 "buddy": {
-                    "faceColor": "#FFD54A",
+                    "skin": "smiley",
+                "faceColor": "#FFD54A",
                     "eyeStyle": "round",
                     "mouthStyle": "smile",
                     "size": 96,
@@ -310,7 +449,11 @@ mod tests {
                 "notesPinned": false,
                 "hideNotesOnBlur": false,
                 "globalShortcut": true,
-                "clickThrough": false
+                "clickThrough": false,
+                "reminderNotification": true,
+                "reminderSound": true,
+                "shortcutBarCollapsed": false,
+                "shortcutBarTab": "items"
             })
         );
     }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-open-shortcut"
+description = "Enables the open_shortcut command without any pre-configured scope."
+commands.allow = ["open_shortcut"]
+
+[[permission]]
+identifier = "deny-open-shortcut"
+description = "Denies the open_shortcut command without any pre-configured scope."
+commands.deny = ["open_shortcut"]

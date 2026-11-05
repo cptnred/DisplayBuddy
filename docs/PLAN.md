@@ -204,3 +204,100 @@ Autosave (store): per-note debounce 500 ms keyed by note id; pending saves are f
 * Rust: `cargo test` (storage with `tempfile`, merge/sanitize, placement math, monitor checks).
 * Lint: `cargo clippy --all-targets -- -D warnings`; `npm run build` (tsc strict).
 * Windows cross-check: `cargo xwin clippy --target x86_64-pc-windows-msvc`.
+
+---
+
+# v2 – Erweiterungen (Vertrag)
+
+User decisions (2026-11-05): skins = built-ins + imported image **and Lottie**; reminders are
+**attached to notes** (date + time, optional repeat); due reaction = **buddy animation + badge,
+Windows toast, sound**; shortcut bar under the notes with two tabs: **„Programme & Ordner“**
+(drag & drop + „+“ with file/folder picker) and **„Lesezeichen“** (web links → default browser).
+Plus: flush on Windows logoff/shutdown, search over all notes.
+
+## 10. New versions / dependencies
+
+| Package | Version | Why |
+|---|---|---|
+| tauri-plugin-notification | 2.8.0 (Rust-side only) | reminder toast |
+| tauri-plugin-dialog | 2.8.4 (Rust-side only) | file/folder picker for shortcuts + skin import |
+| tauri-plugin-opener | 2.7.2 (Rust-side only) | open files/folders/programs/URLs |
+| chrono 0.4.45 | Rust | local-time reminder math (repeat, DST) |
+| base64 0.22, png 0.18 (Windows) | Rust | data URLs for skins/icons; HICON → PNG |
+| windows-sys 0.59 (+Shell, Gdi, Shutdown …) | Rust, Windows | shell icons, WM_QUERYENDSESSION |
+| lottie-web 5.13.0 | npm, buddy window only (dynamic import of `lottie-web/build/player/lottie_light`, no eval, no worker) | Lottie skins |
+
+No plugin JS packages and no plugin permissions in capabilities: everything goes through our own commands (D-07 continues).
+
+## 11. Data, commands, events (v2)
+
+Types: `src/types.ts` (Reminder, ShortcutsData, SkinInfo …) ⇄ `src-tauri/src/model.rs`.
+New settings: `buddy.skin` ("smiley" | "cat" | "robot" | "ghost" | <uuid>), `reminderNotification`,
+`reminderSound`, `shortcutBarCollapsed`, `shortcutBarTab` ("items" | "bookmarks").
+
+Files (app data dir): `reminders.json` (`{schemaVersion, reminders: Reminder[]}`),
+`shortcuts.json` (`ShortcutsData`), `skins/index.json` (`SkinInfo[]`) + `skins/<uuid>.<ext>`.
+All written with `storage::write_json_atomic`, read with `storage::read_json` (corrupt → quarantine).
+Reminders are stored **separately from notes** so a note autosave can never overwrite reminder state.
+
+| Command | Args (Rust) | Returns | Notes |
+|---|---|---|---|
+| `list_reminders` | – | `Vec<Reminder>` | |
+| `set_reminder` | `note_id, at: Option<String>, repeat` | `Option<Reminder>` | `at` RFC 3339; `None` removes. Note must exist. State → scheduled. Emits `reminders-changed`. |
+| `ack_reminder` | `note_id` | `Option<Reminder>` | none → state done; repeating → next occurrence after now (local time), scheduled |
+| `snooze_reminder` | `note_id, minutes` | `Reminder` | at = now + minutes (1..=1440), scheduled |
+| `open_note` | `note_id` | `()` | show notes window, emit `open-note {noteId}` |
+| `list_shortcuts` | – | `ShortcutsData` | |
+| `pick_shortcuts` | `folder: bool` | `ShortcutsData` | native dialog (multi-file or one folder), adds to `items` |
+| `add_bookmark` | `name, url` | `ShortcutsData` | http/https only; empty name → host |
+| `update_shortcut` | `id, name, target: Option<String>` | `ShortcutsData` | rename; target change only for bookmarks (validated) |
+| `remove_shortcut` | `id` | `ShortcutsData` | |
+| `reorder_shortcuts` | `list, ids` | `ShortcutsData` | same semantics as save_order (unknown ids dropped, missing appended) |
+| `open_shortcut` | `id` | `()` | path → shell open; url → default browser. Missing path → Err("not found: …") |
+| `shortcut_icon` | `id` | `Option<String>` | Windows: PNG data URL of the shell icon (cached); else None |
+| `list_skins` | – | `Vec<SkinInfo>` | |
+| `import_skin` | – | `Option<SkinInfo>` | dialog; png/svg/gif/webp/json ≤ 5 MB, validated; emits `skins-changed` |
+| `delete_skin` | `id` | `()` | if active → `buddy.skin = "smiley"` (+ settings-changed) |
+| `load_skin` | `id` | `SkinData` | image → data URL, lottie → JSON text |
+
+Every changing shortcut command emits `shortcuts-changed`; skins `skins-changed`; reminders `reminders-changed`.
+`delete_note` also removes the note's reminder.
+
+Events: `reminders-changed` (Reminder[]), `open-note` ({noteId}), `shortcuts-changed` (ShortcutsData),
+`shortcut-drag` ({state: enter|leave|drop}, OS drag of files over the notes window), `skins-changed` (SkinInfo[]).
+
+Capabilities: buddy += list_reminders, open_note, load_skin · notes += reminders (list/set/ack/snooze) +
+all shortcut commands · settings += list/import/delete/load skin.
+
+## 12. Behaviour
+
+**Scheduler (Rust, `reminders.rs`)**: own thread, wakes at the earliest `at` (max 30 s sleep, condvar-woken
+on change). scheduled & at ≤ now → state due, firedAt = now, emit, then (settings) toast
+„Erinnerung: <Titel>“ / first ~100 chars of the note text, and sound (toast sound, or `MessageBeep`
+when the toast is off). Missed while app was closed → fires once at startup. Repeat math in local
+time (chrono `Local`): daily +1 day, weekdays next Mon–Fri, weekly +7 days, monthly same day
+(clamped to month end), always the first occurrence strictly after now.
+
+**Shutdown (Windows, `shutdown.rs`)**: subclass the buddy HWND. `WM_QUERYENDSESSION` →
+`ShutdownBlockReasonCreate("Notizen werden gespeichert …")`, start the flush handshake
+(emit `flush-request`, persist geometry), return TRUE. `WM_ENDSESSION(TRUE)` → pump messages
+(PeekMessage/Dispatch) until `flush_done` or 3 s, `ShutdownBlockReasonDestroy`, then default proc.
+
+**Drag & drop**: Tauri's native file drop stays enabled on the notes window (HTML5 DnD of files is
+therefore not available in the webview). Rust handles `WindowEvent::DragDrop` for `notes`:
+Enter/Leave → `shortcut-drag`; Drop → add paths to `items` (kind: dir → folder; exe/lnk/bat/cmd/
+msi/appref-ms/url/ps1 → program; else file; name = file stem; duplicates by target ignored; max 100).
+Reordering in the bar is pointer-based (no HTML5 DnD).
+
+**Buddy**: built-in skins share the smiley's behaviour (bob, blink, hover, hop, quiet mode,
+reduced motion, `faceColor` as primary colour). Image skins: `<img>` with the same CSS motion on a
+wrapper. Lottie: `lottie_light`, SVG renderer, loop; paused on frame 0 in quiet mode / reduced
+motion; optional markers `idle`/`hover`/`click`/`alert` are played if present. Any due reminder →
+alert: wiggle (transform only, reduced motion → none) + bell badge with count; click → `open_note`
+of the oldest due reminder (otherwise toggle as before).
+
+**Notes window**: search (Strg+F / Lupe): diacritic- and case-insensitive AND-search over title + text,
+results with snippet, Enter/click jumps to the note. Reminder UI per note: bell in the card header →
+popover (Datum, Uhrzeit, Wiederholung, Speichern/Entfernen); due banner on the active note:
+„Erledigt“, „10 Min. später“, „1 Std. später“. `open-note` selects the note (flushing the previous one).
+Shortcut bar (`footer` slot of NotesApp, component in `src/windows/notes/shortcuts/`).

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-reorder-shortcuts"
+description = "Enables the reorder_shortcuts command without any pre-configured scope."
+commands.allow = ["reorder_shortcuts"]
+
+[[permission]]
+identifier = "deny-reorder-shortcuts"
+description = "Denies the reorder_shortcuts command without any pre-configured scope."
+commands.deny = ["reorder_shortcuts"]

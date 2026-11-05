@@ -36,8 +36,14 @@ export interface Note {
 export type EyeStyle = "round" | "lines" | "hearts";
 export type MouthStyle = "smile" | "wide" | "neutral";
 
+/** Built-in skins; any other value is the id (uuid) of an imported custom skin. */
+export const BUILTIN_SKINS = ["smiley", "cat", "robot", "ghost"] as const;
+export type BuiltinSkin = (typeof BUILTIN_SKINS)[number];
+
 export interface BuddyConfig {
-  /** CSS hex color, e.g. "#FFD54A". */
+  /** "smiley" | "cat" | "robot" | "ghost" | <uuid of an imported skin>. */
+  skin: string;
+  /** CSS hex color, e.g. "#FFD54A". Primary colour of built-in skins. */
   faceColor: string;
   eyeStyle: EyeStyle;
   mouthStyle: MouthStyle;
@@ -81,9 +87,18 @@ export interface Settings {
   globalShortcut: boolean;
   /** Experimental: clicks on the transparent corners of the buddy pass through. Default false. */
   clickThrough: boolean;
+  /** Reminder: show a Windows toast notification. */
+  reminderNotification: boolean;
+  /** Reminder: play a sound. */
+  reminderSound: boolean;
+  /** Shortcut bar under the notes collapsed. */
+  shortcutBarCollapsed: boolean;
+  /** Active tab of the shortcut bar. */
+  shortcutBarTab: ShortcutList;
 }
 
 export const DEFAULT_BUDDY: BuddyConfig = {
+  skin: "smiley",
   faceColor: "#FFD54A",
   eyeStyle: "round",
   mouthStyle: "smile",
@@ -104,7 +119,78 @@ export const DEFAULT_SETTINGS: Settings = {
   hideNotesOnBlur: false,
   globalShortcut: true,
   clickThrough: false,
+  reminderNotification: true,
+  reminderSound: true,
+  shortcutBarCollapsed: false,
+  shortcutBarTab: "items",
 };
+
+// ---- v2: reminders -----------------------------------------------------------
+
+export type ReminderRepeat = "none" | "daily" | "weekdays" | "weekly" | "monthly";
+/** scheduled = waiting; due = fired, not yet acknowledged; done = acknowledged (non-repeating). */
+export type ReminderState = "scheduled" | "due" | "done";
+
+export interface Reminder {
+  noteId: string;
+  /** Next/last fire time, RFC 3339 with offset (e.g. "2026-11-05T14:30:00+01:00"). */
+  at: string;
+  repeat: ReminderRepeat;
+  state: ReminderState;
+  /** When it last fired (RFC 3339) or null. */
+  firedAt: string | null;
+}
+
+export const REMINDER_REPEAT_LABELS: Record<ReminderRepeat, string> = {
+  none: "Einmalig",
+  daily: "Täglich",
+  weekdays: "Werktags (Mo–Fr)",
+  weekly: "Wöchentlich",
+  monthly: "Monatlich",
+};
+
+// ---- v2: shortcut bar ----------------------------------------------------------
+
+export type ShortcutList = "items" | "bookmarks";
+export type ShortcutKind = "file" | "folder" | "program" | "url";
+
+export interface Shortcut {
+  /** uuid v4 */
+  id: string;
+  kind: ShortcutKind;
+  /** Display name (editable). */
+  name: string;
+  /** Absolute path (file/folder/program) or http(s) URL (url). */
+  target: string;
+}
+
+export interface ShortcutsData {
+  schemaVersion: number;
+  /** Files, programs (.exe/.lnk/.bat …), folders – tab „Programme & Ordner“. */
+  items: Shortcut[];
+  /** Web links – tab „Lesezeichen“. */
+  bookmarks: Shortcut[];
+}
+
+// ---- v2: skins ---------------------------------------------------------------------
+
+export type SkinKind = "image" | "lottie";
+
+export interface SkinInfo {
+  /** uuid v4 (file name in skins/) */
+  id: string;
+  /** Display name (from the imported file name). */
+  name: string;
+  kind: SkinKind;
+  /** image/png, image/svg+xml, image/gif, image/webp, application/json (lottie) */
+  mime: string;
+}
+
+export interface SkinData {
+  info: SkinInfo;
+  /** image: data URL; lottie: the animation JSON as text. */
+  data: string;
+}
 
 /** Event names (Rust <-> windows). */
 export const EVENTS = {
@@ -118,4 +204,14 @@ export const EVENTS = {
   noteCreateRequest: "note-create-request",
   /** payload: none. Rust -> notes: app quits; flush all pending saves then call flush_done. */
   flushRequest: "flush-request",
+  /** payload: Reminder[] (all). Rust -> all, whenever any reminder changes (set/fire/ack/snooze). */
+  remindersChanged: "reminders-changed",
+  /** payload: { noteId }. Rust -> notes: show this note (notes window is shown first). */
+  openNote: "open-note",
+  /** payload: ShortcutsData. Rust -> all after any shortcut change. */
+  shortcutsChanged: "shortcuts-changed",
+  /** payload: { state: "enter" | "leave" | "drop" }. Rust -> notes: OS file drag over notes window. */
+  shortcutDrag: "shortcut-drag",
+  /** payload: SkinInfo[]. Rust -> all after import/delete. */
+  skinsChanged: "skins-changed",
 } as const;

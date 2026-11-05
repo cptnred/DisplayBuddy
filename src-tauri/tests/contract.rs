@@ -62,6 +62,24 @@ fn plan_commands() -> BTreeMap<&'static str, Vec<&'static str>> {
         ("show_buddy_menu", vec![]),
         ("flush_done", vec![]),
         ("quit_app", vec![]),
+        // v2 (Rust parameter names; JS uses camelCase, e.g. noteId)
+        ("list_reminders", vec![]),
+        ("set_reminder", vec!["note_id", "at", "repeat"]),
+        ("ack_reminder", vec!["note_id"]),
+        ("snooze_reminder", vec!["note_id", "minutes"]),
+        ("open_note", vec!["note_id"]),
+        ("list_shortcuts", vec![]),
+        ("pick_shortcuts", vec!["folder"]),
+        ("add_bookmark", vec!["name", "url"]),
+        ("update_shortcut", vec!["id", "name", "target"]),
+        ("remove_shortcut", vec!["id"]),
+        ("reorder_shortcuts", vec!["list", "ids"]),
+        ("open_shortcut", vec!["id"]),
+        ("shortcut_icon", vec!["id"]),
+        ("list_skins", vec![]),
+        ("import_skin", vec![]),
+        ("delete_skin", vec!["id"]),
+        ("load_skin", vec!["id"]),
     ])
 }
 
@@ -362,7 +380,7 @@ fn default_settings_match_types_ts_default_settings() {
     assert_json_eq(&actual, &expected, "DEFAULT_SETTINGS");
     // sanity: the parser really saw the nested object and all top-level keys
     assert_eq!(expected["buddy"]["faceColor"], "#FFD54A");
-    assert_eq!(keys(&expected).len(), 10);
+    assert_eq!(keys(&expected).len(), 14);
 }
 
 #[test]
@@ -497,7 +515,10 @@ fn no_direct_app_state_access_outside_state_rs() {
         }
     }
     let mut files = Vec::new();
-    walk(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut files);
+    walk(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+        &mut files,
+    );
     let offenders: Vec<String> = files
         .iter()
         .filter(|p| !p.ends_with("state.rs"))
@@ -507,5 +528,8 @@ fn no_direct_app_state_access_outside_state_rs() {
         })
         .map(|p| p.display().to_string())
         .collect();
-    assert!(offenders.is_empty(), "use state::try_app_state instead in: {offenders:?}");
+    assert!(
+        offenders.is_empty(),
+        "use state::try_app_state instead in: {offenders:?}"
+    );
 }

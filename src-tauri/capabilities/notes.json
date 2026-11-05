@@ -16,6 +16,18 @@
     "allow-load-settings",
     "allow-save-settings",
     "allow-hide-notes",
-    "allow-flush-done"
+    "allow-flush-done",
+    "allow-list-reminders",
+    "allow-set-reminder",
+    "allow-ack-reminder",
+    "allow-snooze-reminder",
+    "allow-list-shortcuts",
+    "allow-pick-shortcuts",
+    "allow-add-bookmark",
+    "allow-update-shortcut",
+    "allow-remove-shortcut",
+    "allow-reorder-shortcuts",
+    "allow-open-shortcut",
+    "allow-shortcut-icon"
   ]
 }

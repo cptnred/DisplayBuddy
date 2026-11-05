@@ -505,6 +505,7 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
                 log::warn!("hide notes on close failed: {e}");
             }
         }
+        (NOTES, WindowEvent::DragDrop(ev)) => crate::shortcuts::on_drag_drop(app, ev),
         (NOTES, WindowEvent::Focused(false)) => {
             let Some(app_state) = state::try_app_state(app) else {
                 return;

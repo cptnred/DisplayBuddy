@@ -17,6 +17,24 @@ const COMMANDS: &[&str] = &[
     "show_buddy_menu",
     "flush_done",
     "quit_app",
+    // v2
+    "list_reminders",
+    "set_reminder",
+    "ack_reminder",
+    "snooze_reminder",
+    "open_note",
+    "list_shortcuts",
+    "pick_shortcuts",
+    "add_bookmark",
+    "update_shortcut",
+    "remove_shortcut",
+    "reorder_shortcuts",
+    "open_shortcut",
+    "shortcut_icon",
+    "list_skins",
+    "import_skin",
+    "delete_skin",
+    "load_skin",
 ];
 
 fn main() {

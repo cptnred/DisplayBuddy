@@ -7,7 +7,11 @@ pub mod crash;
 pub mod debounce;
 pub mod model;
 pub mod quit;
+pub mod reminders;
 pub mod shortcut;
+pub mod shortcuts;
+pub mod shutdown;
+pub mod skins;
 pub mod state;
 pub mod storage;
 pub mod tray;
@@ -81,6 +85,17 @@ fn setup_inner(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         log::error!("could not set up buddy window: {e}");
     }
     clickthrough::start(app);
+    // v2 modules (each manages its own state; failures are logged, never fatal)
+    if let Err(e) = reminders::init(app) {
+        log::error!("reminders init failed: {e}");
+    }
+    if let Err(e) = shortcuts::init(app) {
+        log::error!("shortcuts init failed: {e}");
+    }
+    if let Err(e) = skins::init(app) {
+        log::error!("skins init failed: {e}");
+    }
+    shutdown::install(app);
     if settings.global_shortcut {
         shortcut::apply(app, true);
     }
@@ -110,6 +125,9 @@ pub fn run() {
             Some(vec![AUTOSTART_ARG]),
         ))
         .plugin(shortcut::plugin())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| setup(app.handle()))
         .on_window_event(windows::on_window_event)
         .on_menu_event(on_menu_event)
@@ -130,6 +148,23 @@ pub fn run() {
             commands::windows::show_buddy_menu,
             commands::windows::flush_done,
             commands::windows::quit_app,
+            commands::reminders::list_reminders,
+            commands::reminders::set_reminder,
+            commands::reminders::ack_reminder,
+            commands::reminders::snooze_reminder,
+            commands::reminders::open_note,
+            commands::shortcuts::list_shortcuts,
+            commands::shortcuts::pick_shortcuts,
+            commands::shortcuts::add_bookmark,
+            commands::shortcuts::update_shortcut,
+            commands::shortcuts::remove_shortcut,
+            commands::shortcuts::reorder_shortcuts,
+            commands::shortcuts::open_shortcut,
+            commands::shortcuts::shortcut_icon,
+            commands::skins::list_skins,
+            commands::skins::import_skin,
+            commands::skins::delete_skin,
+            commands::skins::load_skin,
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| crash::fatal("Die App konnte nicht gestartet werden", &e));
