@@ -1,6 +1,137 @@
+//! Display Buddy – Tauri backend.
+
+pub mod autostart;
+pub mod clickthrough;
+pub mod commands;
+pub mod debounce;
+pub mod model;
+pub mod quit;
+pub mod shortcut;
+pub mod state;
+pub mod storage;
+pub mod tray;
+pub mod windows;
+
+use tauri::{AppHandle, Manager, RunEvent};
+use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
+
+use crate::state::AppState;
+use crate::storage::Storage;
+
+pub const AUTOSTART_ARG: &str = "--autostart";
+
+fn log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    // Stdout for `tauri dev`, plus a file in the OS log dir
+    // (%LOCALAPPDATA%\de.displaybuddy.desktop\logs) because release builds have no console.
+    tauri_plugin_log::Builder::new()
+        .clear_targets()
+        .targets([
+            Target::new(TargetKind::Stdout),
+            Target::new(TargetKind::LogDir { file_name: None }),
+        ])
+        .level(if cfg!(debug_assertions) {
+            log::LevelFilter::Debug
+        } else {
+            log::LevelFilter::Info
+        })
+        // keep noisy dependencies quiet
+        .level_for("tao", log::LevelFilter::Warn)
+        .level_for("wry", log::LevelFilter::Warn)
+        .max_file_size(1_000_000)
+        .rotation_strategy(RotationStrategy::KeepSome(3))
+        .build()
+}
+
+fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let root = app.path().app_data_dir()?;
+    log::info!("data dir: {}", root.display());
+    if std::env::args().any(|a| a == AUTOSTART_ARG) {
+        log::info!("started by autostart");
+    }
+
+    let storage = Storage::new(root);
+    let settings = storage.load_settings().unwrap_or_else(|e| {
+        log::warn!("could not load settings, using defaults: {e}");
+        Default::default()
+    });
+    app.manage(AppState::new(storage, settings));
+
+    // Tray first (so the autostart check item exists), then mirror the real autostart state.
+    let initial = state::current_settings(app);
+    tray::create(app, initial.autostart)?;
+    autostart::sync_at_startup(app);
+    let settings = state::current_settings(app);
+
+    windows::init_buddy_move_persistence(app);
+    if let Err(e) = windows::apply_notes_size(app, &settings) {
+        log::warn!("could not restore notes size: {e}");
+    }
+    if let Err(e) = windows::setup_buddy(app, &settings) {
+        log::error!("could not set up buddy window: {e}");
+    }
+    clickthrough::start(app);
+    if settings.global_shortcut {
+        shortcut::apply(app, true);
+    }
+    Ok(())
+}
+
+fn on_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
+    let id = event.id().as_ref();
+    if !windows::handle_menu_event(app, id) && !tray::handle_menu_event(app, id) {
+        log::debug!("unhandled menu id {id}");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    let app = tauri::Builder::default()
+        // Must be the first plugin: a second launch only shows the notes of the running instance.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Err(e) = windows::show_notes(app) {
+                log::warn!("show notes for second instance failed: {e}");
+            }
+        }))
+        .plugin(log_plugin())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec![AUTOSTART_ARG]),
+        ))
+        .plugin(shortcut::plugin())
+        .setup(|app| setup(app.handle()))
+        .on_window_event(windows::on_window_event)
+        .on_menu_event(on_menu_event)
+        .invoke_handler(tauri::generate_handler![
+            commands::notes::list_notes,
+            commands::notes::load_note,
+            commands::notes::save_note,
+            commands::notes::delete_note,
+            commands::notes::save_order,
+            commands::settings::load_settings,
+            commands::settings::save_settings,
+            commands::settings::get_autostart,
+            commands::settings::set_autostart,
+            commands::windows::toggle_notes,
+            commands::windows::show_notes,
+            commands::windows::hide_notes,
+            commands::windows::open_settings,
+            commands::windows::show_buddy_menu,
+            commands::windows::flush_done,
+            commands::windows::quit_app,
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|_app, event| {
+        // Windows are only ever hidden, so an exit request without an explicit code
+        // (e.g. the last *visible* window was closed) must not end the app. Explicit
+        // `app.exit(code)` from the quit flow carries a code and passes through.
+        if let RunEvent::ExitRequested {
+            code: None, api, ..
+        } = event
+        {
+            api.prevent_exit();
+        }
+    });
 }
