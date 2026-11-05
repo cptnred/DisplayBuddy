@@ -28,6 +28,12 @@ tauri-plugin-log = "2.10.1"
 # Windows: rewrite the autostart Run value with a quoted exe path (see src/autostart.rs).
 [target.'cfg(windows)'.dependencies]
 windows-registry = "0.6"
+windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging"] }
+
+[features]
+# Diagnostic build with a console window (all log output + panics visible):
+#   npm run tauri build -- --target x86_64-pc-windows-gnu --no-bundle --features console
+console = []
 
 [dev-dependencies]
 tempfile = "3"

@@ -3,6 +3,7 @@
 pub mod autostart;
 pub mod clickthrough;
 pub mod commands;
+pub mod crash;
 pub mod debounce;
 pub mod model;
 pub mod quit;
@@ -44,6 +45,15 @@ fn log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 }
 
 fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let result = setup_inner(app);
+    match &result {
+        Ok(()) => crash::record("setup ok"),
+        Err(e) => crash::record(&format!("setup failed: {e}")),
+    }
+    result
+}
+
+fn setup_inner(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let root = app.path().app_data_dir()?;
     log::info!("data dir: {}", root.display());
     if std::env::args().any(|a| a == AUTOSTART_ARG) {
@@ -86,6 +96,7 @@ fn on_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    crash::install();
     let app = tauri::Builder::default()
         // Must be the first plugin: a second launch only shows the notes of the running instance.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -121,7 +132,8 @@ pub fn run() {
             commands::windows::quit_app,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building tauri application");
+        .unwrap_or_else(|e| crash::fatal("Die App konnte nicht gestartet werden", &e));
+    crash::record("tauri app built");
 
     app.run(|app, event| {
         // Last chance on any exit path (incl. Windows logoff/shutdown, where tao exits
