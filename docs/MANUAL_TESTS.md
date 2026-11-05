@@ -578,6 +578,66 @@ Alle Kürzel auf **deutscher Tastatur** prüfen.
 
 ---
 
+## 21. v2 – Speichern beim Abmelden/Herunterfahren
+
+- [ ] **21.1 Abmelden während des Tippens** ⚠️ nur unter Windows prüfbar
+  - Schritte: In einer Notiz tippen und **sofort** (< 0,5 s) Start → Abmelden (bzw. Herunterfahren).
+  - Erwartet: Windows zeigt ggf. kurz „Display Buddy – Notizen werden gespeichert …“; nach erneutem
+    Anmelden ist der zuletzt getippte Text vorhanden. `diagnostics.log`/Log ohne Fehler.
+- [ ] **21.2 Herunterfahren abbrechen** ⚠️ nur unter Windows prüfbar
+  - Schritte: Herunterfahren auslösen, im Windows-Dialog „Abbrechen“.
+  - Erwartet: App läuft normal weiter, kein hängender Hinweis.
+
+## 22. v2 – Erinnerungen
+
+- [ ] **22.1 Erinnerung setzen** 🧪 (unter Linux durchgespielt)
+  - Glocke in der Notizkarte → Datum, Uhrzeit, Wiederholung → „Speichern“. Glocke wird blau,
+    Seitenkarten zeigen Glocke + Zeit. Uhrzeitfeld zeigt unter deutschem Windows 24-h-Format.
+- [ ] **22.2 Fälligkeit** ⚠️ Toast/Ton nur unter Windows prüfbar
+  - Erwartet: Zur Zeit wackelt der Buddy, rotes Glocken-Badge mit Anzahl, Windows-Benachrichtigung
+    „Erinnerung: <Titel>“ mit Text (im Infocenter sichtbar), Ton. Ruhiger Modus: kein Wackeln, nur Badge.
+  - Toast aus + Ton an → Systemton „Sternchen“. Beides aus → nur Buddy-Reaktion.
+- [ ] **22.3 Klick auf den Buddy bei Fälligkeit** 🧪 (unter Linux durchgespielt)
+  - Erwartet: Notizfenster öffnet genau diese Notiz mit Banner „Erinnerung fällig – …“ und
+    „Erledigt“ / „10 Min. später“ / „1 Std. später“. „Erledigt“ entfernt Badge und Banner.
+- [ ] **22.4 Wiederholungen** ⚠️ nur unter Windows prüfbar (Logik unit-getestet)
+  - täglich/werktags/wöchentlich/monatlich: nach „Erledigt“ wird der nächste Termin geplant.
+    Monatlich am 31. → im Februar am 28./29.; danach bleibt der Tag auf dem 28./29. (bekannte Einschränkung).
+- [ ] **22.5 Verpasste Erinnerung** 🧪 (unter Linux durchgespielt)
+  - App beenden, Zeitpunkt verstreicht, App starten → Erinnerung feuert einmal beim Start.
+- [ ] **22.6 Notiz löschen** – Erinnerung verschwindet mit (Badge weg).
+
+## 23. v2 – Suche
+
+- [ ] **23.1** Strg+F (auch im Editor) oder Lupe → Suchfeld; „müll“ findet „Müll“/„MULL“; mehrere
+  Wörter = alle müssen vorkommen; Treffer mit markiertem Ausschnitt; ↑/↓ + Enter springt zur Notiz;
+  Esc schließt nur die Suche, nicht das Fenster. 🧪 (unter Linux durchgespielt)
+
+## 24. v2 – Shortcut-Leiste
+
+- [ ] **24.1 Drag & Drop aus dem Explorer** ⚠️ nur unter Windows prüfbar
+  - Dateien, `.exe`, `.lnk` (Startmenü-Verknüpfungen) und Ordner auf das Notizfenster ziehen.
+  - Erwartet: Leiste wird hervorgehoben („Hier ablegen …“), nach dem Ablegen erscheinen Kacheln mit
+    **echtem Windows-Symbol** im Reiter „Programme & Ordner“; Duplikate werden ignoriert.
+- [ ] **24.2 „+“ → „Dateien oder Programme …“ / „Ordner …“** ⚠️ nur unter Windows prüfbar (nativer Dialog)
+- [ ] **24.3 Öffnen** ⚠️ nur unter Windows prüfbar: Klick startet Programm / öffnet Ordner im Explorer /
+  Datei mit Standardprogramm. Ziel umbenannt/gelöscht → „Ziel nicht gefunden“.
+- [ ] **24.4 Lesezeichen** 🧪 (Anlegen unter Linux durchgespielt): Reiter „Lesezeichen“ → „+“ → Name +
+  URL (`wetter.com` → `https://wetter.com/`) → Kachel; Klick öffnet den **Standardbrowser** (⚠️ Windows).
+- [ ] **24.5 Kontextmenü**: Rechtsklick → Umbenennen, Nach links/rechts, Entfernen; Ziehen ordnet um;
+  F2 / Entf per Tastatur. Reihenfolge übersteht Neustart.
+- [ ] **24.6 Einklappen**: Pfeil rechts oben; Zustand und Reiter bleiben nach Neustart erhalten.
+
+## 25. v2 – Skins
+
+- [ ] **25.1 Eingebaute Skins** 🧪 (unter Linux gesehen): Einstellungen → Figur: Smiley, Katze, Roboter,
+  Geist; Buddy wechselt sofort; Farbe/Augen/Mund nur dort, wo der Skin sie unterstützt.
+- [ ] **25.2 Bild importieren** 🧪 (PNG unter Linux importiert): PNG/SVG/GIF/WebP ≤ 5 MB; erscheint als
+  Kachel, wird aktiv, bewegt sich (Wippen/Hüpfen); SVG mit `<script>` wird abgelehnt.
+- [ ] **25.3 Lottie importieren** 🧪 (unter Linux importiert und abgespielt): `.json` von LottieFiles;
+  läuft im Buddy; Ruhiger Modus → steht still. ⚠️ CPU-Last im Task-Manager prüfen (große Animationen).
+- [ ] **25.4 Skin löschen** (×): Bestätigung; war er aktiv → Buddy wird wieder Smiley.
+
 ## Anhang: In der Linux-Umgebung automatisiert geprüft
 
 Diese Punkte sind durch Tests abgedeckt und müssen unter Windows nur stichprobenartig im
