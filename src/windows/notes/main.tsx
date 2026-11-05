@@ -1,13 +1,12 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "../../styles/base.css";
-
-function Placeholder() {
-  return <div>notes</div>;
-}
+import { NotesApp } from "./NotesApp";
+// TEMPORARY: replaced by the TipTap NoteEditor (src/components/editor) during integration.
+import { FallbackEditor } from "./FallbackEditor";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <Placeholder />
+    <NotesApp Editor={FallbackEditor} />
   </React.StrictMode>,
 );

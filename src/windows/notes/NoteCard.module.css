@@ -1,0 +1,110 @@
+.face {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  color: #1f2328;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 6px 14px;
+  flex: none;
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  margin-left: -6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  user-select: text;
+}
+.title::placeholder {
+  color: rgba(31, 35, 40, 0.38);
+  font-weight: 500;
+}
+.title:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+.title:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.55);
+}
+.title:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
+}
+
+.colors {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+.swatch {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+.swatch:hover {
+  transform: scale(1.15);
+}
+.swatchChecked {
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 3.5px rgba(15, 23, 42, 0.55);
+}
+
+.editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: text;
+}
+
+.preview {
+  padding: 14px 16px;
+  overflow: hidden;
+}
+.previewTitle {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.untitled {
+  color: rgba(31, 35, 40, 0.45);
+  font-style: italic;
+  font-weight: 500;
+}
+.previewText {
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: rgba(31, 35, 40, 0.8);
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swatch {
+    transition: none;
+  }
+}

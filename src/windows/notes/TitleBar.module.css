@@ -1,0 +1,76 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 6px 0 8px;
+  flex: none;
+}
+
+.drag {
+  flex: 1;
+  align-self: stretch;
+}
+
+.icon {
+  display: block;
+  flex: none;
+}
+
+.newButton,
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 26px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #3d444d;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: transform 100ms ease;
+}
+.newButton {
+  padding: 0 10px 0 7px;
+  font-weight: 600;
+  background: rgba(15, 23, 42, 0.06);
+}
+.iconButton {
+  width: 28px;
+}
+.newButton:hover,
+.iconButton:hover {
+  background: rgba(15, 23, 42, 0.09);
+  color: #1f2328;
+}
+.newButton:active,
+.iconButton:active {
+  transform: scale(0.94);
+}
+.iconButton:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: transparent;
+}
+.pressed {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.12);
+}
+.pressed:hover {
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.18);
+}
+.close:hover {
+  background: #e5484d;
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .newButton,
+  .iconButton {
+    transition: none;
+  }
+}
