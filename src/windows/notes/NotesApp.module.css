@@ -1,0 +1,100 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: linear-gradient(180deg, #f7f8fa 0%, #eef0f4 100%);
+  overflow: hidden;
+}
+
+.main {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.banner {
+  margin: 0 10px 2px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #fff1f0;
+  border: 1px solid #ffc9c5;
+  color: #a4161a;
+  font-size: 12px;
+  flex: none;
+  animation: slide 180ms ease-out;
+}
+
+.loading {
+  position: absolute;
+  inset: 10px max(40px, 11%) 40px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.6);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 16px 32px 40px;
+  text-align: center;
+}
+.emptyIcon {
+  margin-bottom: 10px;
+}
+.emptyTitle {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.emptyText {
+  margin: 0 0 16px;
+  max-width: 260px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #57606a;
+}
+.emptyButton {
+  height: 32px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 9px;
+  background: #2563eb;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px -4px rgba(37, 99, 235, 0.55);
+  transition: transform 100ms ease;
+}
+.emptyButton:hover {
+  background: #1d4ed8;
+}
+.emptyButton:active {
+  transform: scale(0.96);
+}
+
+@keyframes slide {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner,
+  .loading,
+  .emptyButton {
+    animation: none;
+    transition: none;
+  }
+}

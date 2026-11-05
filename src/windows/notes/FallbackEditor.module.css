@@ -1,0 +1,17 @@
+.textarea {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  padding: 4px 14px 14px;
+  border: 0;
+  resize: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  outline: none;
+}
+.textarea::placeholder {
+  color: rgba(31, 35, 40, 0.38);
+}
