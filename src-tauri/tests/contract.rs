@@ -121,7 +121,11 @@ fn kebab(command: &str) -> String {
 fn build_rs_commands_match_plan_without_duplicates() {
     let cmds = build_rs_commands();
     let unique: BTreeSet<&String> = cmds.iter().collect();
-    assert_eq!(unique.len(), cmds.len(), "duplicate entry in build.rs COMMANDS");
+    assert_eq!(
+        unique.len(),
+        cmds.len(),
+        "duplicate entry in build.rs COMMANDS"
+    );
     assert_eq!(sorted(cmds), sorted(plan_commands().into_keys()));
 }
 
@@ -132,7 +136,11 @@ fn generate_handler_matches_build_rs() {
         .map(|p| last_segment(p).to_string())
         .collect();
     let unique: BTreeSet<&String> = handlers.iter().collect();
-    assert_eq!(unique.len(), handlers.len(), "duplicate entry in generate_handler!");
+    assert_eq!(
+        unique.len(),
+        handlers.len(),
+        "duplicate entry in generate_handler!"
+    );
     assert_eq!(sorted(handlers), sorted(build_rs_commands()));
 }
 
@@ -169,7 +177,10 @@ fn command_functions_exist_with_plan_argument_names() {
             .filter(|p| !p.contains("State<") && !p.contains("AppHandle") && !p.contains("Window"))
             .map(|p| p.split(':').next().unwrap().trim())
             .collect();
-        assert_eq!(args, plan[name], "{path}: argument names differ from PLAN §5");
+        assert_eq!(
+            args, plan[name],
+            "{path}: argument names differ from PLAN §5"
+        );
     }
 }
 
@@ -188,20 +199,34 @@ fn capabilities_only_reference_known_commands() {
         let cap: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap())
             .unwrap_or_else(|e| panic!("{}: invalid JSON: {e}", path.display()));
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
-        assert_eq!(cap["identifier"], name.as_str(), "{name}: identifier ≠ file name");
-        assert_eq!(cap["windows"], json!([name]), "{name}: must target only its own window");
+        assert_eq!(
+            cap["identifier"],
+            name.as_str(),
+            "{name}: identifier ≠ file name"
+        );
+        assert_eq!(
+            cap["windows"],
+            json!([name]),
+            "{name}: must target only its own window"
+        );
         for perm in cap["permissions"].as_array().expect("permissions array") {
             let perm = perm.as_str().expect("permission must be a string");
             if perm.contains(':') {
                 // plugin/core permission: no plugin permissions per D-07
-                assert!(perm.starts_with("core:"), "{name}: unexpected plugin permission {perm}");
+                assert!(
+                    perm.starts_with("core:"),
+                    "{name}: unexpected plugin permission {perm}"
+                );
                 continue;
             }
             let command = perm
                 .strip_prefix("allow-")
                 .unwrap_or_else(|| panic!("{name}: unexpected permission {perm}"))
                 .replace('-', "_");
-            assert!(known.contains(&command), "{name}: {perm} names no command in build.rs");
+            assert!(
+                known.contains(&command),
+                "{name}: {perm} names no command in build.rs"
+            );
             allowed_somewhere.insert(command);
         }
     }
@@ -243,10 +268,17 @@ fn ts_object(ts: &str, name: &str) -> Vec<(String, String)> {
     let body = &body[body.find('{').expect("object literal") + 1..];
     body.lines()
         .map(str::trim)
-        .filter(|l| !l.is_empty() && !l.starts_with("//") && !l.starts_with("/*") && !l.starts_with('*'))
+        .filter(|l| {
+            !l.is_empty() && !l.starts_with("//") && !l.starts_with("/*") && !l.starts_with('*')
+        })
         .map(|l| {
-            let (k, v) = l.split_once(':').unwrap_or_else(|| panic!("cannot parse {l:?}"));
-            (k.trim().to_string(), v.trim().trim_end_matches(',').trim().to_string())
+            let (k, v) = l
+                .split_once(':')
+                .unwrap_or_else(|| panic!("cannot parse {l:?}"));
+            (
+                k.trim().to_string(),
+                v.trim().trim_end_matches(',').trim().to_string(),
+            )
         })
         .collect()
 }
@@ -257,7 +289,10 @@ fn ts_interface_keys(ts: &str, name: &str) -> Vec<String> {
     body.lines()
         .map(str::trim)
         .filter(|l| !l.starts_with("/*") && !l.starts_with('*') && !l.starts_with("//"))
-        .filter_map(|l| l.split_once(':').map(|(k, _)| k.trim().trim_end_matches('?').to_string()))
+        .filter_map(|l| {
+            l.split_once(':')
+                .map(|(k, _)| k.trim().trim_end_matches('?').to_string())
+        })
         .filter(|k| !k.is_empty())
         .collect()
 }
@@ -334,7 +369,10 @@ fn rust_structs_have_exactly_the_ts_interface_keys() {
     let ts = types_ts();
     let settings = serde_json::to_value(Settings::default()).unwrap();
     assert_eq!(keys(&settings), sorted(ts_interface_keys(&ts, "Settings")));
-    assert_eq!(keys(&settings["buddy"]), sorted(ts_interface_keys(&ts, "BuddyConfig")));
+    assert_eq!(
+        keys(&settings["buddy"]),
+        sorted(ts_interface_keys(&ts, "BuddyConfig"))
+    );
 
     let with_options = Settings::default()
         .with_patch(&json!({
@@ -343,8 +381,14 @@ fn rust_structs_have_exactly_the_ts_interface_keys() {
         }))
         .unwrap();
     let v = serde_json::to_value(with_options).unwrap();
-    assert_eq!(keys(&v["buddyPosition"]), sorted(ts_interface_keys(&ts, "WindowPosition")));
-    assert_eq!(keys(&v["notesSize"]), sorted(ts_interface_keys(&ts, "WindowSize")));
+    assert_eq!(
+        keys(&v["buddyPosition"]),
+        sorted(ts_interface_keys(&ts, "WindowPosition"))
+    );
+    assert_eq!(
+        keys(&v["notesSize"]),
+        sorted(ts_interface_keys(&ts, "WindowSize"))
+    );
 
     let note = Note {
         id: "0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f".into(),
@@ -363,7 +407,9 @@ fn rust_structs_have_exactly_the_ts_interface_keys() {
 fn enums_serialise_to_the_ts_union_values() {
     let ts = types_ts();
     let ser = |v: Vec<Value>| -> Vec<String> {
-        v.into_iter().map(|x| x.as_str().unwrap().to_string()).collect()
+        v.into_iter()
+            .map(|x| x.as_str().unwrap().to_string())
+            .collect()
     };
     let colors = [
         NoteColor::Yellow,
@@ -374,20 +420,32 @@ fn enums_serialise_to_the_ts_union_values() {
         NoteColor::Orange,
     ];
     assert_eq!(
-        ser(colors.iter().map(|c| serde_json::to_value(c).unwrap()).collect()),
+        ser(colors
+            .iter()
+            .map(|c| serde_json::to_value(c).unwrap())
+            .collect()),
         ts_union(&ts, "NoteColor")
     );
     let eyes = [EyeStyle::Round, EyeStyle::Lines, EyeStyle::Hearts];
     assert_eq!(
-        ser(eyes.iter().map(|c| serde_json::to_value(c).unwrap()).collect()),
+        ser(eyes
+            .iter()
+            .map(|c| serde_json::to_value(c).unwrap())
+            .collect()),
         ts_union(&ts, "EyeStyle")
     );
     let mouths = [MouthStyle::Smile, MouthStyle::Wide, MouthStyle::Neutral];
     assert_eq!(
-        ser(mouths.iter().map(|c| serde_json::to_value(c).unwrap()).collect()),
+        ser(mouths
+            .iter()
+            .map(|c| serde_json::to_value(c).unwrap())
+            .collect()),
         ts_union(&ts, "MouthStyle")
     );
-    assert_eq!(serde_json::to_value(NoteColor::default()).unwrap(), "yellow");
+    assert_eq!(
+        serde_json::to_value(NoteColor::default()).unwrap(),
+        "yellow"
+    );
 
     // schema versions agree
     assert_eq!(
@@ -405,8 +463,14 @@ fn notes_min_size_matches_tauri_conf() {
     let conf: Value = serde_json::from_str(&read("tauri.conf.json")).unwrap();
     let windows = conf["app"]["windows"].as_array().unwrap();
     let notes = windows.iter().find(|w| w["label"] == "notes").unwrap();
-    assert_eq!(notes["minWidth"].as_f64(), Some(display_buddy_lib::model::NOTES_MIN_WIDTH));
-    assert_eq!(notes["minHeight"].as_f64(), Some(display_buddy_lib::model::NOTES_MIN_HEIGHT));
+    assert_eq!(
+        notes["minWidth"].as_f64(),
+        Some(display_buddy_lib::model::NOTES_MIN_WIDTH)
+    );
+    assert_eq!(
+        notes["minHeight"].as_f64(),
+        Some(display_buddy_lib::model::NOTES_MIN_HEIGHT)
+    );
     let buddy = windows.iter().find(|w| w["label"] == "buddy").unwrap();
     assert_eq!(
         buddy["width"].as_u64(),
