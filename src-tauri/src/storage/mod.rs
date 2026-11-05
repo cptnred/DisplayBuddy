@@ -42,7 +42,10 @@ impl fmt::Display for StorageError {
             Self::NotFound(id) => write!(f, "note not found: {id}"),
             Self::Corrupt(id) => write!(f, "note file is corrupt (moved aside): {id}"),
             Self::NewerVersion(id) => {
-                write!(f, "note {id} was written by a newer app version; not overwritten")
+                write!(
+                    f,
+                    "note {id} was written by a newer app version; not overwritten"
+                )
             }
             Self::Io(e) => write!(f, "i/o error: {e}"),
             Self::Json(e) => write!(f, "json error: {e}"),
@@ -804,9 +807,59 @@ mod tests {
         std::fs::write(&path, future.to_string()).unwrap();
         let mut note: Note = serde_json::from_value(future).unwrap();
         note.schema_version = 1;
-        assert!(matches!(st.save_note(&note), Err(StorageError::NewerVersion(_))));
+        assert!(matches!(
+            st.save_note(&note),
+            Err(StorageError::NewerVersion(_))
+        ));
         let on_disk: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(on_disk["schemaVersion"], 99);
+    }
+
+    /// Same document as the frontend roundtrip test (`src/components/editor/extensions.test.ts`):
+    /// real `editor.getJSON()` output with textStyle color/fontSize marks, a 3-level
+    /// nested task list, emoji, umlauts, quotes and backslashes.
+    const RICH_CONTENT: &str = include_str!("../../../src/test/fixtures/rich-note-content.json");
+
+    #[test]
+    fn rich_tiptap_note_roundtrips_verbatim() {
+        let (_d, s) = setup();
+        let content: Value = serde_json::from_str(RICH_CONTENT).unwrap();
+        let id = new_id();
+        let note = Note {
+            id: id.clone(),
+            title: "Einkauf – Freitag 😀".into(),
+            color: NoteColor::Purple,
+            content: content.clone(),
+            created_at: "2026-11-05T10:00:00.000Z".into(),
+            updated_at: "2026-11-05T10:05:30.123Z".into(),
+            schema_version: 1,
+        };
+        assert_eq!(s.save_note(&note).unwrap(), note);
+
+        // what the frontend gets back is identical (content stored verbatim)
+        assert_eq!(s.load_note(&id).unwrap(), note);
+        assert_eq!(s.list_notes().unwrap(), vec![note.clone()]);
+
+        // file on disk: camelCase keys, UTF-8 (not \u-escaped), same content
+        let raw = fs::read_to_string(s.notes_dir().join(format!("{id}.json"))).unwrap();
+        assert!(raw.contains("vom Bäcker") && raw.contains("😀"));
+        let on_disk: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(on_disk["content"], content);
+        assert_eq!(on_disk["color"], "purple");
+        assert_eq!(on_disk["updatedAt"], "2026-11-05T10:05:30.123Z");
+        let nested = &on_disk["content"]["content"][2]["content"][1]["content"][1]["content"][0];
+        assert_eq!(nested["attrs"]["checked"], true);
+        assert_eq!(
+            on_disk["content"]["content"][1]["content"][0]["marks"][0],
+            json!({"type": "textStyle", "attrs": {"color": "#B8232A", "fontSize": "18px"}})
+        );
+
+        // a second save (autosave of an edit) over the existing file stays loadable
+        let mut edited = note.clone();
+        edited.content["content"][0]["content"][0]["text"] = json!("Einkauf am ");
+        s.save_note(&edited).unwrap();
+        assert_eq!(s.load_note(&id).unwrap(), edited);
+        assert_eq!(index_on_disk(&s), vec![id]);
     }
 }

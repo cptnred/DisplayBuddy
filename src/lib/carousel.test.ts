@@ -185,3 +185,73 @@ describe("indicatorLabel", () => {
     expect(indicatorLabel(0, 0)).toBe("0 / 0");
   });
 });
+
+describe("invariants over many sizes (n = 0..12)", () => {
+  const range = (n: number) => Array.from({ length: n }, (_, i) => i);
+  const sorted = (a: number[]) => [...a].sort((x, y) => x - y);
+
+  it("move is a permutation, keeps the moved item active and is undone by the opposite move", () => {
+    for (let n = 0; n <= 12; n++) {
+      const items = range(n);
+      for (let i = 0; i < n; i++) {
+        for (const d of [-1, 1] as const) {
+          const r = move(items, i, d);
+          expect(sorted(r.items)).toEqual(items);
+          expect(r.items[r.active]).toBe(i);
+          expect(move(r.items, r.active, d === 1 ? -1 : 1).items).toEqual(items);
+        }
+      }
+    }
+  });
+
+  it("n moves in one direction bring the item back to its start (full lap)", () => {
+    for (let n = 2; n <= 12; n++) {
+      let r = { items: range(n), active: 0 };
+      for (let k = 0; k < n; k++) r = move(r.items, r.active, 1);
+      expect(r.items[r.active]).toBe(0);
+      // a lap of swaps is a rotation by one step for the other items, but no item is lost
+      expect(sorted(r.items)).toEqual(range(n));
+    }
+  });
+
+  it("removeAt never loses other items and always returns a valid active index", () => {
+    for (let n = 1; n <= 12; n++) {
+      const items = range(n);
+      for (let i = 0; i < n; i++) {
+        for (let a = 0; a < n; a++) {
+          const r = removeAt(items, i, a);
+          expect(r.items).toEqual(items.filter((x) => x !== i));
+          if (r.items.length === 0) expect(r.active).toBe(0);
+          else {
+            expect(r.active).toBeGreaterThanOrEqual(0);
+            expect(r.active).toBeLessThan(r.items.length);
+            if (a !== i) expect(r.items[r.active]).toBe(a);
+          }
+        }
+      }
+    }
+  });
+
+  it("insertAfter then removeAt of the new item restores the list and the previous active item", () => {
+    for (let n = 0; n <= 12; n++) {
+      const items = range(n);
+      for (let a = 0; a < Math.max(n, 1); a++) {
+        const ins = insertAfter(items, a, 99);
+        expect(ins.items[ins.active]).toBe(99);
+        expect(ins.items).toHaveLength(n + 1);
+        const rem = removeAt(ins.items, ins.active, ins.active);
+        expect(rem.items).toEqual(items);
+      }
+    }
+  });
+
+  it("step by ±n is identity and stepping forward then back returns", () => {
+    for (let n = 1; n <= 12; n++) {
+      for (let a = 0; a < n; a++) {
+        expect(step(a, n, n)).toBe(a);
+        expect(step(a, -n, n)).toBe(a);
+        expect(step(step(a, 1, n), -1, n)).toBe(a);
+      }
+    }
+  });
+});

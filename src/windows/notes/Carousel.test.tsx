@@ -123,4 +123,60 @@ describe("Carousel", () => {
     expect(after?.dataset.offset).toBe("1");
     expect(after).not.toHaveAttribute("data-jump");
   });
+
+  it("n=2: stepping repeatedly always shows the other note once at +1 (no duplicate)", () => {
+    const { container } = render(<Harness n={2} />);
+    for (let k = 1; k <= 4; k++) {
+      fireEvent.click(screen.getByRole("button", { name: "Nächste Notiz" }));
+      const expectedActive = k % 2;
+      expect(screen.getByText(`${expectedActive + 1} / 2`)).toBeInTheDocument();
+      const offsets = Object.fromEntries(cards(container).map((c) => [c.dataset.id, Number(c.dataset.offset)]));
+      expect(offsets).toEqual({ [`id-${expectedActive}`]: 0, [`id-${1 - expectedActive}`]: 1 });
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Vorherige Notiz" }));
+    expect(screen.getByText("2 / 2")).toBeInTheDocument();
+  });
+
+  it("normalises an out-of-range activeIndex (e.g. right after the last note was deleted)", () => {
+    const items = makeItems(3);
+    const props = {
+      onSelect: () => {},
+      onStep: () => {},
+      renderActive: (it: Item) => <div data-testid="active">{it.name}</div>,
+      renderPreview: (it: Item) => <div>{it.name}</div>,
+    };
+    const { rerender, container } = render(<Carousel items={items} activeIndex={5} {...props} />);
+    expect(screen.getByTestId("active")).toHaveTextContent("Notiz 3");
+    expect(screen.getByText("3 / 3")).toBeInTheDocument();
+    rerender(<Carousel items={items} activeIndex={-1} {...props} />);
+    expect(screen.getByTestId("active")).toHaveTextContent("Notiz 3");
+    rerender(<Carousel items={items.slice(0, 1)} activeIndex={2} {...props} />);
+    expect(screen.getByTestId("active")).toHaveTextContent("Notiz 1");
+    expect(cards(container)).toHaveLength(1);
+    rerender(<Carousel items={[]} activeIndex={0} {...props} />);
+    expect(cards(container)).toHaveLength(0);
+    expect(screen.getByText("0 / 0")).toBeInTheDocument();
+  });
+
+  it("wheel with zero delta or over the active card does not step", () => {
+    render(<Harness n={5} />);
+    fireEvent.wheel(screen.getByRole("button", { name: "Nächste Notiz: Notiz 2" }), { deltaX: 0, deltaY: 0 });
+    expect(screen.getByText("1 / 5")).toBeInTheDocument();
+    fireEvent.wheel(screen.getByTestId("active"), { deltaY: 100 });
+    expect(screen.getByText("1 / 5")).toBeInTheDocument();
+    // the zero-delta event did not arm the throttle
+    fireEvent.wheel(screen.getByRole("button", { name: "Nächste Notiz: Notiz 2" }), { deltaY: 100 });
+    expect(screen.getByText("2 / 5")).toBeInTheDocument();
+  });
+
+  it("staging cards (±2) are hidden from assistive technology and not focusable", () => {
+    const { container } = render(<Harness n={10} />);
+    const staging = cards(container).filter((c) => Math.abs(Number(c.dataset.offset)) === 2);
+    expect(staging).toHaveLength(2);
+    for (const c of staging) {
+      expect(c).toHaveAttribute("aria-hidden", "true");
+      expect(c).not.toHaveAttribute("tabindex");
+      expect(c).not.toHaveAttribute("role");
+    }
+  });
 });

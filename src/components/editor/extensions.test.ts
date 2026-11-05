@@ -1,6 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { generateHTML, getSchema } from "@tiptap/core";
+import { Editor, generateHTML, getSchema, type JSONContent } from "@tiptap/core";
 import { createExtensions, EMPTY_DOC, FONT_SIZES, TEXT_COLORS } from "./extensions";
+// Realistic doc produced by `editor.getJSON()` (marks incl. textStyle color/fontSize,
+// 3-level nested task list, ordered list with start, hard break, emoji/umlauts).
+// Shared with the Rust storage roundtrip test (src-tauri/src/storage/mod.rs).
+import richDoc from "../../test/fixtures/rich-note-content.json";
+
+describe("rich document roundtrip", () => {
+  it("a stored editor document loads back into the editor unchanged", () => {
+    const editor = new Editor({ extensions: createExtensions(), content: richDoc as JSONContent });
+    try {
+      // JSON → schema → JSON is lossless: nothing gets dropped or normalised away,
+      // so a note saved by the editor and reloaded from disk shows exactly the same.
+      expect(editor.getJSON()).toEqual(richDoc);
+      expect(editor.getText()).toContain("vom Bäcker");
+    } finally {
+      editor.destroy();
+    }
+  });
+
+  it("previews render marks and nested checked task items", () => {
+    const html = generateHTML(richDoc as JSONContent, createExtensions());
+    expect(html).toContain("font-size: 32px");
+    expect(html).toMatch(/color: (#1F5FBF|rgb\(31, 95, 191\))/i);
+    expect(html).toContain("<strong>Freitag</strong>");
+    expect(html).toContain("<u>unterstrichen</u>");
+    expect(html).toContain("<s>alt</s>");
+    expect(html).toContain('<ol start="3">');
+    expect(html.match(/data-type="taskList"/g)).toHaveLength(3);
+    expect(html.match(/data-checked="true"/g)).toHaveLength(2);
+    expect(html).toContain("&lt;tag&gt;");
+  });
+});
 
 describe("extensions", () => {
   it("registers the expected nodes and marks only", () => {
