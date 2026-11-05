@@ -1,8 +1,7 @@
 //! Window / app-lifecycle commands (thin wrappers around `crate::windows` / `crate::quit`).
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
-use crate::state::AppState;
 use crate::{quit, windows};
 
 fn err(e: tauri::Error) -> String {
@@ -37,7 +36,9 @@ pub fn show_buddy_menu(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn flush_done(app: AppHandle) -> Result<(), String> {
-    app.state::<AppState>().quit.mark_flushed();
+    if let Some(state) = crate::state::try_app_state(&app) {
+        state.quit.mark_flushed();
+    }
     Ok(())
 }
 

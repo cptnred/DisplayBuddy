@@ -1,10 +1,10 @@
 //! Tray icon + menu (PLAN §7).
 
+use tauri::AppHandle;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager};
 
-use crate::state::{AppState, lock};
+use crate::state::lock;
 use crate::{autostart, quit, windows};
 
 const TRAY_ID: &str = "main";
@@ -72,13 +72,18 @@ pub fn create(app: &AppHandle, autostart_enabled: bool) -> tauri::Result<()> {
     // The tray icon is registered in the app manager and lives until exit.
     builder.build(app)?;
 
-    *lock(&app.state::<AppState>().autostart_item) = Some(autostart_item);
+    if let Some(state) = crate::state::try_app_state(app) {
+        *lock(&state.autostart_item) = Some(autostart_item);
+    }
     Ok(())
 }
 
 /// Keeps the "Mit Windows starten" check mark in sync with the real state.
 pub fn set_autostart_checked(app: &AppHandle, checked: bool) {
-    if let Some(item) = lock(&app.state::<AppState>().autostart_item).as_ref()
+    let Some(state) = crate::state::try_app_state(app) else {
+        return;
+    };
+    if let Some(item) = lock(&state.autostart_item).as_ref()
         && let Err(e) = item.set_checked(checked)
     {
         log::warn!("failed to update autostart check item: {e}");

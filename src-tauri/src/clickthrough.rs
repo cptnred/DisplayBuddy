@@ -61,7 +61,11 @@ pub fn start(app: &tauri::AppHandle) {
             let _reset = Reset(Some(buddy.clone()));
             let mut ignoring = false;
             loop {
-                if app.state::<crate::state::AppState>().quit.is_quitting() {
+                let Some(state) = crate::state::try_app_state(&app) else {
+                    std::thread::sleep(IDLE_INTERVAL);
+                    continue;
+                };
+                if state.quit.is_quitting() {
                     break;
                 }
                 if !crate::state::current_settings(&app).click_through {

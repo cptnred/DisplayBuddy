@@ -479,3 +479,33 @@ fn notes_min_size_matches_tauri_conf() {
         "buddy window default size = default buddy.size"
     );
 }
+
+/// Regression (crash on Windows start): Tauri creates the config windows and Windows
+/// delivers their first events *before* `setup` calls `app.manage(AppState)`. A direct
+/// `app.state::<AppState>()` in such a path panics (and with `panic = "abort"` kills the
+/// app silently). Only `state.rs` may touch the managed state, via `try_app_state`.
+#[test]
+fn no_direct_app_state_access_outside_state_rs() {
+    fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let p = entry.unwrap().path();
+            if p.is_dir() {
+                walk(&p, out);
+            } else if p.extension().is_some_and(|e| e == "rs") {
+                out.push(p);
+            }
+        }
+    }
+    let mut files = Vec::new();
+    walk(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut files);
+    let offenders: Vec<String> = files
+        .iter()
+        .filter(|p| !p.ends_with("state.rs"))
+        .filter(|p| {
+            let text = std::fs::read_to_string(p).unwrap();
+            text.contains(".state::<") || text.contains(".state()")
+        })
+        .map(|p| p.display().to_string())
+        .collect();
+    assert!(offenders.is_empty(), "use state::try_app_state instead in: {offenders:?}");
+}

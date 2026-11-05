@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::state::{AppState, lock};
+use crate::state::lock;
 use crate::windows;
 
 pub const FLUSH_REQUEST: &str = "flush-request";
@@ -55,7 +55,11 @@ impl QuitState {
 
 /// Starts the quit flow (tray „Beenden“, buddy menu, `quit_app`). Idempotent.
 pub fn request_quit(app: &AppHandle) {
-    let state = app.state::<AppState>();
+    let Some(state) = crate::state::try_app_state(app) else {
+        // Not even set up yet: nothing to flush.
+        app.exit(0);
+        return;
+    };
     if !state.quit.begin() {
         return;
     }
@@ -73,7 +77,9 @@ pub fn request_quit(app: &AppHandle) {
     let spawned = thread::Builder::new().name("quit".into()).spawn({
         let app = app.clone();
         move || {
-            if sent && !app.state::<AppState>().quit.wait_flushed(FLUSH_TIMEOUT) {
+            let flushed = crate::state::try_app_state(&app)
+                .is_some_and(|s| s.quit.wait_flushed(FLUSH_TIMEOUT));
+            if sent && !flushed {
                 log::warn!(
                     "notes window did not confirm flush within {FLUSH_TIMEOUT:?}; exiting anyway"
                 );

@@ -15,7 +15,7 @@ use tauri::{
 
 use crate::debounce::Debouncer;
 use crate::model::{Settings, WindowPosition, WindowSize};
-use crate::state::{self, AppState, lock};
+use crate::state::{self, lock};
 
 pub const BUDDY: &str = "buddy";
 pub const NOTES: &str = "notes";
@@ -407,7 +407,9 @@ pub fn init_buddy_move_persistence(app: &AppHandle) {
     let debouncer = Debouncer::new(BUDDY_MOVE_DEBOUNCE, move |pos: WindowPosition| {
         persist_buddy_position(&handle, pos);
     });
-    *lock(&app.state::<AppState>().buddy_moves) = Some(debouncer);
+    if let Some(state) = state::try_app_state(app) {
+        *lock(&state.buddy_moves) = Some(debouncer);
+    }
 }
 
 static CREATING_SETTINGS: AtomicBool = AtomicBool::new(false);
@@ -487,7 +489,11 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
             if pos.x <= MINIMIZED_COORD && pos.y <= MINIMIZED_COORD {
                 return;
             }
-            if let Some(d) = lock(&app.state::<AppState>().buddy_moves).as_ref() {
+            // Fired during window creation, before setup registered the state.
+            let Some(state) = state::try_app_state(app) else {
+                return;
+            };
+            if let Some(d) = lock(&state.buddy_moves).as_ref() {
                 d.push(WindowPosition { x: pos.x, y: pos.y });
             }
         }
@@ -500,8 +506,11 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
             }
         }
         (NOTES, WindowEvent::Focused(false)) => {
+            let Some(app_state) = state::try_app_state(app) else {
+                return;
+            };
             let s = state::current_settings(app);
-            let quitting = app.state::<AppState>().quit.is_quitting();
+            let quitting = app_state.quit.is_quitting();
             if s.hide_notes_on_blur
                 && !s.notes_pinned
                 && !quitting

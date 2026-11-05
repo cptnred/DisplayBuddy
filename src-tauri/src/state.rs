@@ -47,8 +47,22 @@ pub fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// The managed app state, or `None` while it isn't registered yet.
+///
+/// Tauri creates the config windows (and Windows delivers their first `Moved`/`Focused`
+/// events synchronously) *before* our `setup` hook runs `app.manage(AppState)`.
+/// `app.state()` would panic there – and with `panic = "abort"` kill the app silently –
+/// so every code path reachable from window/menu/tray/plugin callbacks uses this.
+pub fn try_app_state(app: &AppHandle) -> Option<tauri::State<'_, AppState>> {
+    app.try_state::<AppState>()
+}
+
+/// Current settings; defaults while the app state is not registered yet.
 pub fn current_settings(app: &AppHandle) -> Settings {
-    lock(&app.state::<AppState>().settings).clone()
+    match try_app_state(app) {
+        Some(state) => lock(&state.settings).clone(),
+        None => Settings::default(),
+    }
 }
 
 /// Applies `f` to the settings, sanitizes, persists and updates the cache.
@@ -57,7 +71,7 @@ pub fn update_settings(
     app: &AppHandle,
     f: impl FnOnce(&Settings) -> Result<Settings, String>,
 ) -> Result<(Settings, Settings), String> {
-    let state = app.state::<AppState>();
+    let state = try_app_state(app).ok_or_else(|| "app state not ready".to_string())?;
     let mut cached = lock(&state.settings);
     let new = f(&cached)?.sanitized();
     if new != *cached {
@@ -82,13 +96,17 @@ pub fn emit_settings_changed(app: &AppHandle, settings: &Settings) {
 
 /// Remembers that the notes window was just hidden by focus loss.
 pub fn mark_blur_hide(app: &AppHandle) {
-    *lock(&app.state::<AppState>().last_blur_hide) = Some(Instant::now());
+    if let Some(state) = try_app_state(app) {
+        *lock(&state.last_blur_hide) = Some(Instant::now());
+    }
 }
 
 /// True if the notes window was hidden by focus loss within `window`.
 /// Consumes the mark.
 pub fn take_recent_blur_hide(app: &AppHandle, window: Duration) -> bool {
-    lock(&app.state::<AppState>().last_blur_hide)
-        .take()
-        .is_some_and(|t| t.elapsed() < window)
+    try_app_state(app).is_some_and(|state| {
+        lock(&state.last_blur_hide)
+            .take()
+            .is_some_and(|t| t.elapsed() < window)
+    })
 }
