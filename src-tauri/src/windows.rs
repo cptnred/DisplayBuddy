@@ -238,21 +238,44 @@ pub fn apply_notes_size(app: &AppHandle, settings: &Settings) -> tauri::Result<(
     Ok(())
 }
 
+/// Default / minimum logical size of the notes window (mirrors tauri.conf.json).
+pub const NOTES_DEFAULT_SIZE: (f64, f64) = (420.0, 520.0);
+pub const NOTES_MIN_SIZE: (f64, f64) = (320.0, 360.0);
+
+/// Logical notes size → physical px on the target monitor. Falls back to the default
+/// when the size is unknown or degenerate (e.g. a never-realized window reports 0×0).
+pub fn notes_physical_size(logical: Option<(f64, f64)>, scale: f64) -> (i32, i32) {
+    let (w, h) = logical
+        .filter(|(w, h)| w.is_finite() && h.is_finite() && *w >= 1.0 && *h >= 1.0)
+        .map(|(w, h)| (w.max(NOTES_MIN_SIZE.0), h.max(NOTES_MIN_SIZE.1)))
+        .unwrap_or(NOTES_DEFAULT_SIZE);
+    (scaled(w, scale), scaled(h, scale))
+}
+
 fn position_notes(app: &AppHandle, notes: &WebviewWindow) -> tauri::Result<()> {
     let buddy = window(app, BUDDY)?;
     let buddy_rect = window_rect(&buddy)?;
     let Some(monitor) = monitor_for(app, &buddy, buddy_rect.center()) else {
         return Ok(());
     };
-    let notes_size = notes.outer_size()?;
-    let gap = scaled(NOTES_GAP, monitor.scale_factor());
-    let (x, y) = compute_notes_position(
-        buddy_rect,
-        (notes_size.width as i32, notes_size.height as i32),
-        work_rect(&monitor),
-        gap,
-    );
+    // Work in logical size and convert with the *target* monitor's scale: the window's
+    // current physical size may stem from another DPI, or be 0×0 before first realize.
+    let current = notes
+        .inner_size()
+        .ok()
+        .filter(|s| s.width > 0 && s.height > 0)
+        .and_then(|s| notes.scale_factor().ok().map(|f| s.to_logical::<f64>(f)))
+        .map(|l| (l.width, l.height));
+    let stored = state::current_settings(app)
+        .notes_size
+        .map(|s| (s.width, s.height));
+    let logical = notes_physical_size(current.or(stored), 1.0);
+    let scale = monitor.scale_factor();
+    let size = notes_physical_size(Some((logical.0 as f64, logical.1 as f64)), scale);
+    let gap = scaled(NOTES_GAP, scale);
+    let (x, y) = compute_notes_position(buddy_rect, size, work_rect(&monitor), gap);
     notes.set_position(PhysicalPosition::new(x, y))?;
+    notes.set_size(LogicalSize::new(logical.0 as f64, logical.1 as f64))?;
     Ok(())
 }
 
@@ -271,6 +294,7 @@ pub fn show_notes(app: &AppHandle) -> tauri::Result<()> {
     notes.show()?;
     notes.set_focus()?;
     app.emit_to(NOTES, NOTES_SHOWN, ())?;
+    log::debug!("notes shown");
     Ok(())
 }
 
@@ -289,7 +313,9 @@ pub fn hide_notes(app: &AppHandle) -> tauri::Result<()> {
 
 pub fn toggle_notes(app: &AppHandle) -> tauri::Result<()> {
     let notes = window(app, NOTES)?;
-    if notes.is_visible()? {
+    let visible = notes.is_visible()?;
+    log::debug!("toggle_notes (visible: {visible})");
+    if visible {
         hide_notes(app)
     } else if state::take_recent_blur_hide(app, BLUR_TOGGLE_GUARD) {
         // The click on buddy/tray already hid the window via focus loss.
@@ -408,6 +434,8 @@ pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
                 .title("Einstellungen – Display Buddy")
                 .inner_size(520.0, 640.0)
                 .min_inner_size(420.0, 480.0)
+                // The notes window is always on top; keep settings above it while open.
+                .always_on_top(true)
                 .resizable(true)
                 .center()
                 .focused(true)
@@ -599,5 +627,17 @@ mod tests {
             resize_keep_center(Rect::new(-500, -20, 48, 48), (96, 96)),
             (-524, -44)
         );
+    }
+
+    #[test]
+    fn notes_size_falls_back_for_unrealized_window() {
+        assert_eq!(notes_physical_size(Some((0.0, 0.0)), 1.0), (420, 520));
+        assert_eq!(notes_physical_size(None, 1.5), (630, 780));
+    }
+
+    #[test]
+    fn notes_size_scales_to_target_monitor_and_respects_minimum() {
+        assert_eq!(notes_physical_size(Some((500.0, 600.0)), 1.5), (750, 900));
+        assert_eq!(notes_physical_size(Some((100.0, 100.0)), 1.0), (320, 360));
     }
 }
