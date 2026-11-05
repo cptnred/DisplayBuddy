@@ -1,5 +1,5 @@
 // Node re-reads TZ at runtime; vitest isolates test files, so this only affects this file.
-process.env.TZ = "Europe/Berlin";
+(globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env.TZ = "Europe/Berlin";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {

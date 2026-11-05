@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import type { JSONContent } from "@tiptap/core";
-import { DEFAULT_SETTINGS, NOTE_SCHEMA_VERSION, type Note, type Settings } from "../../types";
+import { DEFAULT_SETTINGS, NOTE_SCHEMA_VERSION, type Note, type Reminder, type Settings } from "../../types";
+import { formatReminder, toRfc3339Local } from "../../lib/datetime";
 import type { NoteEditorProps } from "./NotesApp";
 import { NotesApp } from "./NotesApp";
-import { RETRY_DELAY_MS, SAVE_ERROR_TEXT } from "./useNotesStore";
+import { REMINDER_ERROR_TEXT, RETRY_DELAY_MS, SAVE_ERROR_TEXT } from "./useNotesStore";
+import { PAST_TEXT } from "./Reminder";
 import { docToPlainText, plainTextToDoc } from "./docText";
 
 const h = vi.hoisted(() => {
@@ -397,5 +399,235 @@ describe("NotesApp / useNotesStore", () => {
     await tick();
     // 7 store/app subscriptions (hidden, flush, create, settings, reminders, shown, open-note)
     expect(h.unlisten).toHaveBeenCalledTimes(7);
+  });
+});
+
+describe("NotesApp / search", () => {
+  const searchInput = () => screen.getByLabelText("Notizen durchsuchen") as HTMLInputElement;
+  const notes = () => [note(ID.a, "Einkauf", "Milch und Brot"), note(ID.b, "Arbeit", "Müll rausbringen"), note(ID.c, "Müllabfuhr", "Dienstag")];
+
+  it("Strg+F opens the search (also from inside the editor), typing filters, Enter jumps to the note", async () => {
+    await setup(notes());
+    const editor = screen.getByTestId("editor");
+    editor.focus();
+    fireEvent.change(editor, { target: { value: "pending edit" } });
+    await ctrl("f", {}, editor);
+    expect(searchInput()).toHaveFocus();
+    expect(screen.getByRole("listbox")).toBeEmptyDOMElement();
+
+    fireEvent.change(searchInput(), { target: { value: "mull" } });
+    const options = screen.getAllByRole("option");
+    expect(options).toHaveLength(2);
+    // title hit ranks first
+    expect(options[0]).toHaveTextContent("Müllabfuhr");
+    expect(options[0]).toHaveAttribute("aria-selected", "true");
+    expect(within(options[1]).getByText("Müll", { selector: "mark" })).toBeInTheDocument();
+    expect(screen.getByText("2 Treffer")).toBeInTheDocument();
+
+    fireEvent.keyDown(searchInput(), { key: "ArrowDown" });
+    expect(screen.getAllByRole("option")[1]).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(searchInput(), { key: "Enter" });
+    await tick(50);
+    expect(screen.queryByRole("search")).toBeNull();
+    expect(titleInput().value).toBe("Arbeit");
+    expect(indicator("2 / 3")).toBeInTheDocument();
+    // the previous note's pending edit was flushed by the switch
+    expect(savedNotes().find((n) => n.id === ID.a)?.content).toEqual(plainTextToDoc("pending edit"));
+    expect(screen.getByTestId("editor")).toHaveFocus();
+  });
+
+  it("magnifier button opens the search; click on a result selects; empty state", async () => {
+    await setup(notes());
+    fireEvent.click(screen.getByRole("button", { name: "Suchen (Strg+F)" }));
+    fireEvent.change(searchInput(), { target: { value: "xyz" } });
+    expect(screen.getByText("Keine Treffer")).toBeInTheDocument();
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
+    fireEvent.change(searchInput(), { target: { value: "dienstag" } });
+    fireEvent.click(screen.getByRole("option"));
+    await tick(50);
+    expect(titleInput().value).toBe("Müllabfuhr");
+    expect(screen.queryByRole("search")).toBeNull();
+  });
+
+  it("Esc closes the search without hiding the window; the next Esc hides", async () => {
+    await setup(notes());
+    await ctrl("f");
+    fireEvent.change(searchInput(), { target: { value: "milch" } });
+    await act(() => {
+      fireEvent.keyDown(searchInput(), { key: "Escape" });
+    });
+    expect(screen.queryByRole("search")).toBeNull();
+    expect(api.hideNotes).not.toHaveBeenCalled();
+    expect(titleInput().value).toBe("Einkauf");
+    await act(() => {
+      fireEvent.keyDown(window, { key: "Escape" });
+    });
+    expect(api.hideNotes).toHaveBeenCalledTimes(1);
+  });
+
+  it("Ctrl+→ inside the search field does not switch notes", async () => {
+    await setup(notes());
+    await ctrl("f");
+    await ctrl("ArrowRight", {}, searchInput());
+    expect(indicator("1 / 3")).toBeInTheDocument();
+  });
+});
+
+describe("NotesApp / reminders", () => {
+  const NOW = new Date(2026, 10, 5, 10, 0); // Thu 05.11.2026 10:00 local
+  const rem = (
+    noteId: string,
+    at: string,
+    state: Reminder["state"] = "scheduled",
+    repeat: Reminder["repeat"] = "none",
+  ): Reminder => ({ noteId, at, repeat, state, firedAt: state === "due" ? at : null });
+  const bell = () => screen.getByRole("button", { name: "Erinnerung" });
+
+  beforeEach(() => {
+    vi.setSystemTime(NOW);
+  });
+
+  it("popover saves date/time/repeat as local RFC 3339", async () => {
+    await setup([A(), B()]);
+    const at = toRfc3339Local("2026-11-06", "14:30");
+    api.setReminder.mockResolvedValue(rem(ID.a, at, "scheduled", "weekly"));
+    expect(bell()).toHaveAttribute("data-state", "none");
+    fireEvent.click(bell());
+    const dialog = screen.getByRole("dialog", { name: "Erinnerung festlegen" });
+    expect(within(dialog).getByText("Keine Erinnerung")).toBeInTheDocument();
+    const date = within(dialog).getByLabelText("Datum") as HTMLInputElement;
+    expect(date).toHaveFocus();
+    // defaults to the next full hour
+    expect(date.value).toBe("2026-11-05");
+    expect((within(dialog).getByLabelText("Uhrzeit") as HTMLInputElement).value).toBe("11:00");
+    fireEvent.change(date, { target: { value: "2026-11-06" } });
+    fireEvent.change(within(dialog).getByLabelText("Uhrzeit"), { target: { value: "14:30" } });
+    fireEvent.change(within(dialog).getByLabelText("Wiederholung"), { target: { value: "weekly" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Speichern" }));
+    await tick();
+    expect(api.setReminder).toHaveBeenCalledWith(ID.a, at, "weekly");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bell()).toHaveAttribute("data-state", "scheduled");
+    expect(bell()).toHaveAttribute("title", "Erinnerung: Morgen, 14:30");
+  });
+
+  it("rejects a past one-off time inline; Esc closes the popover without hiding", async () => {
+    await setup([A()]);
+    fireEvent.click(bell());
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Uhrzeit"), { target: { value: "09:00" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Speichern" }));
+    await tick();
+    expect(within(dialog).getByText(PAST_TEXT)).toBeInTheDocument();
+    expect(api.setReminder).not.toHaveBeenCalled();
+    await act(() => {
+      fireEvent.keyDown(within(dialog).getByLabelText("Datum"), { key: "Escape" });
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(api.hideNotes).not.toHaveBeenCalled();
+    expect(bell()).toHaveFocus();
+  });
+
+  it("shows the current reminder and removes it", async () => {
+    const at = toRfc3339Local("2026-11-05", "14:30");
+    api.listReminders.mockResolvedValue([rem(ID.a, at, "scheduled", "daily")]);
+    api.setReminder.mockResolvedValue(null);
+    await setup([A()]);
+    expect(bell()).toHaveAttribute("data-state", "scheduled");
+    fireEvent.click(bell());
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Geplant: Heute, 14:30")).toBeInTheDocument();
+    expect((within(dialog).getByLabelText("Uhrzeit") as HTMLInputElement).value).toBe("14:30");
+    expect((within(dialog).getByLabelText("Wiederholung") as HTMLSelectElement).value).toBe("daily");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Entfernen" }));
+    await tick();
+    expect(api.setReminder).toHaveBeenCalledWith(ID.a, null, "none");
+    expect(bell()).toHaveAttribute("data-state", "none");
+  });
+
+  it("failed save shows the action error banner and keeps the popover open", async () => {
+    await setup([A()]);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.setReminder.mockRejectedValue(new Error("nope"));
+    fireEvent.click(bell());
+    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await tick();
+    expect(screen.getByText(REMINDER_ERROR_TEXT)).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("due banner: Erledigt acks, the snooze buttons snooze 10 / 60 minutes", async () => {
+    const at = toRfc3339Local("2026-11-05", "09:30");
+    api.listReminders.mockResolvedValue([rem(ID.a, at, "due")]);
+    api.ackReminder.mockResolvedValue(null);
+    api.snoozeReminder.mockResolvedValue(rem(ID.a, toRfc3339Local("2026-11-05", "10:10")));
+    await setup([A()]);
+    expect(bell()).toHaveAttribute("data-state", "due");
+    expect(screen.getByText(`🔔 Erinnerung fällig – ${formatReminder(at, NOW)}`)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "10 Min. später" }));
+    await tick();
+    expect(api.snoozeReminder).toHaveBeenCalledWith(ID.a, 10);
+    expect(screen.queryByText(/Erinnerung fällig/)).toBeNull();
+
+    await act(async () => handlers.remindersChanged?.([rem(ID.a, at, "due")]));
+    fireEvent.click(screen.getByRole("button", { name: "1 Std. später" }));
+    await tick();
+    expect(api.snoozeReminder).toHaveBeenCalledWith(ID.a, 60);
+
+    await act(async () => handlers.remindersChanged?.([rem(ID.a, at, "due")]));
+    fireEvent.click(screen.getByRole("button", { name: "Erledigt" }));
+    await tick();
+    expect(api.ackReminder).toHaveBeenCalledWith(ID.a);
+    expect(bell()).toHaveAttribute("data-state", "none");
+  });
+
+  it("reminders-changed replaces the map: bell state and side-card badge follow", async () => {
+    await setup([A(), B()]);
+    const at = toRfc3339Local("2026-11-05", "18:00");
+    await act(async () => handlers.remindersChanged?.([rem(ID.a, at), rem(ID.b, at, "due")]));
+    expect(bell()).toHaveAttribute("data-state", "scheduled");
+    const side = screen.getByRole("button", { name: "Nächste Notiz: Beta" });
+    expect(side.querySelector('[data-reminder-badge="due"]')).toHaveTextContent("Heute, 18:00");
+    await act(async () => handlers.remindersChanged?.([]));
+    expect(bell()).toHaveAttribute("data-state", "none");
+    expect(side.querySelector("[data-reminder-badge]")).toBeNull();
+  });
+
+  it("a late initial list never overwrites a newer reminders-changed", async () => {
+    let resolveList!: (r: Reminder[]) => void;
+    api.listReminders.mockReturnValue(new Promise<Reminder[]>((r) => (resolveList = r)));
+    await setup([A()]);
+    const at = toRfc3339Local("2026-11-05", "18:00");
+    await act(async () => handlers.remindersChanged?.([rem(ID.a, at)]));
+    await act(async () => resolveList([]));
+    expect(bell()).toHaveAttribute("data-state", "scheduled");
+  });
+});
+
+describe("NotesApp / open-note", () => {
+  it("selects the note, flushes the previous one and focuses the editor", async () => {
+    await setup([A(), B(), C()]);
+    fireEvent.change(screen.getByTestId("editor"), { target: { value: "a-new" } });
+    await act(async () => handlers.openNote?.(ID.c));
+    await tick(50);
+    expect(titleInput().value).toBe("Gamma");
+    expect(savedNotes().find((n) => n.id === ID.a)?.content).toEqual(plainTextToDoc("a-new"));
+    expect(screen.getByTestId("editor")).toHaveFocus();
+    // unknown id: nothing happens
+    await act(async () => handlers.openNote?.("nope"));
+    await tick(50);
+    expect(titleInput().value).toBe("Gamma");
+  });
+
+  it("is queued while the store is still loading", async () => {
+    let resolveNotes!: (n: Note[]) => void;
+    api.listNotes.mockReturnValue(new Promise<Note[]>((r) => (resolveNotes = r)));
+    api.loadSettings.mockResolvedValue(DEFAULT_SETTINGS);
+    render(<NotesApp Editor={FakeEditor} />);
+    await tick();
+    await act(async () => handlers.openNote?.(ID.b));
+    await act(async () => resolveNotes([A(), B(), C()]));
+    await tick(50);
+    expect(titleInput().value).toBe("Beta");
   });
 });
