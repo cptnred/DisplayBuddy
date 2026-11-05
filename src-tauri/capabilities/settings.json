@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "settings",
+  "description": "Settings window: read/write settings, autostart",
+  "windows": ["settings"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-load-settings",
+    "allow-save-settings",
+    "allow-get-autostart",
+    "allow-set-autostart"
+  ]
+}

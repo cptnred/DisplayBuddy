@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-show-notes"
+description = "Enables the show_notes command without any pre-configured scope."
+commands.allow = ["show_notes"]
+
+[[permission]]
+identifier = "deny-show-notes"
+description = "Denies the show_notes command without any pre-configured scope."
+commands.deny = ["show_notes"]

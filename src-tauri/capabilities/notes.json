@@ -1,0 +1,20 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "notes",
+  "description": "Notes window: notes CRUD, settings, hide self, drag title bar",
+  "windows": ["notes"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-start-dragging",
+    "allow-list-notes",
+    "allow-load-note",
+    "allow-save-note",
+    "allow-delete-note",
+    "allow-save-order",
+    "allow-load-settings",
+    "allow-save-settings",
+    "allow-hide-notes",
+    "allow-flush-done"
+  ]
+}
