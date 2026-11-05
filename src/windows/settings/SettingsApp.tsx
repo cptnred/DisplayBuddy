@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type SettingsPatch } from "../../lib/api";
 import {
+  BUILTIN_SKINS,
   DEFAULT_SETTINGS,
   type BuddyConfig,
   type EyeStyle,
   type MouthStyle,
   type Settings,
+  type SkinInfo,
 } from "../../types";
-import { Smiley } from "../buddy/Smiley";
+import { BuddyAvatar } from "../buddy/BuddyAvatar";
+import { BUILTIN_SKIN_INFO, skinFeatures } from "../buddy/skins";
+import { SkinPicker } from "./SkinPicker";
 import styles from "./SettingsApp.module.css";
 
 const FACE_PRESETS: { label: string; value: string }[] = [
@@ -40,6 +44,7 @@ export function SettingsApp() {
   const [error, setError] = useState<string | null>(null);
   const pending = useRef<SettingsPatch>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [skins, setSkins] = useState<SkinInfo[]>([]);
 
   useEffect(() => {
     let alive = true;
@@ -59,9 +64,15 @@ export function SettingsApp() {
       const p = pending.current;
       setSettings({ ...s, ...p, buddy: { ...s.buddy, ...(p.buddy ?? {}) } } as Settings);
     });
+    api
+      .listSkins()
+      .then((list) => alive && setSkins(list))
+      .catch(() => alive && setError("Eigene Figuren konnten nicht geladen werden."));
+    const unlistenSkins = api.onSkinsChanged((list) => alive && setSkins(list));
     return () => {
       alive = false;
       void unlisten.then((u) => u());
+      void unlistenSkins.then((u) => u());
     };
   }, []);
 
@@ -117,6 +128,35 @@ export function SettingsApp() {
   };
 
   const b = settings.buddy;
+  const features = skinFeatures(b.skin);
+
+  const importSkin = async (): Promise<boolean> => {
+    try {
+      const info = await api.importSkin();
+      if (!info) return false; // dialog cancelled
+      setSkins((list) => (list.some((s) => s.id === info.id) ? list : [...list, info]));
+      setBuddy({ skin: info.id }, true);
+      setError(null);
+      return true;
+    } catch {
+      setError("Import fehlgeschlagen. Erlaubt sind PNG, SVG, GIF, WebP oder Lottie-JSON bis 5 MB.");
+      return false;
+    }
+  };
+
+  const deleteSkin = async (info: SkinInfo): Promise<boolean> => {
+    try {
+      await api.deleteSkin(info.id);
+      setSkins((list) => list.filter((s) => s.id !== info.id));
+      // Rust resets an active skin to the smiley (and broadcasts settings-changed); mirror it now.
+      setSettings((s) => (s.buddy.skin === info.id ? { ...s, buddy: { ...s.buddy, skin: "smiley" } } : s));
+      setError(null);
+      return true;
+    } catch {
+      setError("Die Figur konnte nicht gelöscht werden.");
+      return false;
+    }
+  };
 
   return (
     <main className={styles.page} aria-busy={!loaded}>
@@ -133,7 +173,7 @@ export function SettingsApp() {
       <section className={styles.previewSection} aria-label="Vorschau">
         <div className={styles.preview} data-testid="preview">
           <div style={{ width: b.size, height: b.size }}>
-            <Smiley config={b} preview />
+            <BuddyAvatar config={b} preview loadSkin={api.loadSkin} />
           </div>
         </div>
       </section>
@@ -141,67 +181,83 @@ export function SettingsApp() {
       <section className={styles.group} aria-labelledby="sec-look">
         <h2 id="sec-look">Aussehen</h2>
 
-        <fieldset className={styles.field}>
-          <legend>Gesichtsfarbe</legend>
-          <div className={styles.swatches}>
-            {FACE_PRESETS.map((p) => (
-              <button
-                key={p.value}
-                type="button"
-                className={styles.swatch}
-                style={{ background: p.value }}
-                aria-label={p.label}
-                aria-pressed={b.faceColor.toLowerCase() === p.value.toLowerCase()}
-                title={p.label}
-                onClick={() => setBuddy({ faceColor: p.value }, true)}
-              />
-            ))}
-            <label className={styles.customColor} title="Eigene Farbe">
-              <input
-                type="color"
-                aria-label="Eigene Gesichtsfarbe"
-                value={b.faceColor}
-                onChange={(e) => setBuddy({ faceColor: e.target.value })}
-              />
-            </label>
-          </div>
-        </fieldset>
+        <SkinPicker
+          config={b}
+          builtins={BUILTIN_SKINS.map((id) => ({ id, name: BUILTIN_SKIN_INFO[id].label }))}
+          custom={skins}
+          loadSkin={api.loadSkin}
+          onSelect={(skin) => setBuddy({ skin }, true)}
+          onImport={importSkin}
+          onDelete={deleteSkin}
+        />
 
-        <fieldset className={styles.field}>
-          <legend>Augen</legend>
-          <div className={styles.segmented}>
-            {EYES.map((o) => (
-              <label key={o.value}>
-                <input
-                  type="radio"
-                  name="eyes"
-                  value={o.value}
-                  checked={b.eyeStyle === o.value}
-                  onChange={() => setBuddy({ eyeStyle: o.value }, true)}
+        {features.color && (
+          <fieldset className={styles.field}>
+            <legend>{b.skin === "smiley" ? "Gesichtsfarbe" : "Farbe"}</legend>
+            <div className={styles.swatches}>
+              {FACE_PRESETS.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  className={styles.swatch}
+                  style={{ background: p.value }}
+                  aria-label={p.label}
+                  aria-pressed={b.faceColor.toLowerCase() === p.value.toLowerCase()}
+                  title={p.label}
+                  onClick={() => setBuddy({ faceColor: p.value }, true)}
                 />
-                <span>{o.label}</span>
+              ))}
+              <label className={styles.customColor} title="Eigene Farbe">
+                <input
+                  type="color"
+                  aria-label="Eigene Farbe"
+                  value={b.faceColor}
+                  onChange={(e) => setBuddy({ faceColor: e.target.value })}
+                />
               </label>
-            ))}
-          </div>
-        </fieldset>
+            </div>
+          </fieldset>
+        )}
 
-        <fieldset className={styles.field}>
-          <legend>Mund</legend>
-          <div className={styles.segmented}>
-            {MOUTHS.map((o) => (
-              <label key={o.value}>
-                <input
-                  type="radio"
-                  name="mouth"
-                  value={o.value}
-                  checked={b.mouthStyle === o.value}
-                  onChange={() => setBuddy({ mouthStyle: o.value }, true)}
-                />
-                <span>{o.label}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
+        {features.eyes && (
+          <fieldset className={styles.field}>
+            <legend>Augen</legend>
+            <div className={styles.segmented}>
+              {EYES.map((o) => (
+                <label key={o.value}>
+                  <input
+                    type="radio"
+                    name="eyes"
+                    value={o.value}
+                    checked={b.eyeStyle === o.value}
+                    onChange={() => setBuddy({ eyeStyle: o.value }, true)}
+                  />
+                  <span>{o.label}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )}
+
+        {features.mouth && (
+          <fieldset className={styles.field}>
+            <legend>Mund</legend>
+            <div className={styles.segmented}>
+              {MOUTHS.map((o) => (
+                <label key={o.value}>
+                  <input
+                    type="radio"
+                    name="mouth"
+                    value={o.value}
+                    checked={b.mouthStyle === o.value}
+                    onChange={() => setBuddy({ mouthStyle: o.value }, true)}
+                  />
+                  <span>{o.label}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )}
 
         <label className={styles.range}>
           <span>
@@ -258,6 +314,26 @@ export function SettingsApp() {
             aria-label="Animationsgeschwindigkeit"
             onChange={(e) => setBuddy({ animationSpeed: Number(e.target.value) })}
           />
+        </label>
+      </section>
+
+      <section className={styles.group} aria-labelledby="sec-reminders">
+        <h2 id="sec-reminders">Erinnerungen</h2>
+        <label className={styles.check}>
+          <input
+            type="checkbox"
+            checked={settings.reminderNotification}
+            onChange={(e) => update({ reminderNotification: e.target.checked }, true)}
+          />
+          <span>Windows-Benachrichtigung anzeigen</span>
+        </label>
+        <label className={styles.check}>
+          <input
+            type="checkbox"
+            checked={settings.reminderSound}
+            onChange={(e) => update({ reminderSound: e.target.checked }, true)}
+          />
+          <span>Ton abspielen</span>
         </label>
       </section>
 

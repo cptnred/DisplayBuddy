@@ -37,3 +37,49 @@
   outline: 2px solid rgba(59, 130, 246, 0.75);
   outline-offset: -3px;
 }
+
+/* Reminder badge: top-right inside the window, scales with the buddy (font-size set inline). */
+.badge {
+  position: absolute;
+  top: 3%;
+  right: 3%;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.12em;
+  padding: 0.22em 0.48em 0.22em 0.36em;
+  border: 0.13em solid #fff;
+  border-radius: 999px;
+  background: #c8102e;
+  color: #fff;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  transform-origin: 80% 20%;
+  animation: badge-in 260ms cubic-bezier(0.3, 1.5, 0.6, 1);
+}
+
+.badge svg {
+  width: 1.05em;
+  height: 1.05em;
+  fill: currentColor;
+}
+
+@keyframes badge-in {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .badge {
+    animation: none;
+  }
+}

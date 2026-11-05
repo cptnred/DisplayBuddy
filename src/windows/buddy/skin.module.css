@@ -1,0 +1,305 @@
+/*
+ * Shared animation system of all buddy skins (built-in SVG skins and imported image/Lottie skins).
+ * transform / opacity only, all CSS (no JS loops). Durations are divided by --speed (0.5..2).
+ *
+ * Element tree (see SkinFrame.tsx):
+ *   .root (size, opacity)  >  .wiggle (alert)  >  .bob (idle bob)  >  .hop (click)  >  .scale (hover)
+ * .wiggle and .bob are HTML/<svg> boxes, so the infinite animations are composited on the GPU and
+ * never repaint the SVG. .hop/.scale are <g> (SVG skins) or <div> (.html: image/Lottie skins).
+ *
+ * Geometry budget (viewBox 100): artwork stays within ~r 42 of the centre (ears/antenna up to y≈9);
+ * × hover 1.05 + bob 2 % + hop 3.5 + wiggle ±6° around (50, 84) stays inside the square window.
+ */
+.root {
+  --speed: 1;
+  position: relative;
+  display: block;
+  flex: none;
+  background: transparent;
+  overflow: visible;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Preview (settings window) reacts to CSS :hover itself; no JS handlers. */
+.preview {
+  display: inline-block;
+  pointer-events: auto;
+}
+
+.wiggle,
+.bob {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.wiggle {
+  transform-origin: 50% 84%;
+}
+
+.bob {
+  overflow: visible;
+  transform-origin: 50% 92%;
+}
+
+.hop,
+.scale,
+.eyes,
+.tiltL,
+.tiltR {
+  transform-box: view-box;
+}
+
+.hop {
+  transform-origin: 50px 92px;
+}
+
+.scale {
+  transform-origin: 50px 50px;
+}
+
+.eyes {
+  transform-origin: 50px 45px;
+}
+
+/* ---- HTML variant (image / Lottie skins) ------------------------------------ */
+.html .hop,
+.html .scale {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.html .hop {
+  transform-origin: 50% 92%;
+}
+
+.html .scale {
+  transform-origin: 50% 50%;
+}
+
+/* Same inset as the built-in faces (≈ 84 % of the window) so motion is never clipped. */
+.content {
+  position: absolute;
+  inset: 8%;
+  display: grid;
+  place-items: center;
+}
+
+.content > * {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.content > img {
+  object-fit: contain;
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
+/* ---- details ------------------------------------------------------------------ */
+.cheeks {
+  opacity: 0.36;
+  transition: opacity 220ms ease;
+}
+
+.mouthRest,
+.mouthHover {
+  transition: opacity 160ms ease;
+}
+
+.mouthHover {
+  opacity: 0;
+}
+
+.glow {
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+
+/* ---- hover ---------------------------------------------------------------- */
+.animated .scale,
+.animated .tiltL,
+.animated .tiltR {
+  transition: transform 220ms cubic-bezier(0.3, 1.35, 0.6, 1);
+}
+
+/* Scale-up only with animations on ("Ruhiger Modus" keeps the size still). */
+.animated:not(.noHover).hovered .scale,
+.animated:not(.noHover).preview:hover .scale {
+  transform: scale(1.05);
+}
+
+.animated.hovered .tiltL,
+.animated.preview:hover .tiltL {
+  transform: rotate(-12deg);
+}
+
+.animated.hovered .tiltR,
+.animated.preview:hover .tiltR {
+  transform: rotate(12deg);
+}
+
+.hovered .cheeks,
+.preview:hover .cheeks {
+  opacity: 0.55;
+}
+
+.hovered .mouthRest,
+.preview:hover .mouthRest {
+  opacity: 0;
+}
+
+.hovered .mouthHover,
+.preview:hover .mouthHover,
+.hovered .glow,
+.preview:hover .glow {
+  opacity: 1;
+}
+
+/* ---- animations (only when config.animate) -------------------------------- */
+.animated:not(.noIdle) .bob {
+  animation: bob calc(3.6s / var(--speed)) ease-in-out infinite;
+  will-change: transform;
+}
+
+.animated .eyes.blink {
+  animation: blink 160ms ease-in-out;
+}
+
+.animated:not(.noHop).hopping .hop {
+  animation: hop calc(380ms / var(--speed)) cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+
+.html.animated:not(.noHop).hopping .hop {
+  animation-name: hopBox;
+}
+
+/* Reminder due: a short shake every 2 s (fixed rhythm, independent of --speed). */
+.alerting .wiggle {
+  animation: wiggle 2s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Quiet mode: one gentle pulse when the number of due reminders grows. */
+.pulse .wiggle {
+  animation: pulse 700ms ease-out 1;
+}
+
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  50% {
+    transform: translateY(-2%) scale(1.012, 1.018);
+  }
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  45%,
+  55% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes hop {
+  0% {
+    transform: translateY(0) scale(1, 1);
+  }
+  18% {
+    transform: translateY(0) scale(1.04, 0.95);
+  }
+  50% {
+    transform: translateY(-3.5px) scale(0.97, 1.03);
+  }
+  80% {
+    transform: translateY(0) scale(1.03, 0.97);
+  }
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+}
+
+@keyframes hopBox {
+  0% {
+    transform: translateY(0) scale(1, 1);
+  }
+  18% {
+    transform: translateY(0) scale(1.04, 0.95);
+  }
+  50% {
+    transform: translateY(-3.5%) scale(0.97, 1.03);
+  }
+  80% {
+    transform: translateY(0) scale(1.03, 0.97);
+  }
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+}
+
+@keyframes wiggle {
+  0%,
+  34%,
+  100% {
+    transform: rotate(0deg);
+  }
+  5% {
+    transform: rotate(-6deg);
+  }
+  11% {
+    transform: rotate(5.5deg);
+  }
+  17% {
+    transform: rotate(-4.5deg);
+  }
+  23% {
+    transform: rotate(3deg);
+  }
+  29% {
+    transform: rotate(-1.5deg);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.06);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hop,
+  .eyes,
+  .wiggle,
+  .animated .bob,
+  .animated .eyes.blink,
+  .animated.hopping .hop,
+  .alerting .wiggle,
+  .pulse .wiggle {
+    animation: none !important;
+  }
+
+  .scale,
+  .tiltL,
+  .tiltR,
+  .animated.hovered .scale,
+  .animated.preview:hover .scale,
+  .animated.hovered .tiltL,
+  .animated.preview:hover .tiltL,
+  .animated.hovered .tiltR,
+  .animated.preview:hover .tiltR {
+    transform: none !important;
+    transition: none !important;
+  }
+}

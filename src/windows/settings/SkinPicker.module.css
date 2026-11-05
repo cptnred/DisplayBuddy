@@ -1,0 +1,179 @@
+.picker {
+  border: 0;
+  padding: 0;
+  margin: 0 0 16px;
+}
+
+.picker legend {
+  font-weight: 500;
+  margin-bottom: 6px;
+  padding: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+}
+
+.tile {
+  position: relative;
+}
+
+.choice {
+  display: block;
+  cursor: pointer;
+}
+
+/* Native radio stays focusable and keyboard-operable, only visually hidden. */
+.choice input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+}
+
+.card {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 10px 6px 8px;
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 12px;
+  background: #fff;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.choice:hover .card {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.choice input:checked + .card {
+  border-color: var(--accent, #2563eb);
+  box-shadow: 0 0 0 2px var(--accent, #2563eb) inset;
+  background: #eff6ff;
+}
+
+.choice input:focus-visible + .card {
+  outline: 2px solid var(--accent, #2563eb);
+  outline-offset: 2px;
+}
+
+.thumb {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+}
+
+.name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+
+.delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 50%;
+  background: #fff;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.delete:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.delete svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.importRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-top: 10px;
+}
+
+.hint {
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+}
+
+.button,
+.danger {
+  border-radius: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.button {
+  background: #fff;
+  border: 1px solid var(--line, #e5e7eb);
+}
+
+.button:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+.danger {
+  background: #dc2626;
+  border: 1px solid #b91c1c;
+  color: #fff;
+}
+
+.danger:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.button:disabled,
+.danger:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.confirm {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid #fca5a5;
+  border-radius: 12px;
+  background: #fef2f2;
+}
+
+.confirmTitle {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+
+.confirmText {
+  margin: 0 0 10px;
+  color: #7f1d1d;
+  font-size: 13px;
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
