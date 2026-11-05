@@ -166,7 +166,11 @@ pub fn is_valid_note_id(id: &str) -> bool {
 }
 
 fn clamp_f64(v: f64, min: f64, max: f64, fallback: f64) -> f64 {
-    if v.is_finite() { v.clamp(min, max) } else { fallback }
+    if v.is_finite() {
+        v.clamp(min, max)
+    } else {
+        fallback
+    }
 }
 
 impl Settings {
@@ -187,7 +191,11 @@ impl Settings {
                 height: s.height.clamp(NOTES_MIN_HEIGHT, NOTES_MAX_EDGE),
             })
         });
-        if self.active_note_id.as_deref().is_some_and(|id| !is_valid_note_id(id)) {
+        if self
+            .active_note_id
+            .as_deref()
+            .is_some_and(|id| !is_valid_note_id(id))
+        {
             self.active_note_id = None;
         }
         self
@@ -200,7 +208,8 @@ impl Settings {
     pub fn from_value_lenient(value: &Value) -> Self {
         let defaults = Settings::default();
         let mut acc = serde_json::to_value(&defaults).unwrap_or(Value::Null);
-        let accepts = |candidate: &Value| serde_json::from_value::<Settings>(candidate.clone()).is_ok();
+        let accepts =
+            |candidate: &Value| serde_json::from_value::<Settings>(candidate.clone()).is_ok();
         if let Some(obj) = value.as_object() {
             for (key, val) in obj {
                 if key == "buddy" {
@@ -222,7 +231,9 @@ impl Settings {
                 }
             }
         }
-        serde_json::from_value::<Settings>(acc).unwrap_or(defaults).sanitized()
+        serde_json::from_value::<Settings>(acc)
+            .unwrap_or(defaults)
+            .sanitized()
     }
 
     /// Applies a JSON-merge patch (RFC 7396 semantics, objects merged recursively)
@@ -256,7 +267,9 @@ pub fn merge_patch(target: &mut Value, patch: &Value) {
     if !target.is_object() {
         *target = Value::Object(Map::new());
     }
-    let Value::Object(target_obj) = target else { unreachable!() };
+    let Value::Object(target_obj) = target else {
+        unreachable!()
+    };
     for (key, value) in patch_obj {
         if value.is_null() {
             target_obj.remove(key);
@@ -306,7 +319,10 @@ mod tests {
         s.buddy.animation_speed = f64::NAN;
         s.buddy.face_color = "red".into();
         s.schema_version = 99;
-        s.notes_size = Some(WindowSize { width: 10.0, height: 99_999.0 });
+        s.notes_size = Some(WindowSize {
+            width: 10.0,
+            height: 99_999.0,
+        });
         s.active_note_id = Some("../evil".into());
         let s = s.sanitized();
         assert_eq!(s.buddy.size, BUDDY_SIZE_MAX);
@@ -314,14 +330,23 @@ mod tests {
         assert_eq!(s.buddy.animation_speed, 1.0);
         assert_eq!(s.buddy.face_color, DEFAULT_FACE_COLOR);
         assert_eq!(s.schema_version, SETTINGS_SCHEMA_VERSION);
-        assert_eq!(s.notes_size, Some(WindowSize { width: NOTES_MIN_WIDTH, height: NOTES_MAX_EDGE }));
+        assert_eq!(
+            s.notes_size,
+            Some(WindowSize {
+                width: NOTES_MIN_WIDTH,
+                height: NOTES_MAX_EDGE
+            })
+        );
         assert_eq!(s.active_note_id, None);
 
         let mut s = Settings::default();
         s.buddy.size = 1;
         s.buddy.animation_speed = 7.0;
         s.buddy.face_color = "#a1B2c3".into();
-        s.notes_size = Some(WindowSize { width: f64::INFINITY, height: 400.0 });
+        s.notes_size = Some(WindowSize {
+            width: f64::INFINITY,
+            height: 400.0,
+        });
         let s = s.sanitized();
         assert_eq!(s.buddy.size, BUDDY_SIZE_MIN);
         assert_eq!(s.buddy.animation_speed, SPEED_MAX);
@@ -345,7 +370,9 @@ mod tests {
         assert!(!is_valid_note_id("0B9A7A3E-4F5D-4C1E-9D8A-2A6B1C3D4E5F"));
         assert!(!is_valid_note_id("0b9a7a3e4f5d4c1e9d8a2a6b1c3d4e5f"));
         assert!(!is_valid_note_id("{0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f}"));
-        assert!(!is_valid_note_id("urn:uuid:0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f"));
+        assert!(!is_valid_note_id(
+            "urn:uuid:0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f"
+        ));
         assert!(!is_valid_note_id("../settings"));
         assert!(!is_valid_note_id(""));
     }
@@ -353,8 +380,14 @@ mod tests {
     #[test]
     fn merge_patch_rfc7396() {
         let mut t = json!({"a": 1, "b": {"c": 2, "d": 3}, "e": [1, 2]});
-        merge_patch(&mut t, &json!({"a": null, "b": {"c": 20, "x": {"y": 1}}, "e": [3], "f": "new"}));
-        assert_eq!(t, json!({"b": {"c": 20, "d": 3, "x": {"y": 1}}, "e": [3], "f": "new"}));
+        merge_patch(
+            &mut t,
+            &json!({"a": null, "b": {"c": 20, "x": {"y": 1}}, "e": [3], "f": "new"}),
+        );
+        assert_eq!(
+            t,
+            json!({"b": {"c": 20, "d": 3, "x": {"y": 1}}, "e": [3], "f": "new"})
+        );
 
         let mut t = json!({"a": 1});
         merge_patch(&mut t, &json!({"a": {"b": 1}}));
@@ -379,7 +412,10 @@ mod tests {
             .unwrap();
         assert_eq!(s.buddy.size, 128);
         assert_eq!(s.buddy.eye_style, EyeStyle::Hearts);
-        assert_eq!(s.buddy.face_color, DEFAULT_FACE_COLOR, "untouched nested keys survive");
+        assert_eq!(
+            s.buddy.face_color, DEFAULT_FACE_COLOR,
+            "untouched nested keys survive"
+        );
         assert!(s.notes_pinned);
         assert_eq!(s.schema_version, SETTINGS_SCHEMA_VERSION);
         assert!(!s.autostart);
@@ -390,7 +426,9 @@ mod tests {
         assert_eq!(s.buddy_position, None);
 
         // sanitize after merge
-        let s = s.with_patch(&json!({"buddy": {"size": 9999, "faceColor": "nope"}})).unwrap();
+        let s = s
+            .with_patch(&json!({"buddy": {"size": 9999, "faceColor": "nope"}}))
+            .unwrap();
         assert_eq!(s.buddy.size, BUDDY_SIZE_MAX);
         assert_eq!(s.buddy.face_color, DEFAULT_FACE_COLOR);
     }
@@ -400,7 +438,10 @@ mod tests {
         let base = Settings::default();
         assert!(base.with_patch(&json!([1, 2])).is_err());
         assert!(base.with_patch(&json!({"buddy": {"size": "big"}})).is_err());
-        assert!(base.with_patch(&json!({"buddy": {"eyeStyle": "laser"}})).is_err());
+        assert!(
+            base.with_patch(&json!({"buddy": {"eyeStyle": "laser"}}))
+                .is_err()
+        );
         assert!(base.with_patch(&json!({"notesPinned": "yes"})).is_err());
     }
 
@@ -421,8 +462,14 @@ mod tests {
         assert!(!s.notes_pinned);
         assert_eq!(s.buddy_position, Some(WindowPosition { x: 10, y: 20 }));
 
-        assert_eq!(Settings::from_value_lenient(&json!("garbage")), Settings::default());
-        assert_eq!(Settings::from_value_lenient(&json!({"buddy": null})), Settings::default());
+        assert_eq!(
+            Settings::from_value_lenient(&json!("garbage")),
+            Settings::default()
+        );
+        assert_eq!(
+            Settings::from_value_lenient(&json!({"buddy": null})),
+            Settings::default()
+        );
     }
 
     #[test]

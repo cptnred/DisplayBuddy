@@ -135,7 +135,11 @@ impl Storage {
         if !orphans.is_empty() {
             log::info!("appending {} note(s) missing from index", orphans.len());
         }
-        orphans.sort_by(|a, b| a.created_at.cmp(&b.created_at).then_with(|| a.id.cmp(&b.id)));
+        orphans.sort_by(|a, b| {
+            a.created_at
+                .cmp(&b.created_at)
+                .then_with(|| a.id.cmp(&b.id))
+        });
         notes.extend(orphans);
 
         let ids: Vec<String> = notes.iter().map(|n| n.id.clone()).collect();
@@ -216,7 +220,10 @@ impl Storage {
         Ok(match read_json::<Note>(&path)? {
             Read::Ok(mut note) => {
                 if note.id != id {
-                    log::warn!("note file {id}.json contains id {:?}; using file name", note.id);
+                    log::warn!(
+                        "note file {id}.json contains id {:?}; using file name",
+                        note.id
+                    );
                     note.id = id.to_string();
                 }
                 Read::Ok(note)
@@ -312,12 +319,18 @@ fn quarantine(path: &Path) {
 }
 
 fn corrupt_target(path: &Path) -> PathBuf {
-    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let simple = path.with_file_name(format!("{name}.corrupt"));
     if !simple.exists() {
         return simple;
     }
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     let stamped = path.with_file_name(format!("{name}.{ts}.corrupt"));
     if !stamped.exists() {
         return stamped;
@@ -335,7 +348,10 @@ fn write_json_atomic<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<()
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let tmp = path.with_file_name(format!("{name}.tmp"));
     let result = (|| -> io::Result<()> {
         let mut file = File::create(&tmp)?;
@@ -400,7 +416,10 @@ mod tests {
     fn empty_storage() {
         let (_d, s) = setup();
         assert!(s.list_notes().unwrap().is_empty());
-        assert!(!s.index_path().exists(), "no index written for empty storage");
+        assert!(
+            !s.index_path().exists(),
+            "no index written for empty storage"
+        );
         assert_eq!(s.load_settings().unwrap(), Settings::default());
     }
 
@@ -442,34 +461,52 @@ mod tests {
     #[test]
     fn save_order_reorders() {
         let (_d, s) = setup();
-        let (a, b, c) = (note(&new_id(), "1"), note(&new_id(), "2"), note(&new_id(), "3"));
+        let (a, b, c) = (
+            note(&new_id(), "1"),
+            note(&new_id(), "2"),
+            note(&new_id(), "3"),
+        );
         for n in [&a, &b, &c] {
             s.save_note(n).unwrap();
         }
-        s.save_order(&[c.id.clone(), a.id.clone(), b.id.clone()]).unwrap();
-        assert_eq!(ids(&s.list_notes().unwrap()), vec![c.id.clone(), a.id.clone(), b.id.clone()]);
+        s.save_order(&[c.id.clone(), a.id.clone(), b.id.clone()])
+            .unwrap();
+        assert_eq!(
+            ids(&s.list_notes().unwrap()),
+            vec![c.id.clone(), a.id.clone(), b.id.clone()]
+        );
     }
 
     #[test]
     fn save_order_bad_input_never_loses_notes() {
         let (_d, s) = setup();
-        let (a, b, c) = (note(&new_id(), "1"), note(&new_id(), "2"), note(&new_id(), "3"));
+        let (a, b, c) = (
+            note(&new_id(), "1"),
+            note(&new_id(), "2"),
+            note(&new_id(), "3"),
+        );
         for n in [&a, &b, &c] {
             s.save_note(n).unwrap();
         }
         s.save_order(&[
             "../../etc/passwd".into(),
             c.id.clone(),
-            new_id(), // unknown
+            new_id(),     // unknown
             c.id.clone(), // duplicate
             "".into(),
             a.id.to_uppercase(),
         ])
         .unwrap();
-        assert_eq!(ids(&s.list_notes().unwrap()), vec![c.id.clone(), a.id.clone(), b.id.clone()]);
+        assert_eq!(
+            ids(&s.list_notes().unwrap()),
+            vec![c.id.clone(), a.id.clone(), b.id.clone()]
+        );
 
         s.save_order(&[]).unwrap();
-        assert_eq!(ids(&s.list_notes().unwrap()), vec![c.id.clone(), a.id.clone(), b.id.clone()]);
+        assert_eq!(
+            ids(&s.list_notes().unwrap()),
+            vec![c.id.clone(), a.id.clone(), b.id.clone()]
+        );
     }
 
     #[test]
@@ -484,7 +521,8 @@ mod tests {
         write_json_atomic(&s.note_path(&c.id).unwrap(), &c).unwrap();
         // index references a missing note, an invalid id and a duplicate
         let ghost = new_id();
-        s.write_index(&[ghost.clone(), a.id.clone(), "bad".into(), a.id.clone()]).unwrap();
+        s.write_index(&[ghost.clone(), a.id.clone(), "bad".into(), a.id.clone()])
+            .unwrap();
         // a non-uuid json file and a corrupt-marker are ignored
         fs::write(s.notes_dir().join("readme.json"), "{}").unwrap();
 
@@ -501,7 +539,10 @@ mod tests {
         s.save_note(&a).unwrap();
         s.save_note(&b).unwrap();
         fs::remove_file(s.index_path()).unwrap();
-        assert_eq!(ids(&s.list_notes().unwrap()), vec![b.id.clone(), a.id.clone()]);
+        assert_eq!(
+            ids(&s.list_notes().unwrap()),
+            vec![b.id.clone(), a.id.clone()]
+        );
         assert_eq!(index_on_disk(&s), vec![b.id.clone(), a.id.clone()]);
     }
 
@@ -528,7 +569,11 @@ mod tests {
         let prefix = format!("{}.json.", a.id);
         let stamped: Vec<_> = names
             .iter()
-            .filter(|n| n.starts_with(&prefix) && n.ends_with(".corrupt") && **n != format!("{}.json.corrupt", a.id))
+            .filter(|n| {
+                n.starts_with(&prefix)
+                    && n.ends_with(".corrupt")
+                    && **n != format!("{}.json.corrupt", a.id)
+            })
             .collect();
         assert_eq!(stamped.len(), 1, "{names:?}");
         assert!(corrupt.exists(), "first quarantine file kept");
@@ -539,7 +584,11 @@ mod tests {
         let (_d, s) = setup();
         let id = new_id();
         fs::create_dir_all(s.notes_dir()).unwrap();
-        fs::write(s.note_path(&id).unwrap(), json!({"id": id, "title": "x"}).to_string()).unwrap();
+        fs::write(
+            s.note_path(&id).unwrap(),
+            json!({"id": id, "title": "x"}).to_string(),
+        )
+        .unwrap();
         assert!(s.list_notes().unwrap().is_empty());
         assert!(s.notes_dir().join(format!("{id}.json.corrupt")).exists());
     }
@@ -582,7 +631,10 @@ mod tests {
         s.save_note(&a).unwrap();
         s.save_note(&b).unwrap();
         fs::write(s.index_path(), "garbage").unwrap();
-        assert_eq!(ids(&s.list_notes().unwrap()), vec![a.id.clone(), b.id.clone()]);
+        assert_eq!(
+            ids(&s.list_notes().unwrap()),
+            vec![a.id.clone(), b.id.clone()]
+        );
         assert!(s.notes_dir().join("index.json.corrupt").exists());
         assert_eq!(index_on_disk(&s), vec![a.id.clone(), b.id.clone()]);
 
@@ -590,19 +642,39 @@ mod tests {
         fs::write(s.index_path(), r#"{"a": 1}"#).unwrap();
         let c = note(&new_id(), "3");
         s.save_note(&c).unwrap();
-        assert_eq!(ids(&s.list_notes().unwrap()), vec![c.id.clone(), a.id.clone(), b.id.clone()]);
+        assert_eq!(
+            ids(&s.list_notes().unwrap()),
+            vec![c.id.clone(), a.id.clone(), b.id.clone()]
+        );
     }
 
     #[test]
     fn invalid_ids_are_rejected_before_fs_use() {
         let (dir, s) = setup();
         fs::write(dir.path().join("secret.json"), "{}").unwrap();
-        for bad in ["../secret", "..\\secret", "/etc/passwd", "", "abc", "C:\\x", "../settings"] {
-            assert!(matches!(s.load_note(bad), Err(StorageError::InvalidId(_))), "{bad}");
-            assert!(matches!(s.delete_note(bad), Err(StorageError::InvalidId(_))), "{bad}");
+        for bad in [
+            "../secret",
+            "..\\secret",
+            "/etc/passwd",
+            "",
+            "abc",
+            "C:\\x",
+            "../settings",
+        ] {
+            assert!(
+                matches!(s.load_note(bad), Err(StorageError::InvalidId(_))),
+                "{bad}"
+            );
+            assert!(
+                matches!(s.delete_note(bad), Err(StorageError::InvalidId(_))),
+                "{bad}"
+            );
             let mut n = note(&new_id(), "1");
             n.id = bad.to_string();
-            assert!(matches!(s.save_note(&n), Err(StorageError::InvalidId(_))), "{bad}");
+            assert!(
+                matches!(s.save_note(&n), Err(StorageError::InvalidId(_))),
+                "{bad}"
+            );
         }
         assert!(dir.path().join("secret.json").exists());
         assert!(!s.notes_dir().exists(), "nothing was written");
@@ -611,7 +683,10 @@ mod tests {
     #[test]
     fn load_missing_note() {
         let (_d, s) = setup();
-        assert!(matches!(s.load_note(&new_id()), Err(StorageError::NotFound(_))));
+        assert!(matches!(
+            s.load_note(&new_id()),
+            Err(StorageError::NotFound(_))
+        ));
     }
 
     #[test]
@@ -620,9 +695,15 @@ mod tests {
         let a = note(&new_id(), "1");
         s.save_note(&a).unwrap();
         s.save_settings(&Settings::default()).unwrap();
-        s.save_order(&[a.id.clone()]).unwrap();
-        assert_eq!(files_in(&s.notes_dir()), vec![format!("{}.json", a.id), "index.json".into()]);
-        assert_eq!(files_in(dir.path()), vec!["notes".to_string(), "settings.json".into()]);
+        s.save_order(std::slice::from_ref(&a.id)).unwrap();
+        assert_eq!(
+            files_in(&s.notes_dir()),
+            vec![format!("{}.json", a.id), "index.json".into()]
+        );
+        assert_eq!(
+            files_in(dir.path()),
+            vec!["notes".to_string(), "settings.json".into()]
+        );
     }
 
     #[test]
@@ -663,7 +744,10 @@ mod tests {
 
         fs::write(s.settings_path(), "[1,2]").unwrap();
         assert_eq!(s.load_settings().unwrap(), Settings::default());
-        assert!(!s.settings_path().exists(), "non-object settings moved aside");
+        assert!(
+            !s.settings_path().exists(),
+            "non-object settings moved aside"
+        );
     }
 
     #[test]
@@ -686,6 +770,9 @@ mod tests {
         expected.buddy.face_color = "#123456".into();
         expected.hide_notes_on_blur = true;
         assert_eq!(loaded, expected);
-        assert!(s.settings_path().exists(), "partially valid file is not quarantined");
+        assert!(
+            s.settings_path().exists(),
+            "partially valid file is not quarantined"
+        );
     }
 }
