@@ -79,6 +79,8 @@ export interface Settings {
   hideNotesOnBlur: boolean;
   /** Global shortcut Ctrl+Alt+N enabled. */
   globalShortcut: boolean;
+  /** Experimental: clicks on the transparent corners of the buddy pass through. Default false. */
+  clickThrough: boolean;
 }
 
 export const DEFAULT_BUDDY: BuddyConfig = {
@@ -101,6 +103,7 @@ export const DEFAULT_SETTINGS: Settings = {
   notesPinned: false,
   hideNotesOnBlur: false,
   globalShortcut: true,
+  clickThrough: false,
 };
 
 /** Event names (Rust <-> windows). */

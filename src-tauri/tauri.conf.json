@@ -44,7 +44,9 @@
         "skipTaskbar": true,
         "resizable": true,
         "shadow": true,
-        "visible": false
+        "visible": false,
+        "maximizable": false,
+        "minimizable": false
       }
     ],
     "security": {
@@ -65,7 +67,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "publisher": "Display Buddy",
     "shortDescription": "Ein kleiner Smiley mit Notizen, immer im Vordergrund",
     "category": "Productivity",
@@ -77,10 +81,16 @@
       "icons/icon.ico"
     ],
     "windows": {
-      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
       "nsis": {
         "installMode": "currentUser",
-        "languages": ["German", "English"],
+        "languages": [
+          "German",
+          "English"
+        ],
         "displayLanguageSelector": false
       }
     }

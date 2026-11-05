@@ -136,6 +136,8 @@ pub struct Settings {
     pub notes_pinned: bool,
     pub hide_notes_on_blur: bool,
     pub global_shortcut: bool,
+    /// Experimental: clicks on the transparent corners of the buddy pass through.
+    pub click_through: bool,
 }
 
 impl Default for Settings {
@@ -150,6 +152,7 @@ impl Default for Settings {
             notes_pinned: false,
             hide_notes_on_blur: false,
             global_shortcut: true,
+            click_through: false,
         }
     }
 }
@@ -306,7 +309,8 @@ mod tests {
                 "activeNoteId": null,
                 "notesPinned": false,
                 "hideNotesOnBlur": false,
-                "globalShortcut": true
+                "globalShortcut": true,
+                "clickThrough": false
             })
         );
     }

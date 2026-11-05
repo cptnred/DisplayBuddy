@@ -123,7 +123,13 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|_app, event| {
+    app.run(|app, event| {
+        // Last chance on any exit path (incl. Windows logoff/shutdown, where tao exits
+        // without our flush handshake): persist window geometry synchronously.
+        if let RunEvent::Exit = event {
+            windows::persist_geometry_now(app);
+            return;
+        }
         // Windows are only ever hidden, so an exit request without an explicit code
         // (e.g. the last *visible* window was closed) must not end the app. Explicit
         // `app.exit(code)` from the quit flow carries a code and passes through.

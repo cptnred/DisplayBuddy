@@ -30,6 +30,7 @@ pub enum StorageError {
     InvalidId(String),
     NotFound(String),
     Corrupt(String),
+    NewerVersion(String),
     Io(io::Error),
     Json(serde_json::Error),
 }
@@ -40,6 +41,9 @@ impl fmt::Display for StorageError {
             Self::InvalidId(id) => write!(f, "invalid note id: {id:?}"),
             Self::NotFound(id) => write!(f, "note not found: {id}"),
             Self::Corrupt(id) => write!(f, "note file is corrupt (moved aside): {id}"),
+            Self::NewerVersion(id) => {
+                write!(f, "note {id} was written by a newer app version; not overwritten")
+            }
             Self::Io(e) => write!(f, "i/o error: {e}"),
             Self::Json(e) => write!(f, "json error: {e}"),
         }
@@ -165,6 +169,16 @@ impl Storage {
     /// Writes the note atomically; appends its id to the index if unknown.
     pub fn save_note(&self, note: &Note) -> Result<Note> {
         let path = self.note_path(&note.id)?;
+        // Never silently downgrade a note written by a newer app version.
+        if let Ok(text) = fs::read_to_string(&path)
+            && let Ok(existing) = serde_json::from_str::<serde_json::Value>(&text)
+            && existing
+                .get("schemaVersion")
+                .and_then(serde_json::Value::as_u64)
+                .is_some_and(|v| v > u64::from(crate::model::NOTE_SCHEMA_VERSION))
+        {
+            return Err(StorageError::NewerVersion(note.id.clone()));
+        }
         write_json_atomic(&path, note)?;
         let mut index = self.read_index()?.unwrap_or_default();
         if !index.contains(&note.id) {
@@ -774,5 +788,25 @@ mod tests {
             s.settings_path().exists(),
             "partially valid file is not quarantined"
         );
+    }
+
+    #[test]
+    fn save_refuses_to_downgrade_newer_schema() {
+        let dir = tempfile::tempdir().unwrap();
+        let st = Storage::new(dir.path().to_path_buf());
+        let id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+        std::fs::create_dir_all(dir.path().join("notes")).unwrap();
+        let future = serde_json::json!({
+            "id": id, "title": "", "color": "yellow", "content": {"type": "doc"},
+            "createdAt": "x", "updatedAt": "x", "schemaVersion": 99
+        });
+        let path = dir.path().join("notes").join(format!("{id}.json"));
+        std::fs::write(&path, future.to_string()).unwrap();
+        let mut note: Note = serde_json::from_value(future).unwrap();
+        note.schema_version = 1;
+        assert!(matches!(st.save_note(&note), Err(StorageError::NewerVersion(_))));
+        let on_disk: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(on_disk["schemaVersion"], 99);
     }
 }

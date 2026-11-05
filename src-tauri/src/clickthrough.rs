@@ -7,6 +7,9 @@
 //! determined (window hidden, API error, cursor outside), the window is made
 //! clickable again, and the thread resets it on exit.
 //!
+//! Opt-in via `Settings::click_through` (default off, experimental): while disabled the
+//! thread makes no window calls at all and only checks the cached setting every 250 ms.
+//!
 //! Windows only – on other platforms `set_ignore_cursor_events` and global cursor
 //! positions behave differently, and the app only targets Windows.
 
@@ -37,6 +40,7 @@ pub fn start(app: &tauri::AppHandle) {
     use crate::windows::BUDDY;
 
     const INTERVAL: Duration = Duration::from_millis(30);
+    const IDLE_INTERVAL: Duration = Duration::from_millis(250);
 
     let app = app.clone();
     let spawned = std::thread::Builder::new()
@@ -57,10 +61,18 @@ pub fn start(app: &tauri::AppHandle) {
             let _reset = Reset(Some(buddy.clone()));
             let mut ignoring = false;
             loop {
-                std::thread::sleep(INTERVAL);
                 if app.state::<crate::state::AppState>().quit.is_quitting() {
                     break;
                 }
+                if !crate::state::current_settings(&app).click_through {
+                    if ignoring {
+                        let _ = buddy.set_ignore_cursor_events(false);
+                        ignoring = false;
+                    }
+                    std::thread::sleep(IDLE_INTERVAL);
+                    continue;
+                }
+                std::thread::sleep(INTERVAL);
                 let want = (|| -> Option<bool> {
                     if !buddy.is_visible().ok()? {
                         return Some(false);
