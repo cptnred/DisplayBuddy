@@ -10,7 +10,7 @@ import notesCap from "../../src-tauri/capabilities/notes.json";
 import settingsCap from "../../src-tauri/capabilities/settings.json";
 import { api } from "./api";
 
-const sources = import.meta.glob<string>(["../windows/*/*.{ts,tsx}", "../components/**/*.{ts,tsx}"], {
+const sources = import.meta.glob<string>(["../windows/**/*.{ts,tsx}", "../components/**/*.{ts,tsx}"], {
   query: "?raw",
   import: "default",
   eager: true,
