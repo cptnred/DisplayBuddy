@@ -59,15 +59,10 @@ mod win {
 
     use super::bgra_to_rgba;
 
-    // `Win32_System_Com` is not among the enabled windows-sys features; these two
-    // functions are all we need (SHGetFileInfoW requires COM on the calling thread).
-    #[link(name = "ole32")]
-    unsafe extern "system" {
-        fn CoInitializeEx(reserved: *const c_void, coinit: u32) -> i32;
-        fn CoUninitialize();
-    }
-    const COINIT_APARTMENTTHREADED: u32 = 0x2;
-    const COINIT_DISABLE_OLE1DDE: u32 = 0x4;
+    // SHGetFileInfoW requires COM on the calling thread.
+    use windows_sys::Win32::System::Com::{
+        COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoUninitialize,
+    };
     /// Largest edge accepted from the shell (sanity bound for buffer sizes).
     const MAX_EDGE: i32 = 256;
 
@@ -81,7 +76,7 @@ mod win {
             let hr = unsafe {
                 CoInitializeEx(
                     null_mut(),
-                    COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE,
+                    (COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) as u32,
                 )
             };
             let result = extract(&path);
