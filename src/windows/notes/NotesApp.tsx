@@ -56,6 +56,8 @@ export function NotesApp({ Editor, renderPreview = defaultRenderPreview }: Notes
     const onKeyDown = (e: KeyboardEvent) => {
       const { store: s, confirmOpen: dialogOpen, createNote: create } = latest.current;
       if (e.key === "Escape") {
+        // Popovers (e.g. the editor's colour palette) close themselves on Esc.
+        if (e.target instanceof Element && e.target.closest("[data-local-escape]")) return;
         e.preventDefault();
         e.stopPropagation();
         if (dialogOpen) setConfirmOpen(false);

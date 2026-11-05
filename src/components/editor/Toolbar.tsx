@@ -303,6 +303,8 @@ function ColorPicker({ editor, current }: { editor: Editor | null; current: stri
           className={styles.palette}
           role="group"
           aria-label="Textfarbe wählen"
+          // Esc is handled here (closes the palette); window-level handlers must ignore it.
+          data-local-escape=""
           onKeyDown={onPopKeyDown}
           onBlur={(ev) => {
             // Tabbing out of the palette closes it.

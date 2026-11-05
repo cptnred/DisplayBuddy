@@ -1,12 +1,17 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "../../styles/base.css";
+import { NoteEditor } from "../../components/editor/NoteEditor";
 import { NotesApp } from "./NotesApp";
-// TEMPORARY: replaced by the TipTap NoteEditor (src/components/editor) during integration.
-import { FallbackEditor } from "./FallbackEditor";
+
+// Suppress the WebView's native context menu outside editable fields.
+window.addEventListener("contextmenu", (e) => {
+  const t = e.target as HTMLElement | null;
+  if (!t?.closest('input, textarea, [contenteditable="true"]')) e.preventDefault();
+});
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <NotesApp Editor={FallbackEditor} />
+    <NotesApp Editor={NoteEditor} />
   </React.StrictMode>,
 );
