@@ -131,6 +131,8 @@ notes/<uuid>.json       # Note
 | `flush_done` | – | `()` | notes window confirms flush on quit |
 | `quit_app` | – | `()` | flush handshake then exit |
 
+Clarifications (v1 implementation): `save_settings` ignores the keys `schemaVersion` and `autostart` (autostart only via `set_autostart`; OS state is the source of truth); a wrongly typed patch value returns `Err` (disk loading stays lenient, per key). The auto-computed default buddy position is not persisted until the user moves the buddy. Note: in Tauri 2.12 `emit_to` does not restrict JS `listen()` delivery, so only the notes window may subscribe to `notes-*`, `note-create-request`, `flush-request`.
+
 All commands return `Result<T, String>` (error string is German-free technical text; UI shows generic German message).
 
 ## 6. Events
@@ -151,7 +153,7 @@ All commands return `Result<T, String>` (error string is German-free technical t
 | `notes` | tauri.conf (hidden) | 420×520, min 320×360, no decorations (own title bar with `data-tauri-drag-region` / `startDragging`), alwaysOnTop, skipTaskbar, resizable. Shown/hidden only, never re-created. |
 | `settings` | on demand (Rust `WebviewWindowBuilder`) | `settings.html`, decorated, 520×640, resizable, normal z-order, in taskbar. |
 
-Notes placement (Rust, `windows.rs`, pure helper `compute_notes_position(buddy_rect, notes_size, work_area) -> (x, y)` unit-tested): prefer left of the buddy if it fits, else right, gap 12 px; vertically align bottom of notes with bottom of buddy, clamped into the work area of the monitor the buddy is on.
+Notes placement (Rust, `windows.rs`, pure helper `compute_notes_position(buddy_rect, notes_size, work_area, gap) -> (x, y)` (all physical px, gap = 12 × scale factor) unit-tested): prefer left of the buddy if it fits, else right, gap 12 px; vertically align bottom of notes with bottom of buddy, clamped into the work area of the monitor the buddy is on.
 
 Buddy position persistence: Rust listens to `WindowEvent::Moved` of `buddy`, debounces 300 ms (spawned thread / timestamp check), saves `buddyPosition` (physical px). Off-screen check at startup: position valid if the buddy's centre lies inside any monitor's rect.
 
@@ -188,8 +190,8 @@ export interface Slot { index: number; offset: number }                // offset
 export function visibleSlots(n: number, active: number, radius?: number): Slot[]; // no duplicates; n=1 → [0]; n=2 → active + other at +1
 export function step(active: number, delta: number, n: number): number;
 export function insertAfter<T>(items: T[], active: number, item: T): { items: T[]; active: number };
-export function removeAt<T>(items: T[], index: number): { items: T[]; active: number }; // active → the next note (wraps), -1/0 when empty
-export function move<T>(items: T[], index: number, delta: -1 | 1): { items: T[]; active: number }; // reorder with wraparound
+export function removeAt<T>(items: T[], index: number, active = index): { items: T[]; active: number }; // removing the active → next note (wraps); 0 when empty
+export function move<T>(items: T[], index: number, delta: -1 | 1): { items: T[]; active: number }; // swap with neighbour (wraps across the ends)
 export function indicatorLabel(active: number, n: number): string;      // "3 / 7", "0 / 0"
 ```
 `Carousel.tsx`: generic presentation `({ items, activeIndex, onSelect, renderActive, renderPreview })`; cards keyed by id; CSS transforms by offset (coverflow); hidden `±2` cards for seamless wrap; wheel over side cards → step; click side card → select; arrow buttons with aria-labels; indicator „3 / 7“.
