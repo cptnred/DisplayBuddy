@@ -161,6 +161,10 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
   fun show(invoke: Invoke) {
     val notification = invoke.parseArgs(Notification::class.java)
     val id = manager.schedule(notification)
+    // Display Buddy patch (D-76): like `batch`, persist scheduled notifications. Upstream
+    // `show` did not, so getPending() stayed empty and LocalNotificationRestoreReceiver
+    // could not re-arm them after a reboot.
+    notificationStorage.appendNotifications(listOf(notification))
 
     invoke.resolveObject(id)
   }
