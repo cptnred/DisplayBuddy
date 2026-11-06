@@ -716,7 +716,7 @@ In der Cloud automatisch geprüft ist, was in §31 steht; alles hier braucht ech
    09:00 Berlin.
 
 ## 31. Anhang v3: In der Cloud automatisiert geprüft
-- `npm test` (+ `npm run test:tz` unter New York/Tokio): Zeitzonenmathe gegen 210 gemeinsame Vektoren, LWW, Uhr,
+- `npm test` (+ `npm run test:tz` unter New York/Tokio): Zeitzonenmathe gegen 215 gemeinsame Vektoren, LWW, Uhr,
   Datenschicht/Outbox/Sync-Engine (16a/16b/16c, 401/410, Backoff, zwei Tabs), PWA-UI, Service-Worker-Handler,
   native Planung (IDs, 60er-Grenze, Aktionen offline).
 - `cargo test` in `crates/buddy-core`, `src-tauri`, `server`, `mobile/src-tauri`: dieselben Vektoren in Rust,
