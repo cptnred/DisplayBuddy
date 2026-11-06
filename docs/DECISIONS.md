@@ -60,10 +60,12 @@
 
 Benutzerentscheidungen vom 2026-11-06: eigener Sync-/Relay-Server auf einem **VPS mit Domain**; Notizen am Handy
 **lesen und bearbeiten**; **keine Ende-zu-Ende-Verschlüsselung**; Konflikte: **neueste Änderung gewinnt**.
+Nachtrag am selben Tag: Web-App **installierbar** (Android/iOS), **offline** lokal speichern und bei Verbindung
+automatisch synchronisieren; **Gerätezeitstempel** auf PC und Handy entscheiden.
 
 **D-28 Eigener Server, Desktop bleibt local-first.** `buddy-server` (axum + SQLite) synchronisiert Notizen, plant Erinnerungen und sendet Push. Die Desktop-App funktioniert ohne Server unverändert; Sync ist optional und standardmäßig aus.
 
-**D-29 Last-Writer-Wins pro Dokument** (Notiz, Erinnerung, Reihenfolge) nach `updatedAt`, Gleichstand → größeres `updatedBy`. Löschen ist ein Tombstone, der an LWW teilnimmt. Zeitstempel mehr als 2 min in der Zukunft klemmt der Server auf seine Zeit; Web-Bearbeitungen bekommen immer Serverzeit. Verlierer-Fassungen 30 Tage in `note_revisions`. TipTaps offizieller Weg für Zusammenführen wäre Collaboration/Yjs (CRDT) – bewusst nicht gewählt (Benutzerentscheidung; das Speicherformat müsste von TipTap-JSON auf Yjs-Dokumente umgestellt werden).
+**D-29 Last-Writer-Wins pro Dokument** (Notiz, Erinnerung, Reihenfolge) nach `updatedAt`, Gleichstand → größeres `updatedBy`. Löschen ist ein Tombstone, der an LWW teilnimmt. Entscheidend ist der **Zeitstempel der Bearbeitung auf dem Gerät** (PC und Handy, siehe D-41); der Server stempelt nie um und klemmt nur Zeitstempel, die mehr als 2 min in der Zukunft liegen. Verlierer-Fassungen (überschrieben oder beim Hochladen abgelehnt) 30 Tage in `note_revisions`. TipTaps offizieller Weg für Zusammenführen wäre Collaboration/Yjs (CRDT) – bewusst nicht gewählt (Benutzerentscheidung; das Speicherformat müsste von TipTap-JSON auf Yjs-Dokumente umgestellt werden).
 
 **D-30 Fällig-Werden ändert `updatedAt` nicht.** Nur Benutzeraktionen (setzen, erledigen, verschieben, entfernen) zählen als Bearbeitung. Sonst könnte ein PC, der offline nachfeuert, eine am Handy erledigte Erinnerung wieder „fällig“ machen.
 
@@ -73,7 +75,7 @@ Benutzerentscheidungen vom 2026-11-06: eigener Sync-/Relay-Server auf einem **VP
 
 **D-33 Aktionsknöpfe mit signierten Einmal-Tokens** (HMAC, 24 h, an `(noteId, at)` gebunden) statt eines Bearer-Tokens in der Nachricht, weil ntfy Nachrichten samt Aktionen im Cache speichert.
 
-**D-34 Web-App als eigener Vite-Einstieg** (`web.html` → `src/web/`), dieselben TipTap-Extensions wie am Desktop (TipTap-Doku: Schema-Parität), eigene fetch-Schicht `src/web/webApi.ts`; v3 online-only, kein Service Worker.
+**D-34 Web-App als installierbare, offline-first PWA** (Nachtrag 2026-11-06, Benutzerwunsch): eigener Vite-Einstieg (`web.html` → `src/web/`), dieselben TipTap-Extensions wie am Desktop (TipTap-Doku: Schema-Parität). Installierbar laut MDN (Manifest mit name/short_name, Icons 192+512, start_url, display standalone; HTTPS). Service Worker über vite-plugin-pwa/Workbox `generateSW` nur für die App-Hülle, `registerType: 'prompt'`, `injectRegister: null` (kein Inline-Skript, CSP bleibt streng). Daten in IndexedDB über `idb` mit Outbox; die Oberfläche liest nur lokal.
 
 **D-35 Gemeinsames Crate `crates/buddy-core` ohne Cargo-Workspace.** Path-Dependency aus `src-tauri` und `server`; Tauri-Build, `target/` und MinGW-Cross-Build bleiben unverändert. `model.rs` re-exportiert die verschobenen Typen.
 
@@ -86,3 +88,13 @@ Benutzerentscheidungen vom 2026-11-06: eigener Sync-/Relay-Server auf einem **VP
 **D-39 Wiederholungsmathe auf dem Server in der IANA-Zeitzone des Kontos** (`chrono-tz`); `schedule.rs` ist bereits generisch über `TimeZone`. Der Desktop meldet seine Zone beim Verbinden.
 
 **D-40 Betrieb: VPS + Docker Compose + Caddy** (automatisches HTTPS laut Caddy-Doku), zwei Subdomains (`buddy.<domain>`, `ntfy.<domain>`), nur Caddy veröffentlicht Ports.
+
+**D-41 Gerätezeitstempel mit Uhr-Korrektur** (Nachtrag, Benutzerwunsch). `updatedAt` setzt das Gerät, auf dem bearbeitet wird – sofort beim lokalen Speichern, auch offline – als korrigierte Gerätezeit: Gerätezeit + Median der letzten 5 gemessenen Abweichungen zur Serveruhr (`serverTime` jeder Antwort, RTT/2 abgezogen, nur RTT < 5 s). Offline gilt der letzte bekannte Wert. Eine späte Offline-Änderung behält ihren frühen Zeitstempel und verliert deshalb korrekt gegen eine inzwischen neuere Änderung. Hybrid Logical Clocks wären robuster gegen falsche Uhren, sind aber für einen Benutzer mit NTP-synchronisierten Geräten unnötig komplex.
+
+**D-42 LWW, Uhr-Korrektur und Erinnerungsmathe doppelt (Rust + TypeScript) mit gemeinsamen Testvektoren** (`crates/buddy-core/tests/fixtures/*.json`, von `cargo test` und Vitest gelesen). Die Web-App muss offline entscheiden und rechnen können (z. B. „Erledigt“ bei einer Wiederholung); WebAssembly aus `buddy-core` wäre die Alternative, vergrößert aber Build und CSP-Anforderungen (`wasm-unsafe-eval`).
+
+**D-43 Ein Schreibweg: `/sync/push`.** Keine CRUD-Endpunkte mit Serverzeit, damit PC und Web-App denselben Regeln folgen und Offline-Änderungen nicht anders behandelt werden als Online-Änderungen. `/sync/push` ist idempotent (Wiederholung nach Verbindungsabbruch ist sicher).
+
+**D-44 Sync der Web-App ohne Background Sync.** Laut browser-compat-data gibt es `SyncManager` nur in Chromium (nicht Safari, nicht Firefox). Ausgelöst wird deshalb beim Start, bei `online`, bei `visibilitychange`, alle 60 s sichtbar und nach Änderungen; `navigator.onLine` nur als Hinweis (MDN: unzuverlässig). Background Sync höchstens als optionale Ergänzung. Parallele Läufe mehrerer Tabs verhindert die Web Locks API (Safari ≥ 15.4), Änderungen verteilt `BroadcastChannel`.
+
+**D-45 iOS: Installation empfohlen, Speicher-Persistenz anfragen.** Safari löscht per Skript angelegte Daten nach 7 Tagen ohne Interaktion (MDN); Web-Apps auf dem Home-Bildschirm sind laut WebKit ausgenommen. Die App zeigt unter iOS deshalb deutlich den Installationshinweis und ruft nach dem Login `navigator.storage.persist()` auf. Gefährdet sind ohnehin nur nicht synchronisierte Änderungen.
