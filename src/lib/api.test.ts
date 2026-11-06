@@ -72,6 +72,11 @@ const COMMAND_CASES: CommandCase[] = [
   ["importSkin", [], "import_skin"],
   ["deleteSkin", ["k1"], "delete_skin", { id: "k1" }],
   ["loadSkin", ["k1"], "load_skin", { id: "k1" }],
+  // v3 (PLAN_V3_SYNC §8)
+  ["syncStatus", [], "sync_status"],
+  ["syncConnect", ["https://buddy.example.org", "anna", "pw", "Büro-PC"], "sync_connect", { serverUrl: "https://buddy.example.org", username: "anna", password: "pw", deviceName: "Büro-PC" }],
+  ["syncDisconnect", [], "sync_disconnect"],
+  ["syncNow", [], "sync_now"],
 ];
 
 /**
@@ -112,6 +117,10 @@ const PLAN_COMMANDS = [
   "import_skin",
   "delete_skin",
   "load_skin",
+  "sync_status",
+  "sync_connect",
+  "sync_disconnect",
+  "sync_now",
 ];
 
 describe("api commands", () => {
@@ -212,6 +221,8 @@ describe("api events", () => {
     ["onShortcutsChanged", "shortcuts-changed", { items: [], bookmarks: [] }, [{ items: [], bookmarks: [] }]],
     ["onShortcutDrag", "shortcut-drag", { state: "enter" }, ["enter"]],
     ["onSkinsChanged", "skins-changed", [], [[]]],
+    ["onSyncStatus", "sync-status", { state: "idle" }, [{ state: "idle" }]],
+    ["onNotesChanged", "notes-changed", { notes: [], deletedIds: ["n"], order: null }, [{ notes: [], deletedIds: ["n"], order: null }]],
   ] as const)("%s listens to %s and unwraps the payload", async (method, event, payload, expected) => {
     const cb = vi.fn();
     await (api[method] as (c: unknown) => Promise<unknown>)(cb);

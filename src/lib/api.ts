@@ -8,6 +8,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   EVENTS,
   type Note,
+  type NotesChangedPayload,
   type Reminder,
   type ReminderRepeat,
   type Settings,
@@ -15,6 +16,7 @@ import {
   type ShortcutsData,
   type SkinData,
   type SkinInfo,
+  type SyncStatus,
 } from "../types";
 
 /** Deep-partial patch for save_settings (only `buddy` is nested). */
@@ -91,6 +93,20 @@ export const api = {
   deleteSkin: (id: string) => invoke<void>("delete_skin", { id }),
   loadSkin: (id: string) => invoke<SkinData>("load_skin", { id }),
 
+  // ---- v3: sync with the own server (Rust owns the HTTP client and the token) --------
+  syncStatus: () => invoke<SyncStatus>("sync_status"),
+  /**
+   * Registers this PC at the server and unites local data with it. Rejects with a
+   * string starting with a code: invalid_url, invalid_input, unauthorized, offline,
+   * server, protocol, keyring, not_ready.
+   */
+  syncConnect: (serverUrl: string, username: string, password: string, deviceName: string) =>
+    invoke<SyncStatus>("sync_connect", { serverUrl, username, password, deviceName }),
+  /** Signs out at the server (best effort), deletes the token and the outbox. */
+  syncDisconnect: () => invoke<SyncStatus>("sync_disconnect"),
+  /** Starts a sync right away; returns the current status. */
+  syncNow: () => invoke<SyncStatus>("sync_now"),
+
   // ---- events --------------------------------------------------------------
   onSettingsChanged: (cb: (s: Settings) => void): Promise<UnlistenFn> =>
     listen<Settings>(EVENTS.settingsChanged, (e) => cb(e.payload)),
@@ -108,6 +124,9 @@ export const api = {
     listen<{ state: "enter" | "leave" | "drop" }>(EVENTS.shortcutDrag, (e) => cb(e.payload.state)),
   onSkinsChanged: (cb: (s: SkinInfo[]) => void) =>
     listen<SkinInfo[]>(EVENTS.skinsChanged, (e) => cb(e.payload)),
+  onSyncStatus: (cb: (s: SyncStatus) => void) => listen<SyncStatus>(EVENTS.syncStatus, (e) => cb(e.payload)),
+  onNotesChanged: (cb: (p: NotesChangedPayload) => void) =>
+    listen<NotesChangedPayload>(EVENTS.notesChanged, (e) => cb(e.payload)),
 };
 
 export type Api = typeof api;

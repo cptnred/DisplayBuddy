@@ -10,6 +10,8 @@ export interface NoteEditorProps {
   onChange: (doc: JSONContent) => void;
   autoFocus?: boolean;
   placeholder?: string;
+  /** v3: changes when `content` was replaced remotely → the editor reloads it. */
+  revision?: number;
 }
 
 export const UNTITLED = "Ohne Titel";
@@ -64,6 +66,8 @@ export interface ActiveNoteCardProps {
   onTitleChange: (title: string) => void;
   onColorChange: (color: NoteColor) => void;
   onContentChange: (doc: JSONContent) => void;
+  /** v3: bumped when the note content was replaced by a synced remote version. */
+  contentRevision?: number;
   /** Rendered in the header between title and colour picker (reminder bell). */
   headerExtra?: ReactNode;
   /** Rendered above the header (due-reminder banner). */
@@ -77,6 +81,7 @@ export function ActiveNoteCard({
   onTitleChange,
   onColorChange,
   onContentChange,
+  contentRevision = 0,
   headerExtra,
   banner,
 }: ActiveNoteCardProps) {
@@ -103,6 +108,7 @@ export function ActiveNoteCard({
           onChange={onContentChange}
           autoFocus={autoFocusEditor}
           placeholder="Schreib etwas …"
+          revision={contentRevision}
         />
       </div>
     </div>

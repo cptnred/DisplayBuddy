@@ -1,14 +1,17 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { api } from "../../lib/api";
 import { insertAfter, move, normalizeIndex, removeAt } from "../../lib/carousel";
+import { clock } from "../../lib/clock";
 import { createKeyedDebouncer } from "../../lib/debounce";
 import {
   NOTE_COLORS,
   NOTE_SCHEMA_VERSION,
   type Note,
   type NoteColor,
+  type NotesChangedPayload,
   type Reminder,
   type ReminderRepeat,
+  type SyncStatus,
 } from "../../types";
 import { emptyDoc } from "./docText";
 
@@ -36,7 +39,19 @@ export interface NotesState {
   actionError: string | null;
   /** Reminders by note id (Rust owns them; replaced on every `reminders-changed`). */
   reminders: Record<string, Reminder>;
+  /**
+   * v3: bumped when the content of a note was replaced by a remote version, so the
+   * open editor reloads it (`setContent(…, { emitUpdate: false })`).
+   */
+  remoteRevision: Record<string, number>;
+  /** v3: transient German hint about remote changes (e.g. active note deleted elsewhere). */
+  syncNotice: string | null;
+  /** v3: last sync status (null until known). */
+  sync: SyncStatus | null;
 }
+
+export const REMOTE_DELETED_TEXT = "Diese Notiz wurde auf einem anderen Gerät gelöscht.";
+export const NOTICE_MS = 5000;
 
 export const REMINDER_ERROR_TEXT = "Erinnerung konnte nicht gespeichert werden";
 
@@ -83,7 +98,7 @@ export interface NotesController {
   setPinned(pinned: boolean): void;
   flushAll(): Promise<void>;
   /** `at` = RFC 3339 or null (remove). Resolves false on error (action banner shown). */
-  setReminder(noteId: string, at: string | null, repeat: ReminderRepeat): Promise<boolean>;
+  setReminder(noteId: string, at: string | null, repeat: ReminderRepeat, timeZone?: string | null): Promise<boolean>;
   ackReminder(noteId: string): Promise<boolean>;
   snoozeReminder(noteId: string, minutes: number): Promise<boolean>;
   /** Selects the note with this id (waits for the initial load). False if unknown. */
@@ -106,6 +121,9 @@ export function createNotesController(): NotesController {
     saveError: false,
     actionError: null,
     reminders: {},
+    remoteRevision: {},
+    syncNotice: null,
+    sync: null,
   };
   const listeners = new Set<() => void>();
   const failing = new Set<string>();
@@ -143,6 +161,71 @@ export function createNotesController(): NotesController {
     }
   };
   let actionErrorTimer: ReturnType<typeof setTimeout> | null = null;
+  let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Notes with a save currently running (not visible in `saver.pending()`). */
+  const inFlight = new Map<string, number>();
+  const hasLocalChange = (id: string) =>
+    saver.pending().includes(id) || (inFlight.get(id) ?? 0) > 0 || failing.has(id) || deleted.has(id);
+
+  const showNotice = (message: string) => {
+    if (noticeTimer) clearTimeout(noticeTimer);
+    set({ syncNotice: message });
+    noticeTimer = setTimeout(() => set({ syncNotice: null }), NOTICE_MS);
+  };
+
+  const applySyncStatus = (s: SyncStatus) => {
+    // stamps use the corrected device clock (§5.3); without sync the offset is 0
+    clock.setOffsetMs(s.enabled ? s.clockOffsetMs : 0);
+    set({ sync: s });
+  };
+
+  /**
+   * Remote changes merged by Rust (`notes-changed`). Notes with an unsaved or running
+   * local save keep the local version (it is newer and will be pushed); everything else
+   * takes the remote version. The editor of the active note reloads via `remoteRevision`.
+   */
+  const applyRemote = (p: NotesChangedPayload) => {
+    if (state.status !== "ready") return; // the initial list is loaded after this anyway
+    const activeId = state.notes[state.activeIndex]?.id;
+    let notes = state.notes.slice();
+    const remoteRevision = { ...state.remoteRevision };
+    for (const remote of p.notes) {
+      if (hasLocalChange(remote.id)) continue;
+      const idx = notes.findIndex((n) => n.id === remote.id);
+      if (idx < 0) {
+        notes.push(remote);
+        continue;
+      }
+      if (JSON.stringify(notes[idx].content) !== JSON.stringify(remote.content)) {
+        remoteRevision[remote.id] = (remoteRevision[remote.id] ?? 0) + 1;
+      }
+      notes[idx] = remote;
+    }
+    let activeDeleted = false;
+    for (const id of p.deletedIds) {
+      if (hasLocalChange(id)) continue; // a pending save brings the note back (newer edit)
+      const before = notes.length;
+      notes = notes.filter((n) => n.id !== id);
+      if (notes.length !== before && id === activeId) activeDeleted = true;
+    }
+    if (p.order) {
+      const rank = new Map(p.order.map((id, i) => [id, i]));
+      notes = notes
+        .map((n, i) => ({ n, i }))
+        .sort((a, b) => (rank.get(a.n.id) ?? p.order!.length + a.i) - (rank.get(b.n.id) ?? p.order!.length + b.i))
+        .map((x) => x.n);
+    }
+    let activeIndex = activeId ? notes.findIndex((n) => n.id === activeId) : -1;
+    if (activeIndex < 0) {
+      // neighbour of the removed active note
+      activeIndex = notes.length === 0 ? 0 : Math.min(state.activeIndex, notes.length - 1);
+    }
+    set({ notes, activeIndex, remoteRevision });
+    if (activeDeleted) {
+      showNotice(REMOTE_DELETED_TEXT);
+      persistActiveId();
+    }
+  };
 
   const set = (patch: Partial<NotesState>) => {
     state = { ...state, ...patch };
@@ -163,6 +246,17 @@ export function createNotesController(): NotesController {
   };
 
   const runSave = async (id: string, note: Note): Promise<void> => {
+    inFlight.set(id, (inFlight.get(id) ?? 0) + 1);
+    try {
+      await runSaveInner(id, note);
+    } finally {
+      const n = (inFlight.get(id) ?? 1) - 1;
+      if (n > 0) inFlight.set(id, n);
+      else inFlight.delete(id);
+    }
+  };
+
+  const runSaveInner = async (id: string, note: Note): Promise<void> => {
     if (deleted.has(id)) return;
     try {
       await api.saveNote(note);
@@ -237,6 +331,7 @@ export function createNotesController(): NotesController {
       if (!loadPromise) {
         loadPromise = doLoad();
         void loadReminders();
+        api.syncStatus().then(applySyncStatus, (error: unknown) => console.error("[notes] sync status failed", error));
       }
       return loadPromise;
     },
@@ -244,7 +339,7 @@ export function createNotesController(): NotesController {
     updateNote(id, patch) {
       const idx = state.notes.findIndex((n) => n.id === id);
       if (idx < 0 || deleted.has(id)) return;
-      const updated: Note = { ...state.notes[idx], ...patch, updatedAt: new Date().toISOString() };
+      const updated: Note = { ...state.notes[idx], ...patch, updatedAt: clock.correctedNowIso() };
       const notes = state.notes.slice();
       notes[idx] = updated;
       set({ notes });
@@ -277,7 +372,7 @@ export function createNotesController(): NotesController {
         return null;
       }
       const current = activeNote();
-      const now = new Date().toISOString();
+      const now = clock.correctedNowIso();
       const note: Note = {
         id: newId(),
         title: "",
@@ -334,7 +429,8 @@ export function createNotesController(): NotesController {
       await Promise.all([saver.flush(), activeIdSaver.flush(), orderTail]);
     },
 
-    setReminder: (noteId, at, repeat) => reminderAction(noteId, () => api.setReminder(noteId, at, repeat)),
+    setReminder: (noteId, at, repeat, timeZone = null) =>
+      reminderAction(noteId, () => api.setReminder(noteId, at, repeat, timeZone)),
     ackReminder: (noteId) => reminderAction(noteId, () => api.ackReminder(noteId)),
     snoozeReminder: (noteId, minutes) => reminderAction(noteId, () => api.snoozeReminder(noteId, minutes)),
 
@@ -362,6 +458,8 @@ export function createNotesController(): NotesController {
           if (s.notesPinned !== state.pinned) set({ pinned: s.notesPinned });
         }),
         api.onRemindersChanged((list) => replaceReminders(list)),
+        api.onSyncStatus((s) => applySyncStatus(s)),
+        api.onNotesChanged((p) => applyRemote(p)),
       ];
       const onUnload = () => void ctrl.flushAll();
       window.addEventListener("beforeunload", onUnload);
@@ -377,6 +475,7 @@ export function createNotesController(): NotesController {
         window.removeEventListener("beforeunload", onUnload);
         window.removeEventListener("pagehide", onUnload);
         if (actionErrorTimer) clearTimeout(actionErrorTimer);
+        if (noticeTimer) clearTimeout(noticeTimer);
         void ctrl.flushAll();
       };
     },

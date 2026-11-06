@@ -439,3 +439,24 @@ describe("keyboard", () => {
     expect(editor.getText()).toBe("Hallo Welt");
   });
 });
+
+describe("NoteEditor – remote content (v3 sync)", () => {
+  it("a new revision loads the content without firing onChange; same revision ignores prop changes", () => {
+    const onChange = vi.fn<(doc: JSONContent) => void>();
+    let editor!: Editor;
+    const onReady = (e: Editor) => (editor = e);
+    const other: JSONContent = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "Vom Handy" }] }],
+    };
+    const { rerender } = render(<NoteEditor content={helloDoc} onChange={onChange} onReady={onReady} revision={0} />);
+    // the content prop alone is mount-only
+    rerender(<NoteEditor content={other} onChange={onChange} onReady={onReady} revision={0} />);
+    expect(editor.getText()).toBe("Hallo Welt");
+    act(() => {
+      rerender(<NoteEditor content={other} onChange={onChange} onReady={onReady} revision={1} />);
+    });
+    expect(editor.getText()).toBe("Vom Handy");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});

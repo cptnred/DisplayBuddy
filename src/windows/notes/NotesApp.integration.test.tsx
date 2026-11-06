@@ -25,6 +25,9 @@ const h = vi.hoisted(() => {
     onFlushRequest: vi.fn(async () => () => undefined),
     onRemindersChanged: vi.fn(async () => () => undefined),
     onOpenNote: vi.fn(async () => () => undefined),
+    onSyncStatus: vi.fn(async () => () => undefined),
+    onNotesChanged: vi.fn(async () => () => undefined),
+    syncStatus: vi.fn(async () => ({ enabled: false, clockOffsetMs: 0 })),
     listReminders: vi.fn(async () => []),
   };
   return { api };
