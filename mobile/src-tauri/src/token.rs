@@ -75,9 +75,11 @@ impl TokenVault {
 }
 
 /// In-memory backend (development machine and tests).
+#[cfg(any(test, not(any(target_os = "ios", target_os = "android"))))]
 #[derive(Default)]
 pub struct MemoryBackend(Mutex<Option<String>>);
 
+#[cfg(any(test, not(any(target_os = "ios", target_os = "android"))))]
 impl SecretBackend for MemoryBackend {
     fn get(&self) -> Result<Option<String>, String> {
         Ok(self.0.lock().map_err(|_| "poisoned")?.clone())
