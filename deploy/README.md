@@ -201,6 +201,8 @@ PROXY_SUBNET=172.18.0.0/16
 - `PROXY_SUBNET` ist das Subnetz dieses Netzes: `docker network inspect proxy --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'`
   (`proxy` ggf. durch den Netznamen ersetzen). Nur Verbindungen aus diesem Netz gelten als vertrauenswürdiger
   Proxy; dadurch zählt die Anmelde-Bremse die echte Besucher-IP.
+  Strenger: Hat Ihr Proxy-Container eine feste IP, tragen Sie nur diese ein (z. B. `172.18.0.5/32`); sonst gilt
+  jeder Container in diesem Netz als vertrauenswürdig.
 - `ACME_EMAIL` wird in Variante B nicht verwendet (das Zertifikat holt Ihr Proxy), muss aber nicht entfernt werden.
 
 - `BUDDY_DOMAIN`: genau die Subdomain aus Schritt 2, **ohne** `https://`.
@@ -276,6 +278,8 @@ Docker-Netz muss dazu dasselbe sein wie das des Proxys (`PROXY_NETWORK`, Schritt
    - **Forward Hostname / IP:** `displaybuddy-buddy-1`
    - **Forward Port:** `8080`
    - **Block Common Exploits** an, **Websockets Support** nicht nötig.
+   - **Cache Assets** **aus** lassen: sonst speichert NPM JavaScript-Dateien (auch `sw.js`) 30 Tage zwischen und
+     die Web-App bekommt keine Updates mehr.
 3. Reiter **SSL**: **Request a new SSL Certificate**, **Force SSL** und **HTTP/2 Support** einschalten,
    Nutzungsbedingungen akzeptieren, **Save**.
 4. Reiter **Advanced** leer lassen. Insbesondere keine eigenen `add_header`-Zeilen für Cache-Control oder
