@@ -122,13 +122,38 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
     onIntent(intent)
   }
 
+  // Display Buddy patch: a tap/button that cold-starts the app is handled in load(), before
+  // the webview has registered its "actionPerformed" listener, and Plugin.trigger drops
+  // events without listeners. Keep such actions and deliver them on registration.
+  private val pendingActions = mutableListOf<JSObject>()
+
   fun onIntent(intent: Intent) {
     if (Intent.ACTION_MAIN != intent.action) {
       return
     }
     val dataJson = manager.handleNotificationActionPerformed(intent, notificationStorage)
     if (dataJson != null) {
-      trigger("actionPerformed", dataJson)
+      if (hasListener("actionPerformed")) {
+        trigger("actionPerformed", dataJson)
+      } else {
+        synchronized(pendingActions) { pendingActions.add(dataJson) }
+      }
+    }
+  }
+
+  @Command
+  override fun registerListener(invoke: Invoke) {
+    super.registerListener(invoke)
+    if (!hasListener("actionPerformed")) {
+      return
+    }
+    val queued = synchronized(pendingActions) {
+      val copy = pendingActions.toList()
+      pendingActions.clear()
+      copy
+    }
+    for (action in queued) {
+      trigger("actionPerformed", action)
     }
   }
 

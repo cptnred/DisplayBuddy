@@ -76,14 +76,17 @@ public class NotificationHandler: NSObject, NotificationHandlerProtocol {
   }
 
   func toActiveNotification(_ request: UNNotificationRequest) -> ActiveNotification {
-    let notificationRequest = notificationsMap[request.identifier]!
+    // Display Buddy patch: the map only knows notifications scheduled by the running
+    // process. A notification planned before the app was terminated and presented or
+    // tapped after a relaunch is not in it; the upstream force unwrap crashed the app.
+    let notificationRequest = notificationsMap[request.identifier]
     return ActiveNotification(
       id: Int(request.identifier) ?? -1,
       title: request.content.title,
       body: request.content.body,
-      sound: notificationRequest.sound ?? "",
+      sound: notificationRequest?.sound ?? "",
       actionTypeId: request.content.categoryIdentifier,
-      attachments: notificationRequest.attachments
+      attachments: notificationRequest?.attachments
     )
   }
 

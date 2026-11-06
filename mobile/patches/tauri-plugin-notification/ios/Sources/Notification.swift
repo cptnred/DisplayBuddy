@@ -179,6 +179,10 @@ func handleScheduledNotification(_ schedule: NotificationSchedule) throws
     let dateFormatter = DateFormatter()
     dateFormatter.locale = Locale(identifier: "en_US_POSIX")
     dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+    // Display Buddy patch: the trailing 'Z' is a quoted literal, so without an explicit
+    // zone the formatter read the UTC time as device-local time (Apple: DateFormatter.timeZone
+    // defaults to the system time zone) and the notification fired off by the zone offset.
+    dateFormatter.timeZone = TimeZone(identifier: "UTC")
 
     if let at = dateFormatter.date(from: date) {
       let dateInfo = Calendar.current.dateComponents(in: TimeZone.current, from: at)

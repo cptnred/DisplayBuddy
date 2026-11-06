@@ -187,21 +187,34 @@ pub enum Schedule {
 }
 
 // custom ISO-8601 serialization that does not use 6 digits for years.
+//
+// Display Buddy patch: always UTC with exactly three fraction digits
+// (`YYYY-MM-DDTHH:MM:SS.sssZ`). Both native parsers use the fixed pattern
+// `yyyy-MM-dd'T'HH:mm:ss.SSS'Z'` (Android `JS_DATE_FORMAT`, iOS `handleScheduledNotification`):
+// a non-UTC offset (`+01:00`) does not match the literal `'Z'`, and the upstream default of
+// nine fraction digits is read by Java's `SimpleDateFormat` as a millisecond count
+// (".123000000" = 123,000,000 ms).
 mod iso8601 {
     use serde::{Serialize, Serializer, ser::Error as _};
+    use std::num::NonZero;
     use time::{
-        OffsetDateTime,
+        OffsetDateTime, UtcOffset,
         format_description::well_known::Iso8601,
-        format_description::well_known::iso8601::{Config, EncodedConfig},
+        format_description::well_known::iso8601::{Config, EncodedConfig, TimePrecision},
     };
 
-    const SERDE_CONFIG: EncodedConfig = Config::DEFAULT.encode();
+    const SERDE_CONFIG: EncodedConfig = Config::DEFAULT
+        .set_time_precision(TimePrecision::Second {
+            decimal_digits: NonZero::new(3),
+        })
+        .encode();
 
     pub fn serialize<S: Serializer>(
         datetime: &OffsetDateTime,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
         datetime
+            .to_offset(UtcOffset::UTC)
             .format(&Iso8601::<SERDE_CONFIG>)
             .map_err(S::Error::custom)?
             .serialize(serializer)
