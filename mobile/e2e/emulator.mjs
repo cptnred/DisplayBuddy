@@ -108,6 +108,9 @@ async function serverReminder(pc, noteId) {
 
 // ---- app (WebView over the DevTools protocol) -------------------------------------
 
+/** Last WebView connection (for failure diagnostics). */
+let lastApp = null;
+
 async function connectWebView() {
   const sock = await until(
     "webview devtools socket",
@@ -153,7 +156,8 @@ async function connectWebView() {
       });
       ws.send(JSON.stringify({ id: n, method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true } }));
     });
-  return { evaluate, close: () => ws.close() };
+  lastApp = { evaluate, close: () => ws.close() };
+  return lastApp;
 }
 
 const LOGIN_JS = (user, password) => `(() => {
@@ -334,8 +338,34 @@ async function main() {
 
 main().then(
   () => log("all emulator checks passed"),
-  (e) => {
+  async (e) => {
     console.error(`[e2e] FAILED: ${e.message}`);
+    // App state as the WebView sees it (sync status, local reminders, OS plan). No secrets.
+    try {
+      const app = lastApp ?? (await connectWebView());
+      const state = await app.evaluate(`(async () => {
+        const status = document.querySelector('[aria-label="Synchronisationsstatus"]')?.textContent ?? null;
+        const db = await new Promise((res) => { const r = indexedDB.open("display-buddy"); r.onsuccess = () => res(r.result); r.onerror = () => res(null); });
+        const all = (store) => db ? new Promise((res) => { try { const g = db.transaction(store).objectStore(store).getAll(); g.onsuccess = () => res(g.result); g.onerror = () => res("error"); } catch (err) { res(String(err)); } }) : null;
+        const reminders = await all("reminders");
+        const outbox = await all("outbox");
+        const meta = await all("meta");
+        return JSON.stringify({ path: location.pathname, status,
+          reminders: Array.isArray(reminders) ? reminders.map((r) => ({ noteId: r.noteId, deleted: r.deleted, at: r.reminder && r.reminder.at, state: r.reminder && r.reminder.state })) : reminders,
+          outbox: Array.isArray(outbox) ? outbox.length : outbox,
+          metaKeys: Array.isArray(meta) ? meta.map((m) => m && (m.key ?? Object.keys(m)[0])) : meta });
+      })()`);
+      console.error(`[e2e] app state: ${state}`);
+      console.error(`[e2e] pending: ${JSON.stringify(await app.evaluate(PENDING_JS))}`);
+    } catch (err) {
+      console.error(`[e2e] app state unavailable: ${err.message}`);
+    }
+    try {
+      const alarms = adb("shell", "dumpsys", "alarm").split("\n").filter((l) => /displaybuddy/.test(l));
+      console.error(`[e2e] alarms of the app: ${alarms.length}\n${alarms.slice(0, 20).join("\n")}`);
+    } catch (err) {
+      console.error(`[e2e] dumpsys alarm failed: ${err.message}`);
+    }
     // Diagnostics: is the app alive, and what did it (and Android) log? Never contains
     // secrets: the app logs no tokens or note contents (PLAN §7.5).
     try {
