@@ -10,6 +10,7 @@
     "tauri": "tauri",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:tz": "TZ=America/New_York vitest run && TZ=Asia/Tokyo vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
