@@ -5,7 +5,7 @@ Stand: 2026-11-06, dritte Fassung. Nachträge vom selben Tag:
 2. Web-App zeigt Push selbst (ntfy entfällt), native Hülle für Benachrichtigungen ohne Internet,
    Erinnerungen mit eigener Zeitzone.
 
-Grundlage: Version 0.2.0 · Status: **geplant, noch nicht umgesetzt**
+Grundlage: Version 0.2.0 · Status: **in Umsetzung** (Phase 0 fertig, siehe D-51…D-64)
 
 Dieser Plan ist für v3 so verbindlich wie `docs/PLAN.md` für v1/v2. Abweichungen nur mit Begründung in
 `docs/DECISIONS.md`. Ausführende Agenten starten mit `docs/AGENT_PROMPT_V3.md`.
@@ -236,6 +236,10 @@ und `Cache-Control: no-store`. Auth: Bearer-Token (PC, native Hülle) oder Sessi
 | `PUT /devices/current/push` · `DELETE …` | Bearer | `{platform:"fcm"\|"apns",token}` → 204 | nativer Push-Token (Phase N2) |
 | `POST /push/test` | beide | → 204 | Testbenachrichtigung an das aufrufende Gerät |
 | `GET /events` (optional) | beide | SSE | Phase G |
+
+**Ergänzung Phase 0:** Die genauen Nachrichten (Feldnamen, `PushResult`-Status `applied`/`stale`/`invalid`,
+`clampedUpdatedAt`, Fehler-Codes) stehen verbindlich in `crates/buddy-core/src/sync.rs` und `src/lib/sync/types.ts`
+mit Beispielen in `crates/buddy-core/tests/fixtures/api_examples.json` (D-63).
 
 Keine CRUD-Endpunkte mit Serverzeit und keine Aktions-Token-URLs. Knöpfe in Benachrichtigungen werden auf dem Gerät
 ausgeführt (Datenschicht + Outbox, §9.4/§10.3).

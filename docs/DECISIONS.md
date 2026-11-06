@@ -111,3 +111,87 @@ synchronisierte Erinnerungen **auch ohne Internet** klingeln; **jede Erinnerung 
 
 **D-50 Bekannter Prüfpunkt im iOS-Plugin:** `plugins/notification/ios/Sources/Notification.swift` parst das `…Z`-Datum mit einem `DateFormatter` ohne gesetzte UTC-Zeitzone (Android parst in UTC). Vor Freigabe auf Gerät/Simulator in mehreren Zonen prüfen; bei Abweichung Issue suchen/anlegen und eine getestete Umgehung dokumentieren.
 
+
+## v3 – Umsetzung (Phase 0, 2026-11-06)
+
+Benutzerantworten vor N1/N2 (Multiple-Choice, 2026-11-06): **eigener Mac** für iOS-Builds, **kein Apple Developer
+Program** (vorerst), **Phase N2 nur für Android (FCM)**.
+
+**D-51 Versionen v3** (geprüft am 2026-11-06 mit `cargo info` / crates.io-API / `npm view`; stabile Linien, keine
+Alphas – die Tauri-Plugins haben parallel 3.0.0-alpha-Linien, die wir **nicht** nehmen):
+
+| Paket | Version | Bemerkung |
+|---|---|---|
+| sqlx | 0.9.0 | stabil seit 2026-05 (Feature `sqlite`, `migrate`) |
+| web-push | 0.11.0 | `default-features = false` (kein isahc); `ece` 2.4 mit OpenSSL-Backend → D-56 |
+| axum / tower / tower-http | 0.8.9 / 0.5.3 / 0.7.1 | |
+| argon2 | 0.6.0 | |
+| chrono-tz / iana-time-zone | 0.10.4 / 0.1.65 | auch in `buddy-core` bzw. `src-tauri` |
+| reqwest (Server direkt) | 0.13.5 | Standard-TLS ist `default-tls`; Server wählt rustls explizit |
+| tauri-plugin-http (Rust + `@tauri-apps/plugin-http`) | 2.8.3 | Desktop nur Rust-seitig |
+| tauri-plugin-notification (+ npm) | 2.8.0 | Desktop unverändert, Hülle mit JS |
+| keyring-core / windows-native-keyring-store | 1.0.1 / 1.1.0 | D-53 |
+| apple-native-keyring-store / android-native-keyring-store | 1.0.2 / 1.0.0 | Kandidaten für N1 |
+| vite-plugin-pwa | 2.0.0 | Peer `vite ^8` ausdrücklich unterstützt |
+| workbox-precaching / workbox-window | 7.4.1 | |
+| idb / fake-indexeddb | 8.0.4 / 6.2.7 | fake-indexeddb nur für Tests |
+
+**D-52 reqwest-TLS unter MinGW geprüft.** `tauri-plugin-http` 2.8.3 aktiviert standardmäßig `rustls-tls`; `cargo tree`
+zeigt das **ring**-Backend (`reqwest/__rustls-ring`, kein aws-lc-rs, das cmake/nasm bräuchte). Ein Probe-Crate mit
+`tauri-plugin-http` + `keyring-core` + `windows-native-keyring-store` baut als Release für `x86_64-pc-windows-gnu`
+(1 min 41 s) ohne Zusatzwerkzeuge. Standard-Features beibehalten, aws-lc nicht einschalten.
+
+**D-53 Token-Speicher Desktop:** `keyring-core` 1.0.1 mit `windows-native-keyring-store` 1.1.0 (baut mit MinGW,
+D-52), hinter einem Trait; unter Linux (Tests, Smoke-Test) ein In-Memory-Store. Für die Hülle prüft N1
+`apple-native-keyring-store`/`android-native-keyring-store`; sonst ein offizielles Tauri-Plugin (begründen).
+
+**D-54 Mobile-Builds außerhalb der Cloud.** Der Download des Android-SDK von `dl.google.com` ist in der
+Cloud-Umgebung per Proxy-Policy gesperrt (403 auf CONNECT, nicht umgangen); Maven Central/Google Maven/Gradle sind
+erreichbar, reichen aber nicht. Android wird deshalb über **GitHub Actions** (`ubuntu-latest`) gebaut. iOS baut der
+Benutzer **auf seinem Mac** (Xcode, kostenloses Apple-Konto, 7-Tage-Signatur); ein `macos-latest`-Workflow baut nur
+unsigniert zur Kontrolle.
+
+**D-55 Nativer Push nur Android (FCM)** (Benutzerentscheidung). APNs wird nicht umgesetzt; der Kanal bleibt als Trait
+(`NativePushChannel`) erweiterbar. iOS verlässt sich auf die lokale Planung nach jedem Sync/Start/Fortsetzen.
+
+**D-56 OpenSSL nur im Server.** `web-push` 0.11 verschlüsselt über `ece` mit OpenSSL-Backend (kein Rust-Backend
+verfügbar). Das betrifft nur den Linux-Server (Docker-Image mit `libssl3`), nicht den Windows-Desktop. Docker ist in der
+Cloud-Umgebung verfügbar (dockerd 29.9.2) → Phase E kann das Image wirklich bauen.
+
+**D-57 Format der Zeitpunkte.** Neue Schreibvorgänge verwenden `YYYY-MM-DDTHH:MM:SS.sssZ` (`zoned::format_utc` bzw.
+`toISOString()`); Altdaten mit Offset (`+01:00`) bleiben unverändert, bis sie bearbeitet werden. Verglichen wird
+überall als Zeitpunkt (`parse_instant`), nie als Text. Bekannte Eigenheit (wie D-27): Liegt ein Vorkommen in einer
+Sommerzeit-Lücke (02:30 → 03:00), speichert `ack` 03:00, und die folgenden Vorkommen bleiben bei 03:00.
+
+**D-58 LWW-Reihenfolge exakt:** `updatedAt` als Zeitpunkt (unlesbar = ältester), bei Erinnerungen dann Zustand
+`scheduled < due < done` (Fällig-Werden ändert `updatedAt` nicht, D-30), dann `updatedBy`, vollständiger Gleichstand →
+lokal bleibt (Echo). Die Zukunfts-Klemme gibt gültige Zeitstempel **wörtlich** zurück und ersetzt nur solche > 2 min
+nach Serverzeit.
+
+**D-59 Drei unabhängige Implementierungen prüfen die Zeitzonenmathe.** `schedule_vectors.json` (24 Wandzeit-, 25
+Anzeige-, 136 Wiederholungs-, 27 Erledigt-Fälle in Berlin, New York, Tokio, Lord Howe, Kolkata inkl. EU/US-Zwischenwochen,
+Lücken und Doppelungen) wird von `gen_schedule_vectors.py` mit Pythons `zoneinfo` erzeugt; einige Fälle sind von Hand
+festgelegt und im Generator geprüft. `chrono-tz` (Rust) und `Intl`/ICU (TypeScript, auch unter `TZ=America/New_York`
+und `TZ=Asia/Tokyo`) bestehen alle Fälle.
+
+**D-60 Uhr-Median:** gerade Anzahl → Mittelwert der beiden mittleren Werte, **zur Null hin abgeschnitten** (Rust `/`,
+TS `Math.trunc`); `clock_vectors.json` prüft das. Am Desktop hält `src-tauri/src/clock.rs` den Offset (Atomic,
+Standard 0); das Sync-Modul setzt ihn, `reminders` stempelt mit `clock::corrected_now()`.
+
+**D-61 `set_reminder(timeZone)`:** `timeZone = null` behält die Zone einer bestehenden Erinnerung, neue Erinnerungen
+bekommen die PC-Zone (`iana-time-zone`, unbekannt → UTC mit Warnung); ein unbekannter Zonenname ist ein Fehler. Der
+Command ist in Phase 0 schon Rust-seitig umgesetzt (sonst wäre der Vertragstest rot); Phase B baut das Popover.
+
+**D-62 Sync-Einstellungen sind geschützt.** `syncEnabled`, `syncServerUrl`, `syncDeviceName` werden von
+`save_settings` ignoriert (wie `autostart`) und nur von `sync_connect`/`sync_disconnect` geändert.
+
+**D-63 Feinheiten des Sync-Protokolls** (verbindlich in `crates/buddy-core/src/sync.rs` + `src/lib/sync/types.ts`,
+Beispiele in `api_examples.json`): Cursor ist die ganze Zahl `seq`; `/sync/push` antwortet je Datensatz mit `applied`
+(auch identische Wiederholung), `stale` (Serverfassung neuer; sie steht im Feld `note`/`reminder`/`order` der Antwort,
+weil ein Pull sie nicht erneut liefert, wenn der Cursor schon dahinter liegt) oder `invalid`; geklemmte Zeitstempel
+meldet `clampedUpdatedAt`. Tombstones haben `deleted: true` und `note`/`reminder: null`. Fehler-Codes in
+`error_codes` (u. a. `full_resync_required` für 410).
+
+**D-64 ICU-Zonennamen:** `Intl.supportedValuesOf('timeZone')` liefert kanonische ICU-Namen (z. B. `Asia/Calcutta`
+statt `Asia/Kolkata`). Beide Schreibweisen sind gültig; chrono-tz kennt die Alias-Namen ebenfalls. Gespeichert wird,
+was der Benutzer wählt bzw. was das Gerät meldet.
