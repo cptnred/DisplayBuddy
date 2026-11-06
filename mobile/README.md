@@ -9,7 +9,8 @@ geschlossener App** pünktlich.
 > Erinnerung melden, du bekämst sie doppelt. Wenn du von der PWA auf die App wechselst:
 > in der PWA unter „Einstellungen“ abmelden und die PWA vom Home-Bildschirm entfernen.
 
-Inhalt: [Server-Adresse](#server-adresse) · [Android](#android) · [iOS](#ios) ·
+Inhalt: [Server-Adresse](#server-adresse) · [Android](#android) ·
+[Push über Firebase (Android, optional)](#push-über-firebase-android-optional) · [iOS](#ios) ·
 [Benachrichtigungen prüfen](#benachrichtigungen-prüfen) · [Grenzen](#grenzen) ·
 [Für Entwickler](#für-entwickler)
 
@@ -87,6 +88,76 @@ _Artifacts_ **display-buddy-android** mit `display-buddy.apk`. Ohne die Secrets 
   Hersteller löschen sonst geplante Alarme, wenn die App länger nicht benutzt wurde.
   Herstellerspezifische Anleitungen: [dontkillmyapp.com](https://dontkillmyapp.com).
 - Nach einem Neustart des Handys werden die geplanten Erinnerungen automatisch wiederhergestellt.
+
+## Push über Firebase (Android, optional)
+
+Ohne Push klingeln alle Erinnerungen, die das Handy schon kennt – auch offline. Eine Erinnerung,
+die du **am PC anlegst oder verschiebst, während die App geschlossen ist**, kennt das Handy aber
+erst nach dem nächsten Öffnen. Mit Push weckt der Server die App in diesem Fall über Firebase
+Cloud Messaging (FCM): Es erscheint eine Benachrichtigung „Erinnerung: …“, ein Tipp darauf öffnet
+die Notiz, die App gleicht ab und plant neu.
+
+Der Server schickt **nur dann** einen Push, wenn das Handy diese Fassung der Erinnerung noch nicht
+selbst geplant hat (oder Benachrichtigungen für die App verweigert sind). Was das Handy schon
+kennt, klingelt wie bisher lokal – nichts kommt doppelt.
+
+**Nur Android.** Für iPhones bräuchte Push das kostenpflichtige Apple Developer Program
+(APNs-Schlüssel); das ist bewusst nicht umgesetzt. Die iOS-App plant weiter bei jedem Öffnen,
+Sync und Fortsetzen lokal.
+
+Du brauchst ein (kostenloses) Google-Konto. Alles Folgende ist einmalig.
+
+### 1. Firebase-Projekt und Android-App anlegen
+
+1. [console.firebase.google.com](https://console.firebase.google.com) → **Projekt hinzufügen**,
+   Name z. B. `display-buddy`. Google Analytics wird nicht gebraucht (ausschalten).
+2. In der Projektübersicht **Android** (Symbol „Android“) wählen. Als **Android-Paketname** genau
+   `de.displaybuddy.mobile` eintragen (steht in `src-tauri/tauri.conf.json` unter `identifier`;
+   wenn du ihn geändert hast, deinen Wert). App-Spitzname beliebig, SHA-1 leer lassen.
+3. **google-services.json herunterladen.** Die weiteren Schritte des Assistenten („Firebase SDK
+   hinzufügen“) überspringen – das erledigt der Build.
+
+### 2. google-services.json als GitHub-Secret hinterlegen
+
+Die Datei gehört **nicht** ins Repository (sie ist in `mobile/.gitignore` ausgeschlossen).
+
+```sh
+base64 -w0 google-services.json > google-services.json.base64   # macOS: base64 -i google-services.json
+```
+
+GitHub → _Settings → Secrets and variables → Actions → Secrets_ → **`GOOGLE_SERVICES_JSON_BASE64`**
+= Inhalt von `google-services.json.base64`. Beim nächsten Lauf von **mobile-android** baut der
+Workflow Firebase ein (`mobile/scripts/android-firebase.mjs`: Datei nach `gen/android/app/`,
+Google-Services-Gradle-Plugin eintragen). Der Schritt bricht mit einer klaren Meldung ab, wenn die
+Datei keine App `de.displaybuddy.mobile` enthält. Ohne Secret baut die App wie bisher, nur ohne Push.
+
+### 3. Dienstkonto-Schlüssel für den Server
+
+Der Server meldet sich mit einem Dienstkonto bei FCM an (FCM HTTP v1, OAuth 2.0).
+
+1. Firebase-Konsole → Zahnrad → **Projekteinstellungen → Dienstkonten** →
+   **Neuen privaten Schlüssel generieren** → JSON-Datei speichern. Das ist ein **Geheimnis**
+   (wie ein Passwort): nicht ins Repository, nicht per Mail verschicken.
+2. Unter _Projekteinstellungen → Cloud Messaging_ muss **„Firebase Cloud Messaging API (V1)“**
+   aktiviert sein (bei neuen Projekten Standard).
+3. Datei auf den Server in das Daten-Volume kopieren und in `deploy/compose.yaml` die Zeile
+   `BUDDY_FCM_SERVICE_ACCOUNT_FILE: /data/fcm-service-account.json` einkommentieren
+   (Details in `deploy/README.md`, Abschnitt „Optional: native Android-App mit Firebase“), dann
+   `docker compose up -d`. Im Log steht „native push via FCM HTTP v1 enabled“.
+4. Ausgehend muss der Server `oauth2.googleapis.com` und `fcm.googleapis.com` erreichen (HTTPS).
+
+### 4. Prüfen
+
+1. Die neue APK installieren, App öffnen, angemeldet sein (die App meldet ihren Push-Token beim
+   Start automatisch beim Server an).
+2. App ganz schließen (aus der Übersicht wischen), am PC eine Erinnerung in 3 Minuten setzen →
+   sie kommt als Push, obwohl das Handy sie vorher nicht kannte. Im Server-Log
+   (`docker compose logs buddy`) steht dazu eine Zeile `reminder push` mit `status="sent"`.
+3. Kommt nichts: Steht im Log `native push token stored`? Wenn nicht, wurde die APK ohne das
+   Secret gebaut oder der Server hat keine Dienstkonto-Datei (die App fragt dann nicht weiter).
+
+Wenn du die App neu installierst oder Daten löschst, vergibt Firebase einen neuen Token; die App
+meldet ihn beim nächsten Start. Ungültige Tokens löscht der Server selbst.
 
 ---
 
@@ -172,7 +243,8 @@ dem Handy und wird beim nächsten Online-Sein übertragen.
 - Geplant werden immer die **60 nächsten** Erinnerungen (iOS erlaubt 64). Weitere werden beim
   nächsten Öffnen bzw. Sync nachgeplant.
 - Eine **neue** Erinnerung, die am PC angelegt wird, während die App lange geschlossen ist, kennt
-  das Handy erst nach dem nächsten Öffnen (Sync). Abhilfe bringt später der native Push (Android).
+  das Handy erst nach dem nächsten Öffnen (Sync). Abhilfe: [Push über Firebase](#push-über-firebase-android-optional)
+  (nur Android).
 - iOS: Tippst du „Erledigt“/„10 Min. später“, während die App ganz beendet war, kann die Aktion
   verloren gehen. Die Erinnerung steht dann oben in der App mit denselben Knöpfen.
 - Die Anzeige rechnet in der Zeitzone des Handys, die Erinnerung selbst in ihrer eigenen Zone
@@ -202,8 +274,11 @@ cd mobile && npx tauri ios dev --open    # nur auf macOS
   iOS, kein Absturz bei Benachrichtigungen aus einem früheren App-Start (iOS), Datum mit
   Millisekunden an die nativen Parser, Aktionen beim Kaltstart (Android). Bei einem Update des
   Plugins prüfen, ob die Fehler upstream behoben sind, und den Patch dann entfernen.
-- **Nativer Push (später, nur Android/FCM):** als weiteres Plugin in `src-tauri/src/lib.rs`
-  registrieren, Token per `PUT /devices/current/push` melden; nach einem Push synchronisieren und
-  `notifier.replan("sync")` – der Server schickt nur Pushes für Erinnerungen jenseits von
-  `deviceState.scheduledSeq`. Dafür sind ein Firebase-Projekt und `google-services.json`
-  (nie einchecken) nötig.
+- **Nativer Push (Android/FCM):** eigenes Mini-Plugin `plugins/buddy-push` (Kotlin, nach der
+  Tauri-Anleitung „Mobile Plugin Development“; Befehle `get_token`, `take_launch_data`, Ereignisse
+  `token`/`message`/`opened`), registriert in `src-tauri/src/lib.rs`. Die Logik (Token per
+  `PUT /devices/current/push` melden, nach einem Push synchronisieren und
+  `notifier.replan("sync")`) steckt in `src/web/notify/native-push.ts` und ist mit Vitest getestet;
+  Kotlin baut nur in CI. Ohne `google-services.json` antwortet `get_token` mit `NOT_CONFIGURED`
+  und die App läuft ohne Push. `node --test mobile/scripts/android-firebase.test.mjs` prüft das
+  Einbau-Skript.
