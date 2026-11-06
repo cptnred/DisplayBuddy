@@ -1,0 +1,89 @@
+# Display Buddy on a VPS (PLAN_V3_SYNC §11, D-40): Caddy (automatic HTTPS) in front of
+# buddy-server. Only Caddy publishes ports. Configuration: ./.env (copy .env.example).
+#
+#   cd deploy
+#   docker compose up -d --build
+#
+# Docker docs: "Compose file reference" (services, networks/ipam, volumes, healthcheck).
+
+name: displaybuddy
+
+services:
+  caddy:
+    image: caddy:2.11.9-alpine@sha256:0bbb055bda6793c999bde78b1b5ce3e89f829fb031af2cf50056ea1246559fee
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      BUDDY_DOMAIN: ${BUDDY_DOMAIN:?set BUDDY_DOMAIN in deploy/.env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # certificates – keep across updates
+      - caddy-config:/config
+    networks:
+      buddy-net:
+        # Fixed address: buddy-server trusts X-Forwarded-For only from here.
+        ipv4_address: ${CADDY_IP:-172.30.0.10}
+    depends_on:
+      buddy:
+        condition: service_healthy
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  buddy:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    image: displaybuddy/buddy-server:local
+    restart: unless-stopped
+    # No "ports": reachable only through Caddy on buddy-net (port 8080).
+    environment:
+      BUDDY_PUBLIC_URL: https://${BUDDY_DOMAIN:?set BUDDY_DOMAIN in deploy/.env}
+      BUDDY_LISTEN: 0.0.0.0:8080 # the HEALTHCHECK in server/Dockerfile expects 8080
+      BUDDY_DB: /data/buddy.db
+      BUDDY_BACKUP_DIR: /data/backups
+      BUDDY_WEB_DIR: /app/web
+      BUDDY_VAPID_PRIVATE_KEY_FILE: /data/vapid.pem
+      BUDDY_VAPID_SUBJECT: ${BUDDY_VAPID_SUBJECT:?set BUDDY_VAPID_SUBJECT in deploy/.env}
+      # Only Caddy's address; then the login brake counts per real client IP.
+      BUDDY_TRUSTED_PROXIES: ${CADDY_IP:-172.30.0.10}/32
+      RUST_LOG: ${RUST_LOG:-info,sqlx=warn,tower_http=warn}
+      # Phase N2 (Android/FCM only, optional): put the Firebase service-account JSON into
+      # the data volume and uncomment. Never commit that file.
+      # BUDDY_FCM_SERVICE_ACCOUNT_FILE: /data/fcm-service-account.json
+    volumes:
+      - buddy-data:/data # database, backups/, vapid.pem – back this up
+    networks:
+      - buddy-net
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
+networks:
+  # Private bridge network with a fixed subnet (not "internal": buddy-server needs
+  # outbound HTTPS to the push services, Caddy to Let's Encrypt). Change BUDDY_SUBNET and
+  # CADDY_IP together if 172.30.0.0/24 is already used on the VPS.
+  buddy-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${BUDDY_SUBNET:-172.30.0.0/24}
+          # Dynamic addresses (e.g. "docker compose run") only from the upper half, so they
+          # can never take CADDY_IP.
+          ip_range: ${BUDDY_IP_RANGE:-172.30.0.128/25}
+
+volumes:
+  buddy-data:
+  caddy-data:
+  caddy-config:
