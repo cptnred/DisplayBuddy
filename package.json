@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:tz": "TZ=America/New_York vitest run && TZ=Asia/Tokyo vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:web": "tsc && vite build --config vite.web.config.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",
@@ -24,7 +25,9 @@
     "idb": "8.0.4",
     "lottie-web": "^5.13.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "workbox-precaching": "7.4.1",
+    "workbox-routing": "7.4.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.4",
@@ -40,6 +43,8 @@
     "jsdom": "^30.1.3",
     "typescript": "~6.0.3",
     "vite": "^8.0.16",
-    "vitest": "^5.1.0"
+    "vite-plugin-pwa": "2.0.0",
+    "vitest": "^5.1.0",
+    "workbox-window": "7.4.1"
   }
 }
