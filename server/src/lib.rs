@@ -1,14 +1,14 @@
 //! buddy-server: accounts, devices, LWW sync and PWA hosting for Display Buddy v3
-//! (PLAN_V3_SYNC §5–§7). Phase A = server core without push delivery.
+//! (PLAN_V3_SYNC §5–§7). Phase A = server core, phase D = reminder scheduler and push.
 //!
-//! Extension points for phase D (scheduler + Web Push):
 //! - [`AppState::reminders_changed`] is notified after every `/sync/push` that stored a
-//!   reminder change (`notify_one`, so a wake-up is never lost);
+//!   reminder change and after a new push subscription (`notify_one`, so a wake-up is
+//!   never lost); [`reminders::run`] waits on it;
 //! - [`AppState::clock`] is the injected [`clock::Clock`];
-//! - [`AppState::vapid`] holds the loaded key ([`vapid::Vapid::private_pem`]);
-//! - `build_app` marks where `push::router()` is merged, `serve` where the scheduler task
-//!   is spawned (it gets a clone of the shutdown receiver);
-//! - tables `push_subscriptions` and `push_log` already exist (migration 0001).
+//! - [`AppState::vapid`] holds the loaded key, [`AppState::push`] the push channels
+//!   ([`push::PushService`]: Web Push, native channel trait for phase N2);
+//! - `build_app` merges [`push::router`], `serve` spawns the scheduler with a clone of the
+//!   shutdown receiver.
 
 pub mod api;
 pub mod auth;
@@ -18,6 +18,8 @@ pub mod config;
 pub mod db;
 pub mod error;
 pub mod housekeeping;
+pub mod push;
+pub mod reminders;
 pub mod sync;
 pub mod vapid;
 pub mod web;
@@ -35,6 +37,7 @@ use crate::auth::throttle::LoginThrottle;
 use crate::clock::{Clock, SystemClock};
 use crate::config::Config;
 use crate::db::Db;
+use crate::push::PushService;
 use crate::vapid::Vapid;
 
 #[derive(Clone)]
@@ -46,25 +49,40 @@ pub struct AppState {
     pub vapid: Option<Arc<Vapid>>,
     /// Woken after reminder changes (phase-D scheduler).
     pub reminders_changed: Arc<Notify>,
+    /// Web Push + native channel (phase D, `push`).
+    pub push: Arc<PushService>,
 }
 
 impl AppState {
     pub fn new(db: Db, config: Config, clock: Arc<dyn Clock>, vapid: Option<Vapid>) -> Self {
+        let vapid = vapid.map(Arc::new);
+        let push = Arc::new(PushService::new(&config, vapid.clone()));
         Self {
             db,
             config: Arc::new(config),
             clock,
             throttle: Arc::new(LoginThrottle::new()),
-            vapid: vapid.map(Arc::new),
+            vapid,
             reminders_changed: Arc::new(Notify::new()),
+            push,
         }
+    }
+
+    /// Replaces the push channels (tests: fake push service, fake native channel).
+    pub fn with_push(mut self, opts: push::PushOptions) -> Self {
+        self.push = Arc::new(PushService::with_options(
+            &self.config,
+            self.vapid.clone(),
+            opts,
+        ));
+        self
     }
 }
 
 /// The complete application: `/api/v1/*` (JSON, `no-store`, CSRF) and the PWA (`/`).
 pub fn build_app(state: AppState) -> Router {
     let api = api::router(state.clone())
-        // Phase D: `.merge(push::router())` (PUT/DELETE /push/subscription, POST /push/test)
+        .merge(push::router(state.clone()))
         .fallback(api::api_not_found)
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -135,8 +153,7 @@ pub async fn serve(config: Config) -> Result<()> {
     let (tx, rx) = tokio::sync::watch::channel(false);
     tokio::spawn(shutdown_signal(tx));
     let housekeeping = tokio::spawn(housekeeping::run(state.clone(), rx.clone()));
-    // Phase D: `let scheduler = tokio::spawn(reminders::run(state.clone(), rx.clone()));`
-    // and `let _ = scheduler.await;` below.
+    let scheduler = tokio::spawn(reminders::run(state.clone(), rx.clone()));
 
     let listener = tokio::net::TcpListener::bind(listen)
         .await
@@ -153,6 +170,7 @@ pub async fn serve(config: Config) -> Result<()> {
     .await
     .context("http server")?;
     let _ = housekeeping.await;
+    let _ = scheduler.await;
     state.db.close().await;
     tracing::info!("stopped");
     Ok(())

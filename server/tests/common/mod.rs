@@ -58,8 +58,26 @@ impl TestApp {
     }
 
     pub async fn with(f: impl FnOnce(&mut Config)) -> Self {
+        Self::build(f, None).await
+    }
+
+    /// With a fresh VAPID key and the given push options (fake push service).
+    pub async fn with_push(opts: buddy_server::push::PushOptions) -> Self {
+        Self::build(|_| {}, Some(opts)).await
+    }
+
+    async fn build(
+        f: impl FnOnce(&mut Config),
+        push: Option<buddy_server::push::PushOptions>,
+    ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let mut config = Config::for_tests(dir.path());
+        if push.is_some() {
+            let key = dir.path().join("vapid.pem");
+            buddy_server::vapid::generate(&key, false).unwrap();
+            config.vapid_private_key_file = Some(key);
+            config.vapid_subject = Some("mailto:admin@example.org".into());
+        }
         f(&mut config);
         let db = buddy_server::db::open(&config.db_path).await.unwrap();
         let clock = Arc::new(ManualClock::at(START));
@@ -71,7 +89,10 @@ impl TestApp {
             .vapid_private_key_file
             .as_ref()
             .map(|p| buddy_server::vapid::Vapid::load(p, None).unwrap());
-        let state = AppState::new(db, config, clock.clone(), vapid);
+        let mut state = AppState::new(db, config, clock.clone(), vapid);
+        if let Some(opts) = push {
+            state = state.with_push(opts);
+        }
         Self {
             app: build_app(state.clone()),
             state,
@@ -172,6 +193,10 @@ impl TestApp {
             None,
         )
         .await
+    }
+
+    pub fn clock_now(&self) -> chrono::DateTime<chrono::Utc> {
+        clock_now(&self.clock)
     }
 
     pub async fn scalar_i64(&self, sql: &'static str) -> i64 {

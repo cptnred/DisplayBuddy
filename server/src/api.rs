@@ -39,8 +39,8 @@ pub struct ApiQuery<T>(pub T);
 
 /// Routes of API v1 (without the `/api/v1` prefix).
 ///
-/// Phase D merges `push::router()` here (`PUT/DELETE /push/subscription`, `POST /push/test`)
-/// – see `build_app` in `lib.rs`.
+/// `push::router()` (`PUT/DELETE /push/subscription`, `POST /push/test`) is merged next to it
+/// in `build_app` (`lib.rs`).
 pub fn router(state: AppState) -> Router<AppState> {
     let sync_routes = Router::new()
         .route("/sync/changes", get(sync_changes))
