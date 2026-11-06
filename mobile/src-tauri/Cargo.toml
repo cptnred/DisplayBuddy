@@ -1,0 +1,50 @@
+[package]
+name = "display-buddy-mobile"
+version = "0.2.0"
+description = "Display Buddy – native shell for Android and iOS (notes, sync, local reminders)"
+authors = ["Display Buddy"]
+edition = "2024"
+publish = false
+
+# Own Tauri project, no workspace with ../../src-tauri (PLAN_V3_SYNC §4, §10).
+[lib]
+name = "display_buddy_mobile_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.7.4", features = [] }
+# update_android_manifest (exact-alarm permissions, see build.rs); the version tauri-build uses
+tauri-utils = { version = "=2.10.2", features = ["build"] }
+
+[dependencies]
+tauri = { version = "=2.12.5", features = [] }
+tauri-plugin-notification = "=2.8.0"
+tauri-plugin-http = "=2.8.3"
+keyring-core = "=1.0.1"
+serde = { version = "1", features = ["derive"] }
+log = "0.4"
+
+[target.'cfg(target_os = "ios")'.dependencies]
+# iOS only has the data-protection keychain → feature "protected" (crate README)
+apple-native-keyring-store = { version = "=1.0.2", features = ["protected"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+# SharedPreferences encrypted with an Android Keystore key. Needs ndk-context, which tao
+# initialises in the activity's onCreate (tao 0.37 platform_impl/android/ndk_glue.rs).
+android-native-keyring-store = "=1.0.0"
+
+[dev-dependencies]
+serde_json = "1"
+
+# Patched copy of the official plugin (same version 2.8.0): UTC date parsing on iOS
+# (PLAN §10.4, D-50), no crash for notifications of an earlier process on iOS, UTC dates
+# with millisecond precision towards both native parsers. See mobile/README.md → „Plugin-Patch“.
+[patch.crates-io]
+tauri-plugin-notification = { path = "../patches/tauri-plugin-notification" }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
