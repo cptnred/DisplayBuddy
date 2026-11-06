@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Display Buddy web icon: the buddy peeking over a sticky note. Own artwork. -->
+  <rect width="512" height="512" rx="112" fill="#1F6F78"/>
+  <g transform="rotate(-6 236 300)">
+    <rect x="96" y="158" width="280" height="270" rx="18" fill="#FFF6C7"/>
+    <path d="M96 176 a18 18 0 0 1 18 -18 h244 a18 18 0 0 1 18 18 v30 h-280z" fill="#FFE27A"/>
+    <rect x="132" y="250" width="176" height="18" rx="9" fill="#C9B77A"/>
+    <rect x="132" y="296" width="208" height="18" rx="9" fill="#C9B77A"/>
+    <rect x="132" y="342" width="140" height="18" rx="9" fill="#C9B77A"/>
+  </g>
+  <circle cx="352" cy="168" r="104" fill="#FFD54A" stroke="#E0A400" stroke-width="10"/>
+  <ellipse cx="318" cy="150" rx="13" ry="18" fill="#3A2A12"/>
+  <ellipse cx="386" cy="150" rx="13" ry="18" fill="#3A2A12"/>
+  <circle cx="322" cy="143" r="4.5" fill="#fff"/>
+  <circle cx="390" cy="143" r="4.5" fill="#fff"/>
+  <ellipse cx="294" cy="192" rx="14" ry="8" fill="#FF8A80" opacity="0.6"/>
+  <ellipse cx="410" cy="192" rx="14" ry="8" fill="#FF8A80" opacity="0.6"/>
+  <path d="M316 196 Q352 232 388 196" fill="none" stroke="#3A2A12" stroke-width="11" stroke-linecap="round"/>
+  <path d="M262 236 q-10 26 14 34" fill="none" stroke="#E0A400" stroke-width="12" stroke-linecap="round"/>
+</svg>
