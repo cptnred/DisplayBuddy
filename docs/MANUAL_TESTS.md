@@ -655,3 +655,72 @@ Zusammenspiel geprüft werden:
   Monitorprüfung, Ecken-Durchklick-Geometrie.
 - Vertrag Frontend ↔ Backend: Command-/Argument-/Eventnamen (`api.ts`), `build.rs`,
   `generate_handler!`, Capabilities je Fenster.
+
+---
+
+# v3 – Sync, Web-App, native Handy-App, Zeitzonen (Handtests)
+
+Voraussetzung: Server läuft laut `deploy/README.md` auf `https://buddy.<domain>`, ein Benutzer ist angelegt.
+In der Cloud automatisch geprüft ist, was in §31 steht; alles hier braucht echte Geräte, echte Push-Dienste oder Windows.
+
+## 26. v3 – PC verbinden (Windows)
+1. Einstellungen → „Synchronisation“: Server-Adresse, Benutzer, Passwort, Gerätename → „Verbinden“.
+   Erwartung: Status „Synchronisiert“, keine Uhr-Warnung.
+2. Windows-Anmeldeinformationsverwaltung öffnen → „Windows-Anmeldeinformationen“: Eintrag
+   `de.displaybuddy.desktop` vorhanden; in `%APPDATA%\de.displaybuddy.desktop\settings.json` steht **kein** Token.
+3. Notiz am PC anlegen → „Jetzt synchronisieren“ → in der Web-App sichtbar.
+4. WLAN aus, am PC zwei Notizen ändern → Status „Offline – 2 Änderungen warten“ → App beenden, neu starten,
+   WLAN an → Änderungen kommen auf dem Server an.
+5. Zweiter PC (falls vorhanden) verbinden: beide zeigen denselben Stand; gleichzeitig bearbeitet → die spätere
+   Änderung gewinnt, die andere erscheint als Hinweis.
+6. „Trennen“ bei wartenden Änderungen → Rückfrage. Danach verhält sich die App exakt wie 0.2.0 (Szenario 11).
+
+## 27. v3 – Web-App (PWA) auf dem Handy
+1. Android/Chrome: `https://buddy.<domain>` öffnen → anmelden → „App installieren“. iOS: Safari → Teilen →
+   „Zum Home-Bildschirm“ → von dort öffnen und anmelden.
+2. Einstellungen → „Benachrichtigungen aktivieren“ → Erlaubnis geben → „Testbenachrichtigung“ kommt an.
+   iOS im Safari-Tab (nicht installiert): Hinweis „Zuerst zum Home-Bildschirm hinzufügen“.
+3. **Push bei geschlossener App:** Erinnerung in 3 min setzen, App vollständig schließen → Benachrichtigung
+   erscheint pünktlich (± 1 min). Android: Knöpfe „Erledigt“/„10 Min. später“ funktionieren; iOS: Tipp öffnet die
+   App, dort Banner mit Knöpfen.
+4. **Flugmodus:** Erinnerung in 2 min setzen, Flugmodus an, 5 min warten, Flugmodus aus → Benachrichtigung kommt
+   nach, Text „fällig seit …“.
+5. Offline: App im Flugmodus öffnen → Notizen da, bearbeiten, Flugmodus aus → automatisch synchronisiert.
+6. Nach einem Server-Update: Banner „Neue Version verfügbar“ → „Jetzt aktualisieren“ → nichts geht verloren.
+
+## 28. v3 – Native Android-App (APK)
+1. APK aus GitHub Actions (`mobile-android` → Artefakt) installieren (Sideload erlauben), anmelden.
+2. Erlaubnisse: Benachrichtigungen; Einstellungen → Apps → Display Buddy → „Alarme & Erinnerungen“ erlauben;
+   Akku → „Nicht optimieren“.
+3. **Offline-Klingeln:** Erinnerung am PC in 5 min setzen, Handy-App öffnen (Sync), App schließen, Flugmodus an →
+   Benachrichtigung kommt pünktlich. „Erledigt“ im Flugmodus → nach Flugmodus aus ist die Erinnerung am PC erledigt.
+4. Am PC verschieben → Handy-App öffnen (Sync) → alte Benachrichtigung kommt nicht mehr, neue zur neuen Zeit.
+5. Neustart des Handys: geplante Erinnerung klingelt trotzdem.
+6. Nur wenn N2 eingerichtet ist (Firebase, siehe `mobile/README.md`): Erinnerung am PC setzen, **ohne** die Handy-App
+   zu öffnen → Push weckt die App, Benachrichtigung kommt; danach kein doppeltes Klingeln.
+7. Nicht gleichzeitig PWA und native App auf demselben Handy nutzen (doppelte Benachrichtigungen).
+
+## 29. v3 – Native iOS-App (eigener Mac, kostenloses Apple-Konto)
+1. Bauen und aufs iPhone laden laut `mobile/README.md` (Xcode, 7-Tage-Signatur).
+2. **Zeitpunkt-Prüfung (§10.4/D-76):** iPhone-Zeitzone Europe/Berlin, Einstellungen → „Testbenachrichtigung“
+   (plant in 2 min) → klingelt pünktlich; dasselbe mit Zeitzone America/New_York.
+3. Benachrichtigung aus einem früheren App-Start antippen → App startet ohne Absturz.
+4. Offline-Klingeln wie §28.3.
+
+## 30. v3 – Zeitzonen und Reisen
+1. PC in Berlin legt „täglich 09:00“ an; Handy auf New York gestellt → Handy zeigt „03:00 (09:00 Berlin)“,
+   Benachrichtigung kommt gleichzeitig mit dem PC-Toast; „Erledigt“ am Handy → nächster Termin 09:00 Berlin.
+2. Erinnerung auf Asia/Tokyo umstellen → alle Geräte zeigen den neuen Zeitpunkt.
+3. Handy-Zeitzone während einer geplanten Erinnerung wechseln → klingelt zum ursprünglichen absoluten Zeitpunkt.
+4. Termine in der Woche zwischen US- und EU-Zeitumstellung (März/Oktober): Anzeige stimmt, Wiederholung bleibt
+   09:00 Berlin.
+
+## 31. Anhang v3: In der Cloud automatisiert geprüft
+- `npm test` (+ `npm run test:tz` unter New York/Tokio): Zeitzonenmathe gegen 210 gemeinsame Vektoren, LWW, Uhr,
+  Datenschicht/Outbox/Sync-Engine (16a/16b/16c, 401/410, Backoff, zwei Tabs), PWA-UI, Service-Worker-Handler,
+  native Planung (IDs, 60er-Grenze, Aktionen offline).
+- `cargo test` in `crates/buddy-core`, `src-tauri`, `server`, `mobile/src-tauri`: dieselben Vektoren in Rust,
+  Server-Auth/CSRF/Login-Bremse, Sync über die API, Web Push gegen einen entschlüsselnden Fake-Push-Dienst
+  (genau einmal, Retry, 410), Dedupe für native Geräte, Desktop-Sync gegen einen Mock-Server.
+- `npm run e2e`: echter Server + PWA in Chromium (Zeitzone New York) + PC-Protokoll (Szenarien 1–4, 9, 12–15, 19, 24).
+- Android-APK und Emulator-Szenarien 28/29 in GitHub Actions (`mobile-android`), iOS-Simulator-Build (`mobile-ios`).
