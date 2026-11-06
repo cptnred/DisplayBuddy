@@ -195,3 +195,5 @@ meldet `clampedUpdatedAt`. Tombstones haben `deleted: true` und `note`/`reminder
 **D-64 ICU-Zonennamen:** `Intl.supportedValuesOf('timeZone')` liefert kanonische ICU-Namen (z. B. `Asia/Calcutta`
 statt `Asia/Kolkata`). Beide Schreibweisen sind gültig; chrono-tz kennt die Alias-Namen ebenfalls. Gespeichert wird,
 was der Benutzer wählt bzw. was das Gerät meldet.
+
+**D-65 Kein `cdylib` im Desktop-Crate.** Mit den v3-Abhängigkeiten (reqwest/rustls/ring, keyring) überschreitet die `display_buddy_lib.dll` beim MinGW-Cross-Build auch im Release die 65535 Export-Ordinals („export ordinal too large“). Die DLL braucht nur Tauri Mobile; die Desktop-EXE linkt das `rlib`. `crate-type = ["staticlib", "rlib"]`.

@@ -7,7 +7,9 @@ edition = "2024"
 
 [lib]
 name = "display_buddy_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# No cdylib: only Tauri mobile needs it, and MinGW cannot link it with > 65535 exports
+# ("export ordinal too large", D-65). The desktop exe links the rlib.
+crate-type = ["staticlib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.7.4", features = [] }

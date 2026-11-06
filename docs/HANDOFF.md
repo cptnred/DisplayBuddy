@@ -77,7 +77,7 @@ npm run tauri build -- --target x86_64-pc-windows-gnu --no-bundle --features con
 
 - **MSVC/cargo-xwin geht in der Cloud nicht**: der Download von `aka.ms` ist per Proxy-Policy gesperrt
   (nicht umgehen). Deshalb MinGW (`windows-gnu`); der Installer bündelt `WebView2Loader.dll` (D-17).
-  Ein Windows-Debug-Build mit mingw linkt nicht („export ordinal too large“) – Release und clippy gehen.
+  „export ordinal too large“ kam von der `cdylib` (zu viele Exporte für MinGW) – seit D-65 nicht mehr im crate-type.
 - **Smoke-Test der echten App unter Linux**: `npm run tauri build -- --debug --no-bundle`, dann unter Xvfb
   mit `dbus-run-session` starten, mit `xdotool` bedienen, mit `import -window root` Screenshots machen,
   `XDG_DATA_HOME` auf ein Testverzeichnis setzen. Erstes Rendern unter Software-Rendering dauert einige
