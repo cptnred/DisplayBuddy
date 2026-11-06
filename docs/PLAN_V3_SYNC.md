@@ -5,7 +5,7 @@ Stand: 2026-11-06, dritte Fassung. Nachträge vom selben Tag:
 2. Web-App zeigt Push selbst (ntfy entfällt), native Hülle für Benachrichtigungen ohne Internet,
    Erinnerungen mit eigener Zeitzone.
 
-Grundlage: Version 0.2.0 · Status: **in Umsetzung** (Phase 0 fertig, siehe D-51…D-64)
+Grundlage: Version 0.2.0 · Status: **in Umsetzung** (Phasen 0, A–E, N1 fertig; siehe D-51…D-80)
 
 Dieser Plan ist für v3 so verbindlich wie `docs/PLAN.md` für v1/v2. Abweichungen nur mit Begründung in
 `docs/DECISIONS.md`. Ausführende Agenten starten mit `docs/AGENT_PROMPT_V3.md`.

@@ -197,3 +197,85 @@ statt `Asia/Kolkata`). Beide Schreibweisen sind gültig; chrono-tz kennt die Ali
 was der Benutzer wählt bzw. was das Gerät meldet.
 
 **D-65 Kein `cdylib` im Desktop-Crate.** Mit den v3-Abhängigkeiten (reqwest/rustls/ring, keyring) überschreitet die `display_buddy_lib.dll` beim MinGW-Cross-Build auch im Release die 65535 Export-Ordinals („export ordinal too large“). Die DLL braucht nur Tauri Mobile; die Desktop-EXE linkt das `rlib`. `crate-type = ["staticlib", "rlib"]`.
+
+## v3 – Entscheidungen aus den Phasen A–E, N1 (2026-11-06)
+
+**D-66 Server-CSRF (A):** gilt für unsichere Methoden mit Session-Cookie ohne Bearer sowie für `POST /session`
+(Login-CSRF). `Sec-Fetch-Site` darf nur `same-origin`/`none` sein (strenger als der Plan: auch `same-site` wird
+abgelehnt, weil die PWA immer von derselben Origin kommt); fehlt der Header, muss `Origin` = `BUDDY_PUBLIC_URL` sein;
+`X-Buddy-Request: 1` ist immer Pflicht. Bearer-Anfragen sind ausgenommen (fremde Seiten können `Authorization`
+ohne CORS-Preflight nicht setzen; der Server erlaubt kein CORS). Quelle: OWASP CSRF Prevention Cheat Sheet.
+
+**D-67 Login-Bremse (A):** pro (IP, Benutzer) 5 Fehlversuche frei, dann 30 s, verdoppelt bis 15 min, 429 mit
+`Retry-After` (Passwort wird dann nicht geprüft), Erfolg setzt zurück, nach 24 h vergessen. `X-Forwarded-For`
+(letzter Eintrag) gilt nur von Adressen in `BUDDY_TRUSTED_PROXIES`; Compose gibt Caddy dafür eine feste Adresse
+(D-75). Quelle: OWASP Authentication Cheat Sheet.
+
+**D-68 Sitzungen und Geräte (A):** `DELETE /session` widerruft das web-Gerät samt Push-Abo (die PWA löscht beim
+Abmelden ihre lokale DB). Sitzung 30 Tage, Verlängerung höchstens stündlich und nur bei `/sync/*`. `user passwd`
+beendet alle Web-Sitzungen, mit `--revoke-devices` auch alle Tokens. Passwörter nur über Terminal/stdin.
+
+**D-69 Cursor- und Klemmen-Details (A):** 410 auch bei `since > users.seq` (DB zurückgesetzt/Restore); `since=0`
+geht immer. Die Zukunfts-Klemme wirkt auch auf `note.updatedAt`/`reminder.updatedAt` im Inhalt; gemeldet wird
+`clampedUpdatedAt`. Der Server füllt fehlende Zonen **nicht** auf (er ändert keine Gerätedaten), sondern rechnet mit
+`effective_zone` (Erinnerung → Konto → UTC). Einzige Server-Stempelung: CLI `restore` (`updatedBy = "server-restore"`).
+
+**D-70 VAPID-Schlüssel als PKCS#8-PEM** (A, D): `vapid generate` schreibt 0600; `web-push` 0.11 liest PKCS#8
+(`read_pem`), per Test mit dem erzeugten Schlüssel bestätigt (D).
+
+**D-71 Web-Datenschicht (C1):** Zeitstempel pro Dokument **streng steigend** (`nextStampMs`): Zwei Bearbeitungen in
+derselben Millisekunde bekämen sonst denselben Stempel, den der Server als Echo verwirft (D-58). Tombstones bleiben
+lokal für LWW. Die Engine erreicht Cursor/Outbox/Merge über `syncAccess(store)` (WeakMap, nicht im UI-Vertrag).
+Startstatus `idle` statt `signedOut`, bis das Konto gelesen ist (kein Flackern zur Login-Seite). Auf eine belegte
+Web Lock wird gewartet (kein Auslöser geht verloren). Pull-Größe 200. Lokal gestempelte Outbox-Einträge werden nach dem
+Login auf die Server-`deviceId` umgeschrieben; anderer Benutzer → `account_mismatch`.
+
+**D-72 PWA-Build (C2):** zusätzlich `workbox-routing` 7.4.1 (für `NavigationRoute`, laut vite-pwa-Doku). Unter
+Rolldown (Vite 8) wird `web.html` per `delete` + `emitFile` zu `index.html`. `includeManifestIcons: false` gegen
+doppelte Precache-Einträge. Service-Worker-Typen über `/// <reference lib="webworker" />`.
+
+**D-73 Benachrichtigungen in der PWA (C2), nach browser-compat-data 8.1.8:** Pflicht nur `push` +
+`showNotification`; `actions` nur bei `Notification.maxActions ≥ 2`; `tag`/`data`/`navigate` werden mitgegeben
+(Unbekanntes ignoriert WebIDL); `notificationclick`-Aktionen wirken nur, wenn die Erinnerung noch beim gemeldeten
+`at` steht (eine veraltete Benachrichtigung überspringt kein Vorkommen). Der Wunsch „Push an“ liegt in
+`localStorage` (`buddy.push.wanted`), weil der DataStore-Vertrag dafür nichts vorsieht und der Service Worker ihn nicht
+braucht. `DELETE /push/subscription` mit Body `{endpoint}`.
+
+**D-74 Server-Push (D):** Vor jedem Versand wird `push_log` mit `pending` reserviert, danach `sent`/`gone`/`failed`;
+nach Neustart werden offene `pending` neu versendet (solange < 24 h) → genau einmal pro Gerät und Vorkommen. VAPID-JWT
+12 h gültig, höchstens stündlich neu. reqwest 0.13.5 mit `rustls-no-provider` + rustls 0.23.46 (ring), keine
+Weiterleitungen. Neue Spalte `reminders.at_seq` (Migration 0002, per Trigger): ändert sich nur, wenn sich der Termin
+ändert – mit `seq` würde schon das Fällig-Werden einen nativen Push auslösen und die lokale Benachrichtigung doppeln.
+Push-Endpunkte nur `https` mit DNS-Namen (keine IP/localhost), `p256dh` muss ein gültiger P-256-Punkt sein.
+`web-push` zieht OpenSSL in das Server-Binary (D-56) – das Image enthält `libssl`.
+
+**D-75 Deployment (E):** Dockerfile mit drei Stufen (Web-Build, `cargo build --release --locked`, Debian trixie slim),
+Basis-Images mit Tag + Digest, UID 10001, `/data`-Volume, HEALTHCHECK über `curl` auf `/api/v1/health`. Compose:
+eigenes Netz 172.30.0.0/24, Caddy fest auf 172.30.0.10 außerhalb des automatisch vergebenen Bereichs
+(172.30.0.128/25), `BUDDY_TRUSTED_PROXIES` nur Caddy; buddy `read_only`, `cap_drop: ALL`, `no-new-privileges`.
+Caddy: HSTS ohne `preload`, Cache-Header des Servers unverändert.
+
+**D-76 Patch für `tauri-plugin-notification` 2.8.0 (N1).** Quellcode-Befund (§10.4, D-50) bestätigt und erweitert:
+(1) iOS-`DateFormatter` ohne Zeitzone → Erinnerung um den Zonenversatz verschoben; (2) iOS-Absturz bei
+Benachrichtigungen aus einem früheren App-Start (`notificationsMap[...]!`); (3) Rust sendet 9 Nachkommastellen, die
+Parser erwarten 3; (4) Android verliert Aktionen beim Kaltstart. Die unveränderte Kopie liegt in
+`mobile/patches/tauri-plugin-notification` (erster Commit), der Fix im zweiten Commit, eingebunden per
+`[patch.crates-io]`. Entfernen, sobald upstream behoben. Ein Upstream-Issue ist noch nicht angelegt (GitHub-Zugriff
+auf plugins-workspace fehlte in der Sitzung).
+
+**D-77 Exakte Alarme ohne eigenen Kotlin-Code (N1):** `USE_EXACT_ALARM` plus `SCHEDULE_EXACT_ALARM` (bis Android 12L)
+laut Android-Doku „Schedule alarms“ für Erinnerungs-Apps. Verteilung per Sideload; bei Google Play wäre das eine
+Richtlinienfrage.
+
+**D-78 Token in der Hülle über keyring-Stores (N1):** iOS `apple-native-keyring-store` 1.0.2 mit `protected`
+(after-first-unlock), Android `android-native-keyring-store` 1.0.0 (tao initialisiert `ndk-context`). Kein Zusatz-Plugin.
+
+**D-79 Weitere Hüllen-Details (N1):** `gen/android`/`gen/apple` werden in CI erzeugt (nicht eingecheckt; lokal ohne
+SDK nicht erzeugbar, D-54); Build-Ausgabe `mobile/dist` statt `dist-mobile/`; Android-WebView mit
+`https://tauri.localhost` (fester IndexedDB-Ursprung); HTTP-Scope zur Laufzeit nur `<BUDDY_PUBLIC_URL>/api/v1/*`;
+`buddy-core` wird in der Hülle nicht eingebunden (Logik in TypeScript). IndexedDB bleibt die Speicherung; ob sie in
+WKWebView/Android-WebView dauerhaft hält, ist ein Gerätetest (sonst `tauri-plugin-sql`). Höchstens 60 geplante
+Benachrichtigungen (iOS-Grenze 64), weitere beim nächsten Sync/Öffnen.
+
+**D-80 Bekannter wackeliger Test:** ein bestehender Buddy-Skin-Test („falls back to the smiley … for an unknown id“)
+schlug einmal unter hoher Last (vier parallele Agenten) fehl und war in drei Wiederholungen grün. Unter Beobachtung.
