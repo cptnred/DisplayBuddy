@@ -131,6 +131,9 @@ Siehe `docs/MANUAL_TESTS.md` §21–25 (v2) und die ⚠️-Punkte davor. Insbeso
 
 ## 8. ToDo-Liste (vom Benutzer bestätigt)
 
+- [ ] **v3: Notiz-Sync + Push-Erinnerungen aufs Handy** – Plan `docs/PLAN_V3_SYNC.md`, Agenten-Prompts
+  `docs/AGENT_PROMPT_V3.md`, Entscheidungen D-28…D-40. Benutzerentscheidungen: VPS mit Domain, am Handy lesen und
+  bearbeiten, keine E2E-Verschlüsselung, neueste Änderung gewinnt.
 - [ ] **Windows-CI-Build mit GitHub Actions** (`windows-latest`, MSVC-Toolchain, `npm run tauri build`):
   Installer als Release-Artefakt, optional mit Code-Signing. Ersetzt den MinGW-Cross-Build aus der
   Linux-Cloud (D-17) und macht die zusätzliche `WebView2Loader.dll` im Installer überflüssig.

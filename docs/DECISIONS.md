@@ -55,3 +55,34 @@
 **D-26 Skin-Import validiert Inhalt.** Dateiendung und Magic Bytes müssen passen; SVG mit `<script>`, `javascript:` oder `<foreignObject>` wird abgelehnt; Lottie muss die Pflichtfelder haben; max. 5 MB. Bilder werden als Data-URL in `<img>` angezeigt (Skripte in SVG würden dort ohnehin nicht laufen).
 
 **D-27 Monatliche Wiederholung ohne Anker-Tag.** Das Modell speichert nur `at`; nach 31. → 28. Februar bleibt die Erinnerung auf dem 28. Ein `anchorDay`-Feld wäre die Erweiterung.
+
+## v3 (geplant, siehe `docs/PLAN_V3_SYNC.md`)
+
+Benutzerentscheidungen vom 2026-11-06: eigener Sync-/Relay-Server auf einem **VPS mit Domain**; Notizen am Handy
+**lesen und bearbeiten**; **keine Ende-zu-Ende-Verschlüsselung**; Konflikte: **neueste Änderung gewinnt**.
+
+**D-28 Eigener Server, Desktop bleibt local-first.** `buddy-server` (axum + SQLite) synchronisiert Notizen, plant Erinnerungen und sendet Push. Die Desktop-App funktioniert ohne Server unverändert; Sync ist optional und standardmäßig aus.
+
+**D-29 Last-Writer-Wins pro Dokument** (Notiz, Erinnerung, Reihenfolge) nach `updatedAt`, Gleichstand → größeres `updatedBy`. Löschen ist ein Tombstone, der an LWW teilnimmt. Zeitstempel mehr als 2 min in der Zukunft klemmt der Server auf seine Zeit; Web-Bearbeitungen bekommen immer Serverzeit. Verlierer-Fassungen 30 Tage in `note_revisions`. TipTaps offizieller Weg für Zusammenführen wäre Collaboration/Yjs (CRDT) – bewusst nicht gewählt (Benutzerentscheidung; das Speicherformat müsste von TipTap-JSON auf Yjs-Dokumente umgestellt werden).
+
+**D-30 Fällig-Werden ändert `updatedAt` nicht.** Nur Benutzeraktionen (setzen, erledigen, verschieben, entfernen) zählen als Bearbeitung. Sonst könnte ein PC, der offline nachfeuert, eine am Handy erledigte Erinnerung wieder „fällig“ machen.
+
+**D-31 Push nur vom Server über selbst gehostetes ntfy** (`auth-default-access: deny-all`, `upstream-base-url: https://ntfy.sh` für iOS; an ntfy.sh gehen laut ntfy-Doku nur Nachrichten-ID und Topic-Hash). Die Desktop-App spricht nie mit ntfy → keine doppelten Nachrichten. Genau eine Nachricht pro Vorkommen `(noteId, at)` über `push_log`.
+
+**D-32 Der Server plant Erinnerungen selbst** statt ntfys „Scheduled delivery“ zu nutzen: Wiederholungen, Erledigt/Verschieben und Sync-Zustand liegen ohnehin auf dem Server; ntfy stellt nur sofort zu.
+
+**D-33 Aktionsknöpfe mit signierten Einmal-Tokens** (HMAC, 24 h, an `(noteId, at)` gebunden) statt eines Bearer-Tokens in der Nachricht, weil ntfy Nachrichten samt Aktionen im Cache speichert.
+
+**D-34 Web-App als eigener Vite-Einstieg** (`web.html` → `src/web/`), dieselben TipTap-Extensions wie am Desktop (TipTap-Doku: Schema-Parität), eigene fetch-Schicht `src/web/webApi.ts`; v3 online-only, kein Service Worker.
+
+**D-35 Gemeinsames Crate `crates/buddy-core` ohne Cargo-Workspace.** Path-Dependency aus `src-tauri` und `server`; Tauri-Build, `target/` und MinGW-Cross-Build bleiben unverändert. `model.rs` re-exportiert die verschobenen Typen.
+
+**D-36 Desktop-HTTP über `tauri_plugin_http::reqwest`, nur Rust-seitig** (offizieller Tauri-Weg laut Doku „HTTP Client“; Fortsetzung von D-07, keine JS-Permissions). TLS-Backend muss mit `x86_64-pc-windows-gnu` bauen.
+
+**D-37 Geräte-Token im Windows-Anmeldeinformationsspeicher** (`keyring-core` + Windows-Store-Crate, wie im keyring-rs-README für Anwendungen empfohlen), nie in `settings.json`.
+
+**D-38 Web-Login nach OWASP:** Argon2id (mind. 19 MiB, t=2, p=1), Cookie `__Host-buddy_session; Secure; HttpOnly; SameSite=Strict; Path=/`, serverseitige Sessions; CSRF über `Sec-Fetch-Site` mit Origin-Fallback plus Custom-Header `X-Buddy-Request`.
+
+**D-39 Wiederholungsmathe auf dem Server in der IANA-Zeitzone des Kontos** (`chrono-tz`); `schedule.rs` ist bereits generisch über `TimeZone`. Der Desktop meldet seine Zone beim Verbinden.
+
+**D-40 Betrieb: VPS + Docker Compose + Caddy** (automatisches HTTPS laut Caddy-Doku), zwei Subdomains (`buddy.<domain>`, `ntfy.<domain>`), nur Caddy veröffentlicht Ports.
