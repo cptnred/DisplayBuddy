@@ -5,7 +5,9 @@
  * - HTTP through @tauri-apps/plugin-http with `Authorization: Bearer` (scope limited to
  *   BUDDY_PUBLIC_URL/api/v1/* by the Rust side), token in the keychain/keystore;
  * - local planning of every reminder (src/web/notify/native.ts), re-planned at start,
- *   after each sync, after local changes and on resume.
+ *   after each sync, after local changes and on resume;
+ * - Android only: native push over FCM (src/web/notify/native-push.ts, plugin
+ *   mobile/plugins/buddy-push) wakes the app for reminders it has not planned yet.
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -17,7 +19,10 @@ import "../../src/styles/base.css";
 import { openDataStore, syncAccess } from "../../src/web/data";
 import { createStorageController } from "../../src/web/notify/install";
 import { createNativeNotifier, followSync } from "../../src/web/notify/native";
+import { notificationId } from "../../src/web/notify/native-plan";
 import { createTauriNotificationPlugin } from "../../src/web/notify/native-plugin";
+import { createNativePush } from "../../src/web/notify/native-push";
+import { createTauriPushPlugin } from "../../src/web/notify/native-push-plugin";
 import {
   createLocalPrefs,
   createShellTokens,
@@ -84,18 +89,20 @@ async function boot() {
   let pendingOpen: string | null = null;
   // created below; the notifier asks it to report a new deviceState (§10.3)
   let sync: ReturnType<typeof createSyncEngine> | null = null;
+  const notificationPlugin = createTauriNotificationPlugin();
+  const openNote = (id: string) => {
+    const path = `/notes/${encodeURIComponent(id)}`;
+    if (navigate) navigate(path);
+    else pendingOpen = path;
+  };
   const notifier = createNativeNotifier({
     store,
     getCursor: () => syncAccess(store).getCursor(),
-    plugin: createTauriNotificationPlugin(),
+    plugin: notificationPlugin,
     deviceZone,
     prefs: createLocalPrefs(localStore()),
     onDeviceState: () => sync?.requestSync("change"),
-    onOpenNote: (id) => {
-      const path = `/notes/${encodeURIComponent(id)}`;
-      if (navigate) navigate(path);
-      else pendingOpen = path;
-    },
+    onOpenNote: openNote,
     log: (m) => console.info(`[buddy-native] ${m}`),
   });
   sync = createSyncEngine({ store, http, deviceState: () => notifier.deviceState() });
@@ -111,6 +118,34 @@ async function boot() {
     if (document.visibilityState === "visible") void notifier.replan("resume");
   });
   void notifier.start();
+
+  // Native push (PLAN §10.5, D-55): Android only; iOS relies on the local planning.
+  if (config.platform === "android") {
+    const push = createNativePush({
+      plugin: createTauriPushPlugin(),
+      http,
+      store,
+      sync,
+      notifier,
+      // FCM does not display notifications of a foreground app: show the reminder now,
+      // with the same id and buttons as the local plan would have used.
+      showNow: async (m) => {
+        const id = m.noteId && m.at ? notificationId(m.noteId, m.at) : null;
+        if (id === null || !m.noteId || !m.at) return;
+        await notificationPlugin.schedule({
+          id,
+          title: m.title ?? "Erinnerung",
+          body: m.body ?? "",
+          atMs: null,
+          actions: true,
+          extra: { noteId: m.noteId, at: m.at },
+        });
+      },
+      onOpenNote: openNote,
+      log: (m) => console.info(`[buddy-native] ${m}`),
+    });
+    void push.start();
+  }
 
   const services: Services = {
     store,
