@@ -62,6 +62,8 @@ Benutzerentscheidungen vom 2026-11-06: eigener Sync-/Relay-Server auf einem **VP
 **lesen und bearbeiten**; **keine Ende-zu-Ende-Verschlüsselung**; Konflikte: **neueste Änderung gewinnt**.
 Nachtrag am selben Tag: Web-App **installierbar** (Android/iOS), **offline** lokal speichern und bei Verbindung
 automatisch synchronisieren; **Gerätezeitstempel** auf PC und Handy entscheiden.
+Dritte Fassung: die App zeigt **Push selbst** (Web Push, ntfy entfällt); **native Hülle** (Tauri 2 Mobile), damit
+synchronisierte Erinnerungen **auch ohne Internet** klingeln; **jede Erinnerung hat ihre eigene Zeitzone**.
 
 **D-28 Eigener Server, Desktop bleibt local-first.** `buddy-server` (axum + SQLite) synchronisiert Notizen, plant Erinnerungen und sendet Push. Die Desktop-App funktioniert ohne Server unverändert; Sync ist optional und standardmäßig aus.
 
@@ -69,13 +71,13 @@ automatisch synchronisieren; **Gerätezeitstempel** auf PC und Handy entscheiden
 
 **D-30 Fällig-Werden ändert `updatedAt` nicht.** Nur Benutzeraktionen (setzen, erledigen, verschieben, entfernen) zählen als Bearbeitung. Sonst könnte ein PC, der offline nachfeuert, eine am Handy erledigte Erinnerung wieder „fällig“ machen.
 
-**D-31 Push nur vom Server über selbst gehostetes ntfy** (`auth-default-access: deny-all`, `upstream-base-url: https://ntfy.sh` für iOS; an ntfy.sh gehen laut ntfy-Doku nur Nachrichten-ID und Topic-Hash). Die Desktop-App spricht nie mit ntfy → keine doppelten Nachrichten. Genau eine Nachricht pro Vorkommen `(noteId, at)` über `push_log`.
+**D-31 Push über Web Push und native Kanäle statt ntfy** (dritte Fassung, Benutzerwunsch: „die App zeigt Push selbst“). Der Server sendet pro Gerät: Web Push (VAPID, RFC 8030/8291) an die PWA, deren Service Worker die Benachrichtigung selbst anzeigt; die native Hülle plant lokal und bekommt nur bei Bedarf einen nativen Push (D-48). Die Desktop-App sendet nie Push. Höchstens eine Nachricht pro Gerät und Vorkommen über `push_log(device_id, note_id, at)`. ntfy entfällt vollständig (weniger Dienste, keine Abhängigkeit von ntfy.sh für iOS).
 
-**D-32 Der Server plant Erinnerungen selbst** statt ntfys „Scheduled delivery“ zu nutzen: Wiederholungen, Erledigt/Verschieben und Sync-Zustand liegen ohnehin auf dem Server; ntfy stellt nur sofort zu.
+**D-32 Der Server plant Erinnerungen selbst** (Wiederholungen, Erledigt/Verschieben und Sync-Zustand liegen dort) und stößt den Versand zur fälligen Zeit an. Web Push wird mit `TTL: 86400`, `Urgency: high` und `Topic` je Notiz gesendet (Apple-Doku): Ist das Gerät offline, liefert der Push-Dienst nach; eine ältere, noch nicht zugestellte Nachricht derselben Erinnerung wird ersetzt.
 
-**D-33 Aktionsknöpfe mit signierten Einmal-Tokens** (HMAC, 24 h, an `(noteId, at)` gebunden) statt eines Bearer-Tokens in der Nachricht, weil ntfy Nachrichten samt Aktionen im Cache speichert.
+**D-33 Knöpfe in Benachrichtigungen laufen auf dem Gerät** (PWA: `notificationclick` im Service Worker, nur Chromium/Firefox laut browser-compat-data; native Hülle: Tauri-Aktionen) über die Datenschicht mit Outbox – damit auch offline. Die zuvor geplanten signierten Aktions-URLs entfallen.
 
-**D-34 Web-App als installierbare, offline-first PWA** (Nachtrag 2026-11-06, Benutzerwunsch): eigener Vite-Einstieg (`web.html` → `src/web/`), dieselben TipTap-Extensions wie am Desktop (TipTap-Doku: Schema-Parität). Installierbar laut MDN (Manifest mit name/short_name, Icons 192+512, start_url, display standalone; HTTPS). Service Worker über vite-plugin-pwa/Workbox `generateSW` nur für die App-Hülle, `registerType: 'prompt'`, `injectRegister: null` (kein Inline-Skript, CSP bleibt streng). Daten in IndexedDB über `idb` mit Outbox; die Oberfläche liest nur lokal.
+**D-34 Web-App als installierbare, offline-first PWA** (Benutzerwunsch): eigener Vite-Einstieg (`web.html` → `src/web/`), dieselben TipTap-Extensions wie am Desktop (TipTap-Doku: Schema-Parität). Installierbar laut MDN (Manifest mit name/short_name, Icons 192+512, start_url, display standalone; HTTPS). Service Worker über vite-plugin-pwa mit **`injectManifest`** (eigener `src/web/sw.ts` für `push`/`notificationclick`, Precache über `workbox-precaching`), `registerType: 'prompt'`, `injectRegister: null` (kein Inline-Skript, CSP bleibt streng). Daten in IndexedDB über `idb` mit Outbox; die Oberfläche liest nur lokal.
 
 **D-35 Gemeinsames Crate `crates/buddy-core` ohne Cargo-Workspace.** Path-Dependency aus `src-tauri` und `server`; Tauri-Build, `target/` und MinGW-Cross-Build bleiben unverändert. `model.rs` re-exportiert die verschobenen Typen.
 
@@ -85,9 +87,9 @@ automatisch synchronisieren; **Gerätezeitstempel** auf PC und Handy entscheiden
 
 **D-38 Web-Login nach OWASP:** Argon2id (mind. 19 MiB, t=2, p=1), Cookie `__Host-buddy_session; Secure; HttpOnly; SameSite=Strict; Path=/`, serverseitige Sessions; CSRF über `Sec-Fetch-Site` mit Origin-Fallback plus Custom-Header `X-Buddy-Request`.
 
-**D-39 Wiederholungsmathe auf dem Server in der IANA-Zeitzone des Kontos** (`chrono-tz`); `schedule.rs` ist bereits generisch über `TimeZone`. Der Desktop meldet seine Zone beim Verbinden.
+**D-39 Jede Erinnerung hat ihre eigene IANA-Zeitzone** (`Reminder.timeZone`, Benutzerentscheidung der dritten Fassung): Standard ist die Zone des Geräts beim Anlegen, änderbar. Wandzeit und Wiederholung gelten in dieser Zone – auf PC, Server und Handy gleich (`chrono-tz` bzw. `src/lib/zoned.ts`); „jetzt“, Zeitstempel und LWW sind UTC. Die Erinnerung klingelt überall im selben Moment; jedes Gerät zeigt seine Ortszeit plus Originalzeit. „Schwebende“ Ortszeit pro Gerät wurde verworfen (bei Geräten in verschiedenen Zonen mehrdeutig, mehrfaches Klingeln). Altdaten ohne Zone: PC füllt seine Zone, Server nutzt `users.time_zone`.
 
-**D-40 Betrieb: VPS + Docker Compose + Caddy** (automatisches HTTPS laut Caddy-Doku), zwei Subdomains (`buddy.<domain>`, `ntfy.<domain>`), nur Caddy veröffentlicht Ports.
+**D-40 Betrieb: VPS + Docker Compose + Caddy** (automatisches HTTPS laut Caddy-Doku), eine Subdomain `buddy.<domain>`, nur Caddy veröffentlicht Ports; VAPID-Schlüssel per `buddy-server vapid generate` im Daten-Volume (mitsichern).
 
 **D-41 Gerätezeitstempel mit Uhr-Korrektur** (Nachtrag, Benutzerwunsch). `updatedAt` setzt das Gerät, auf dem bearbeitet wird – sofort beim lokalen Speichern, auch offline – als korrigierte Gerätezeit: Gerätezeit + Median der letzten 5 gemessenen Abweichungen zur Serveruhr (`serverTime` jeder Antwort, RTT/2 abgezogen, nur RTT < 5 s). Offline gilt der letzte bekannte Wert. Eine späte Offline-Änderung behält ihren frühen Zeitstempel und verliert deshalb korrekt gegen eine inzwischen neuere Änderung. Hybrid Logical Clocks wären robuster gegen falsche Uhren, sind aber für einen Benutzer mit NTP-synchronisierten Geräten unnötig komplex.
 
@@ -98,3 +100,14 @@ automatisch synchronisieren; **Gerätezeitstempel** auf PC und Handy entscheiden
 **D-44 Sync der Web-App ohne Background Sync.** Laut browser-compat-data gibt es `SyncManager` nur in Chromium (nicht Safari, nicht Firefox). Ausgelöst wird deshalb beim Start, bei `online`, bei `visibilitychange`, alle 60 s sichtbar und nach Änderungen; `navigator.onLine` nur als Hinweis (MDN: unzuverlässig). Background Sync höchstens als optionale Ergänzung. Parallele Läufe mehrerer Tabs verhindert die Web Locks API (Safari ≥ 15.4), Änderungen verteilt `BroadcastChannel`.
 
 **D-45 iOS: Installation empfohlen, Speicher-Persistenz anfragen.** Safari löscht per Skript angelegte Daten nach 7 Tagen ohne Interaktion (MDN); Web-Apps auf dem Home-Bildschirm sind laut WebKit ausgenommen. Die App zeigt unter iOS deshalb deutlich den Installationshinweis und ruft nach dem Login `navigator.storage.persist()` auf. Gefährdet sind ohnehin nur nicht synchronisierte Änderungen.
+
+**D-46 Web Push: Apples Regeln sind maßgeblich.** Erlaubnis nur aus einer Nutzergeste anfragen; jeder Push zeigt sofort eine Benachrichtigung (keine unsichtbaren Pushes, sonst entzieht Safari die Erlaubnis); Payload ≤ 4 KB; VAPID-JWT höchstens 24 h gültig und nicht öfter als stündlich erneuert; 404/410 → Abo löschen. Unter iOS (≥ 16.4) nur für installierte Home-Bildschirm-Apps; ohne `pushsubscriptionchange`, `notificationclick`, `actions` und `tag` (browser-compat-data) → Abo-Abgleich bei jedem Start, fällige Erinnerungen mit Knöpfen in der App. Server-Bibliothek `web-push` (0.11) mit eigenem reqwest-Client über `request_builder`.
+
+**D-47 Native Hülle mit Tauri 2 Mobile für Benachrichtigungen ohne Internet** (Benutzerentscheidung). Eine Web-App kann ohne Netz nicht zu einer festen Zeit benachrichtigen: Notification Triggers (`TimestampTrigger`) sind eingestellt und nicht mehr in browser-compat-data, Periodic Background Sync gibt es nur in Chromium ohne garantierte Zeit. Die Hülle nutzt dieselbe Oberfläche, Datenschicht und Sync-Engine und plant alle synchronisierten Erinnerungen über das offizielle `tauri-plugin-notification` (`Schedule.at`, Android AlarmManager mit `allowWhileIdle`, iOS `UNTimeIntervalNotificationTrigger` = absoluter Zeitpunkt). Eigenes Tauri-Projekt unter `mobile/`, damit Windows-Code und Desktop-Fenster unberührt bleiben. iOS-Builds brauchen macOS/Xcode; dauerhafte Installation das Apple Developer Program.
+
+**D-48 Native Push nur zum Aufwecken, mit Dedupe über `scheduled_seq`.** Die Hülle meldet nach jeder Planung, bis zu welchem Sync-Stand sie alle Erinnerungen lokal geplant hat. Der Server schickt ihr nur dann FCM/APNs, wenn sie die aktuelle Fassung einer fälligen Erinnerung noch nicht geplant hat oder lokale Benachrichtigungen verweigert sind – sonst klingelt die lokale Planung und ein Push würde sie verdoppeln. Phase N2 nur nach Zustimmung des Benutzers (Firebase/APNs-Zugänge, Community-Plugin oder eigenes Mobile-Plugin).
+
+**D-49 Zeitzonenrechnung in TypeScript über `Intl`, nicht `Temporal`.** `Temporal.ZonedDateTime` gibt es laut browser-compat-data in Chrome 144 und Firefox 139, in Safari nur als Preview. `src/lib/zoned.ts` nutzt `Intl.DateTimeFormat` mit `timeZone`/`formatToParts` (überall verfügbar) und muss dieselben Vektoren bestehen wie `chrono-tz`; Tests zusätzlich unter `TZ=America/New_York` und `TZ=Asia/Tokyo`. Nur das handelnde Gerät rechnet ein neues `at`, alle anderen übernehmen den absoluten Zeitpunkt – unterschiedliche tzdata-Stände können so nicht auseinanderlaufen.
+
+**D-50 Bekannter Prüfpunkt im iOS-Plugin:** `plugins/notification/ios/Sources/Notification.swift` parst das `…Z`-Datum mit einem `DateFormatter` ohne gesetzte UTC-Zeitzone (Android parst in UTC). Vor Freigabe auf Gerät/Simulator in mehreren Zonen prüfen; bei Abweichung Issue suchen/anlegen und eine getestete Umgehung dokumentieren.
+

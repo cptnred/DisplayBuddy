@@ -1,12 +1,12 @@
-# Prompts für die ausführenden Agenten – v3 (Sync + Push)
+# Prompts für die ausführenden Agenten – v3
 
 Diese Datei enthält:
 1. den **Start-Prompt für den Orchestrator** (in eine neue Claude-Code-Session kopieren),
-2. die **gemeinsamen Regeln**, die jeder Subagent mitbekommt,
-3. je einen **Auftrag pro Phase** (0, A–G) zum Weitergeben an Subagenten,
+2. die **gemeinsamen Regeln** für jeden Subagenten,
+3. je einen **Auftrag pro Phase** (0, A, B, C1, C2, D, E, N1, N2, F, G),
 4. die **Vorlage für den Abschlussbericht**.
 
-Grundlage ist `docs/PLAN_V3_SYNC.md`. Bei Widersprüchen gilt der Plan; Abweichungen werden in
+Grundlage ist `docs/PLAN_V3_SYNC.md` (dritte Fassung). Bei Widersprüchen gilt der Plan; Abweichungen werden in
 `docs/DECISIONS.md` begründet.
 
 ---
@@ -14,36 +14,46 @@ Grundlage ist `docs/PLAN_V3_SYNC.md`. Bei Widersprüchen gilt der Plan; Abweichu
 ## 1. Start-Prompt für den Orchestrator
 
 ```text
-Du setzt v3 von Display Buddy um: Notiz-Synchronisation über einen eigenen Server, eine installierbare
-Offline-Web-App (PWA) für Handy und Tablet und Push-Erinnerungen aufs Handy (ntfy). Änderungen werden auf PC und
-Handy mit dem Zeitpunkt der Bearbeitung auf dem Gerät gestempelt; diese Zeitstempel entscheiden beim
-Synchronisieren (Neueste gewinnt). Antworte dem Benutzer auf Deutsch; Code, Bezeichner und Commits auf Englisch.
+Du setzt v3 von Display Buddy um:
+- Notiz-Synchronisation über einen eigenen Server (VPS);
+- eine installierbare Offline-Web-App (PWA), die Erinnerungen selbst per Web Push anzeigt;
+- eine native Android/iOS-Hülle (Tauri 2 Mobile), die synchronisierte Erinnerungen lokal plant und deshalb auch
+  ohne Internet klingelt;
+- Erinnerungen mit eigener Zeitzone, damit PC und Handy auch in verschiedenen Zonen zuverlässig zusammenarbeiten.
+Änderungen werden auf jedem Gerät mit der Bearbeitungszeit (UTC, korrigierte Gerätezeit) gestempelt; die neueste
+gewinnt. ntfy wird NICHT verwendet.
+Antworte dem Benutzer auf Deutsch; Code, Bezeichner und Commits auf Englisch.
 
 Lies zuerst vollständig, in dieser Reihenfolge:
 CLAUDE.md, docs/HANDOFF.md, docs/PLAN.md, docs/DECISIONS.md, docs/PLAN_V3_SYNC.md, docs/AGENT_PROMPT_V3.md.
 
-Deine Rolle: Orchestrator. Du erledigst Phase 0 und Phase F selbst und gibst die Phasen A, B, C1, C2, D, E
-(und optional G) an Subagenten, jeweils mit eigenem git-Worktree und den in PLAN_V3_SYNC §11 genannten
-exklusiven Ordnern. Gib jedem Subagenten den Block „Gemeinsame Regeln“ (AGENT_PROMPT_V3 §2) und seinen
-Phasenauftrag (§3) wörtlich mit. Reihenfolge: 0 → (A ∥ B ∥ C1 ∥ C2) → (D ∥ E) → F → optional G (nur nach
-Rückfrage).
+Deine Rolle: Orchestrator.
+- Phase 0 und Phase F erledigst du selbst.
+- Die Phasen A, B, C1, C2, D, E, N1, N2 (und optional G) gibst du an Subagenten, jeweils mit eigenem git-Worktree
+  und den exklusiven Ordnern aus PLAN_V3_SYNC §12.
+- Gib jedem Subagenten den Block „Gemeinsame Regeln“ (§2) und seinen Phasenauftrag (§3) wörtlich mit.
+- Reihenfolge: 0 → (A ∥ B ∥ C1 ∥ C2) → (D ∥ E ∥ N1) → N2 → F → optional G (nur nach Rückfrage).
 
 Vor Phase 0:
-1. Bau-Umgebung wie in HANDOFF §4 einrichten (apt-Pakete, rustup target x86_64-pc-windows-gnu,
-   tauri-cli), npm install, und alle bestehenden Checks einmal grün sehen. Rote Checks zuerst melden.
-2. Die in PLAN_V3_SYNC §13 genannten Punkte prüfen (sqlx-Version, keyring-Windows-Store-Crate,
-   reqwest-TLS unter MinGW, ntfy-Image-Tag, vite-plugin-pwa mit Vite 8, idb, Playwright-WebKit) und das
-   Ergebnis als D-Eintrag festhalten.
+1. Bau-Umgebung wie in HANDOFF §4 einrichten, npm install, alle bestehenden Checks einmal grün sehen.
+   Rote Checks zuerst melden.
+2. Die Prüfpunkte aus PLAN_V3_SYNC §14 klären und als D-Einträge festhalten: Versionen von sqlx, web-push,
+   vite-plugin-pwa (Vite 8), idb und Tauri-Plugins; keyring-Stores; reqwest-TLS unter MinGW; Android-SDK in
+   der Cloud bzw. Bauen über GitHub Actions.
+3. Dem Benutzer vor Phase N1/N2 diese Fragen stellen (als Multiple-Choice):
+   - Hat er einen Mac oder sollen iOS-Builds über GitHub Actions macOS laufen?
+   - Will er das Apple Developer Program (99 USD/Jahr) nutzen?
+   - Soll Phase N2 (nativer Push mit Firebase/APNs) umgesetzt werden?
 
-Produktfragen (alles, was der Benutzer sieht oder entscheidet) stellst du dem Benutzer als
-Multiple-Choice-Frage, bevor du sie festlegst; technische Details entscheidest du selbst und begründest sie
-in docs/DECISIONS.md. Die Entscheidungen des Benutzers in PLAN_V3_SYNC §1 sind gesetzt – nicht neu
-verhandeln.
+Produktfragen stellst du dem Benutzer als Multiple-Choice-Frage, technische Details entscheidest du selbst und
+begründest sie in docs/DECISIONS.md. Die Entscheidungen in PLAN_V3_SYNC §1 sind gesetzt.
 
-Nach jeder Phase: Worktree-Ergebnis prüfen (Diff lesen, alle Checks selbst laufen lassen, nicht nur dem
-Bericht glauben), in den Arbeitszweig integrieren, Konflikte lösen, Checks erneut grün, committen, pushen.
-Am Ende: Abschlussbericht nach AGENT_PROMPT_V3 §4 an den Benutzer, ehrlich getrennt nach „getestet“,
-„nur kompiliert/statisch geprüft“ und „nicht prüfbar (nur Benutzer)“. Installer als ZIP liefern (HANDOFF §2).
+Nach jeder Phase:
+- Ergebnis prüfen: Diff lesen, alle Checks selbst laufen lassen.
+- Integrieren, Konflikte lösen, erneut grün, committen, pushen.
+
+Am Ende: Abschlussbericht (§4), ehrlich getrennt nach „getestet“, „nur kompiliert/statisch geprüft“ und
+„nicht prüfbar (nur Benutzer)“. Installer, APK und Anleitungen als ZIP liefern (HANDOFF §2).
 ```
 
 ---
@@ -54,54 +64,63 @@ Am Ende: Abschlussbericht nach AGENT_PROMPT_V3 §4 an den Benutzer, ehrlich getr
 GEMEINSAME REGELN – Display Buddy v3
 
 Projekt & Vertrag
-- Lies CLAUDE.md, docs/HANDOFF.md (§5 Lektionen!), docs/PLAN_V3_SYNC.md (verbindlich für v3).
-- Arbeite NUR in den Ordnern deines Auftrags. Brauchst du eine Änderung außerhalb (z. B. src/types.ts,
-  model.rs, buddy-core), ändere sie nicht selbst, sondern beschreibe sie präzise im Bericht.
-- API- und Datenvertrag: PLAN_V3_SYNC §5 und §6. Weichst du ab, begründe es im Bericht.
-- Zeitstempel-Regel (PLAN_V3_SYNC §5.3) gilt überall: updatedAt = korrigierte Gerätezeit zum Zeitpunkt der
-  Bearbeitung, auch offline; der Server stempelt nie um (nur Klemme > 2 min Zukunft); Vergleich als
-  Zeitpunkt, Format YYYY-MM-DDTHH:MM:SS.sssZ. LWW nur über die gemeinsamen Funktionen (buddy-core bzw.
-  src/lib/sync), nie eigene Vergleiche schreiben.
-- Desktop-Regeln: nur src/lib/api.ts ruft invoke()/listen(); außerhalb state.rs nie .state()/.state::<,
-  immer try_app_state/try_state; neuer Command = commands/*.rs + generate_handler! + build.rs COMMANDS +
-  capabilities + api.ts + api.test.ts + plan_commands() in tests/contract.rs; neue Settings-Felder =
-  types.ts + DEFAULT_SETTINGS + model.rs + Test-JSON + Schlüsselzahl im Vertragstest.
-- UI-Texte Deutsch; Animationen nur transform/opacity; prefers-reduced-motion; aria-label überall;
-  Tastaturbedienung.
+- Lies CLAUDE.md, docs/HANDOFF.md (§5 Lektionen!), docs/PLAN_V3_SYNC.md (verbindlich).
+- Arbeite NUR in den Ordnern deines Auftrags. Änderungen außerhalb beschreibst du präzise im Bericht.
+- Daten- und API-Vertrag: PLAN_V3_SYNC §5 und §6. Abweichungen begründen.
+- Desktop-Regeln:
+  - nur src/lib/api.ts ruft invoke()/listen();
+  - außerhalb state.rs nie .state(), immer try_state;
+  - 4-Stellen-Regel für Commands;
+  - Settings-Felder in types.ts + model.rs + Tests.
+- UI-Texte Deutsch; Animationen nur transform/opacity; prefers-reduced-motion; aria-label; Tastatur.
+
+Zeit, Zeitstempel, Zeitzonen (PLAN_V3_SYNC §5.3–§5.5, gilt überall)
+- updatedAt = korrigierte Gerätezeit (UTC, YYYY-MM-DDTHH:MM:SS.sssZ) zum Zeitpunkt der Bearbeitung, auch
+  offline. Der Server stempelt nie um (nur Klemme > 2 min Zukunft). Zeitpunkte als Zeitpunkte vergleichen.
+- LWW, Uhr-Korrektur und Erinnerungsmathe NUR über die gemeinsamen Funktionen:
+  - Rust: buddy-core;
+  - TypeScript: src/lib/sync, src/lib/clock.ts, src/lib/zoned.ts, src/lib/schedule.ts;
+  - nie eigene Vergleiche oder Datumsrechnungen schreiben.
+- Erinnerungen rechnen in reminder.timeZone (IANA), nie in der Gerätezone. „Jetzt“ ist immer UTC.
+  - Anzeige in der Gerätezone, bei abweichender Zone mit Originalzeit, z. B. „03:00 (09:00 Berlin)“.
+  - Nur das handelnde Gerät berechnet ein neues `at`; alle anderen übernehmen es.
+- Kein `new Date()` / `Local::now()` direkt in Geschäftslogik: Uhr injizieren (Tests mit simulierter Zeit).
 
 Quellen (verbindliche Reihenfolge)
-1. Offizielle Dokumentation und offizielle Beispiele des jeweiligen Projekts (ntfy, axum/tower-http,
-   Tauri inkl. plugins-workspace, TipTap, sqlx, Caddy, OWASP Cheat Sheets, RustCrypto, keyring-rs,
-   chrono/chrono-tz, Docker; für die Web-App: MDN (mdn/content) inkl. Browser-Kompatibilität
-   (mdn/browser-compat-data), vite-plugin-pwa (vite-pwa/docs) bzw. Workbox, idb (jakearchibald/idb),
-   WebKit-Blog/-Bugzilla für iOS). Halte dich an die dort beschriebenen Vorgehensweisen.
-   Browser-Funktionen nur nutzen, wenn browser-compat-data sie für Chrome Android UND Safari iOS
-   ausweist – sonst nur als optionale Zusatzfunktion mit Fallback.
+1. Offizielle Dokumentation und Beispiele, insbesondere:
+   - Server: axum/tower-http, sqlx, OWASP Cheat Sheets, RustCrypto, chrono/chrono-tz, Caddy, Docker;
+   - Desktop & Hülle: Tauri (tauri-docs, plugins-workspace inkl. Quellcode der Plugins), keyring-rs;
+   - Editor: TipTap;
+   - Web & Push: MDN (mdn/content) + Browser-Kompatibilität (mdn/browser-compat-data), vite-plugin-pwa
+     (vite-pwa/docs) bzw. Workbox, idb, Apple „Sending web push notifications in web apps and browsers“
+     (developer.apple.com, JSON unter /tutorials/data/documentation/…), web-push-Crate (pimeys/rust-web-push),
+     WebKit-Blog/-Bugzilla;
+   - nativer Push: Firebase/FCM-Doku, Apple APNs-Doku.
+   Halte dich an die dort beschriebenen Vorgehensweisen.
 2. Bei Problemen: GitHub Issues/Discussions/Changelogs des betroffenen Projekts.
 3. Danach Stack Overflow.
-- Viele Doku-Webseiten sind in der Cloud-Umgebung per Proxy gesperrt. Dann die Doku-Quelltexte aus dem
-  offiziellen GitHub-Repo lesen (z. B. `git clone --depth 1 --filter=blob:none --sparse <repo>` und
-  `git sparse-checkout set --no-cone /docs/*`), oder WebSearch verwenden. Den Proxy nie umgehen,
-  TLS-Prüfung nie abschalten.
-- Vermerke die Fundstelle (Repo/Datei oder URL) im Commit-Text oder im Bericht, wenn eine Lösung daraus
-  stammt. Keinen Code ungeprüft kopieren; Lizenz beachten.
-- Versionen nicht raten: aktuelle stabile Version prüfen (`cargo info <crate>`, `npm view <pkg> version`),
-  exakt pinnen und im Bericht nennen.
+- Browser-Funktionen nur als Pflicht nutzen, wenn browser-compat-data sie für Chrome Android UND Safari iOS
+  ausweist. Sonst nur als optionale Ergänzung mit Fallback (Beispiele: Notification-actions,
+  notificationclick, tag, Background Sync).
+- Sind Doku-Webseiten per Proxy gesperrt, lies die Doku-Quelltexte aus dem offiziellen GitHub-Repo
+  (git clone --depth 1 --filter=blob:none --sparse …) oder nutze WebSearch. Proxy nie umgehen, TLS-Prüfung nie
+  abschalten.
+- Fundstelle im Commit-Text oder Bericht vermerken. Keinen Code ungeprüft kopieren; Lizenzen beachten.
+- Versionen prüfen (cargo info, npm view), exakt pinnen, im Bericht nennen.
 
 Qualität
-- Tests zuerst für reine Logik (LWW, Merge, Scheduler-Zustände, Token-Signatur). Kein Netz in Unit-Tests;
-  HTTP gegen lokale Mock-Server, Zeit über einen injizierten Clock.
-- Vor jedem Commit die Checks deines Bereichs laufen lassen (siehe Auftrag) – alle grün, clippy mit
-  -D warnings, cargo fmt. Windows-Code zusätzlich mit --target x86_64-pc-windows-gnu clippen.
-- Kleine, thematische Commits auf Englisch. Keine TODO-Stubs als fertig melden. Keine Tests abschalten
-  oder abschwächen, um grün zu werden.
-- Keine Geheimnisse ins Repo (Tokens, Passwörter, echte Domains). Beispielwerte nur in .env.example.
-- Logs enthalten nie Notizinhalt, Passwörter oder Tokens.
+- Reine Logik zuerst testen. Kein echtes Netz in Unit-Tests: Mock-Server, Fake-Push-Dienst, simulierte Uhr.
+- Checks deines Bereichs vor jedem Commit: alle grün, clippy -D warnings, cargo fmt. Windows-Code zusätzlich mit
+  --target x86_64-pc-windows-gnu.
+- Kleine, thematische Commits (Englisch). Keine TODO-Stubs als fertig. Keine Tests abschwächen.
+- Keine Geheimnisse ins Repo (Passwörter, Tokens, VAPID-/APNs-Schlüssel, google-services.json, Keystores).
+  Beispielwerte nur in .env.example. CI-Geheimnisse nur als GitHub-Secrets mit Namen dokumentieren.
+- Logs enthalten nie Notizinhalt, Passwörter, Tokens, Push-Endpunkte oder Schlüssel.
 
 Bericht am Ende (Pflicht, Deutsch)
-- Was umgesetzt ist (Dateien), was getestet ist (Befehle + Ergebnis), was nur kompiliert, was offen ist.
-- Gewählte Versionen und technische Entscheidungen mit Quelle (Vorschlag für DECISIONS.md).
-- Nötige Änderungen außerhalb deiner Ordner (präzise).
+- Was umgesetzt ist (Dateien); was getestet ist (Befehle + Ergebnis); was nur kompiliert; was offen ist.
+- Gewählte Versionen und Entscheidungen mit Quelle (Vorschlag für DECISIONS.md).
+- Nötige Änderungen außerhalb deiner Ordner.
 ```
 
 ---
@@ -111,258 +130,338 @@ Bericht am Ende (Pflicht, Deutsch)
 ### Phase 0 – Fundament (Orchestrator selbst)
 
 ```text
-Ziel: gemeinsame Grundlage, damit A, B und C parallel arbeiten können.
-1. crates/buddy-core anlegen (Rust 2024, keine Tauri/axum-Abhängigkeit). Verschieben:
-   src-tauri/src/reminders/schedule.rs, src-tauri/src/reminders/text.rs, Note, NoteColor (inkl. lenient),
-   Reminder, ReminderRepeat, ReminderState, RemindersFile, is_valid_note_id. model.rs re-exportiert alles
-   (pub use), Importe in src-tauri bleiben gültig. src-tauri bindet per path-Dependency ein (kein Workspace).
-   Reiner Refactor: alle bestehenden Tests unverändert grün, clippy Linux + windows-gnu grün,
-   NSIS-Cross-Build grün.
-2. Reminder.updatedAt (Option<String>, serde default) in buddy-core und types.ts; schedule::set/ack/snooze/
-   remove setzen es (mit übergebener „jetzt“-Zeit), fire() NICHT (PLAN_V3_SYNC §5.5). Tests anpassen.
-3. In buddy-core: NoteRecord, ReminderRecord, OrderRecord, SyncChanges, PushRequest/PushResult,
-   Fehlercodes; LWW-Funktionen note_wins/reminder_wins/order_wins inkl. Tiebreak-Regeln und Zeitstempel-
-   Klemme (clamp_future); clock-Modul (Offset aus serverTime/RTT, Median der letzten 5, corrected_now).
-4. Gemeinsame Testvektoren crates/buddy-core/tests/fixtures/lww_vectors.json und schedule_vectors.json
-   (Gleichstand, Tombstone gegen Bearbeitung, due gegen scheduled, späte Offline-Änderung mit altem
-   Zeitstempel, Zukunfts-Klemme; Wiederholungen täglich/werktags/wöchentlich/monatlich inkl. Monatsende und
-   Sommerzeitwechsel in Europe/Berlin; Verschieben). Rust-Tests lesen sie.
-5. TypeScript-Spiegel: src/lib/sync/ (Record-Typen + lww.ts), src/lib/clock.ts, src/lib/schedule.ts;
-   Vitest liest DIESELBEN JSON-Dateien (TZ=Europe/Berlin für die Testläufe festlegen). Beide Sprachen grün.
-6. Desktop-Vertrag festschreiben: types.ts + model.rs (Settings-Felder syncEnabled, syncServerUrl,
-   syncDeviceName; SyncStatus inkl. pending und clockOffsetMs; NotesChangedPayload), Vertragstest
-   (Schlüsselzahl) anpassen. Commands erst in Phase B.
-7. DECISIONS.md: die v3-Einträge final machen (Versionen, Prüfergebnisse aus §13).
-Checks: npm test, npm run build, cargo test (src-tauri, crates/buddy-core), clippy (Linux + windows-gnu),
-cargo fmt --check, NSIS-Cross-Build. Commit, push.
+1. crates/buddy-core (Rust 2024, ohne Tauri/axum).
+   - Verschieben: src-tauri/src/reminders/schedule.rs und text.rs, Note, NoteColor (inkl. lenient), Reminder,
+     ReminderRepeat, ReminderState, RemindersFile, is_valid_note_id.
+   - model.rs re-exportiert (pub use); path-Dependency, kein Workspace.
+   - Reiner Refactor: alle Tests, clippy (Linux + windows-gnu) und NSIS-Cross-Build grün.
+2. Reminder bekommt updatedAt (Option<String>) und timeZone (Option<String>, IANA), beide serde default.
+   - schedule::set/ack/snooze/remove setzen updatedAt (mit übergebenem „jetzt“) und rechnen in der Zone der
+     Erinnerung: chrono-tz; Fallback: übergebene Standardzone.
+   - fire() setzt updatedAt NICHT. sanitize füllt eine fehlende Zone mit der übergebenen Standardzone.
+3. buddy-core:
+   - Sync-Datensätze (NoteRecord, ReminderRecord, OrderRecord, SyncChanges, PushRequest inkl. deviceState,
+     PushResult);
+   - LWW (note/reminder/order_wins, Tiebreak, due vor scheduled, clamp_future);
+   - clock (Offset aus serverTime/RTT, Median 5, corrected_now);
+   - Wandzeit↔Zeitpunkt in einer IANA-Zone (Lücke → nächste gültige Zeit, Doppelung → frühere).
+4. Gemeinsame Testvektoren crates/buddy-core/tests/fixtures/:
+   - lww_vectors.json: Gleichstand, Tombstone gegen Bearbeitung, due gegen scheduled, späte Offline-Änderung,
+     Zukunfts-Klemme.
+   - schedule_vectors.json:
+     - Zonen Europe/Berlin, America/New_York, Asia/Tokyo, Australia/Lord_Howe, Asia/Kolkata;
+     - Fälle täglich, werktags, wöchentlich, monatlich inkl. Monatsende;
+     - Sommerzeit-Lücken und -Doppelungen; die Wochen mit unterschiedlicher Umstellung EU/USA;
+     - Verschieben; Wandzeit→Zeitpunkt.
+5. TypeScript-Spiegel:
+   - src/lib/sync/ (Typen + lww.ts), src/lib/clock.ts;
+   - src/lib/zoned.ts (Intl.DateTimeFormat mit timeZone/formatToParts; KEIN Temporal, da Safari es nicht hat);
+   - src/lib/schedule.ts.
+   Vitest liest DIESELBEN JSON-Dateien. Testläufe zusätzlich mit TZ=America/New_York und TZ=Asia/Tokyo
+   (npm-Skripte test:tz). Beide Sprachen grün.
+6. Desktop-Vertrag in types.ts + model.rs:
+   - Settings-Felder; SyncStatus (pending, clockOffsetMs); NotesChangedPayload;
+   - set_reminder bekommt das Argument timeZone. PLAN-Liste in contract.rs, api.ts, api.test.ts anpassen; die
+     Umsetzung des Commands macht Phase B.
+7. DECISIONS.md final (Versionen, Prüfergebnisse).
+Checks: npm test (+ test:tz), npm run build, cargo test (src-tauri, crates/buddy-core), clippy (Linux +
+windows-gnu), cargo fmt --check, NSIS-Cross-Build.
 ```
 
 ### Phase A – Server-Kern (Subagent)
 
 ```text
-Auftrag: buddy-server ohne Push, gemäß docs/PLAN_V3_SYNC.md §5.3–§5.4, §6 und §7 (ohne §7.3/§7.4).
-Ordner (exklusiv): server/ (außer server/Dockerfile, server/src/reminders/, server/src/ntfy/).
-Grundlage: crates/buddy-core (nur lesen; Änderungswünsche in den Bericht).
-
-Umsetzen:
-- Cargo-Projekt server/ (Rust 2024, eigenes Cargo.lock). axum 0.8.x, tokio, tower-http, sqlx (SQLite,
-  runtime-tokio, migrate; query/query_as ohne Offline-Metadaten), argon2, chrono, chrono-tz, serde, tracing,
-  rand. Konfiguration aus Umgebungsvariablen (§7.1), klare Fehlermeldung bei fehlenden Werten.
-- Migrationen (§7.2), WAL, Transaktionen mit seq-Zählung, Revisionen, Tombstone-Bereinigung (min_cursor,
-  410 full_resync_required), nächtliches VACUUM INTO mit 14 Ständen.
-- CLI: serve, user add/passwd (Passwort über stdin), device list/revoke, revisions, restore.
-- Auth: POST /devices (PC, Geräte-Token, nur SHA-256 gespeichert), DELETE /devices/current;
-  POST/DELETE /session für die Web-App – jede Web-App-Instanz ist ein Gerät (kind=web, deviceId wird
-  wiederverwendet, Session an device_id gebunden); Cookie __Host-buddy_session (Secure, HttpOnly,
-  SameSite=Strict, Path=/), serverseitige Sessions, 30 Tage gleitend; CSRF-Prüfung (Sec-Fetch-Site,
-  Origin-Fallback, X-Buddy-Request) für Cookie-Anfragen; Login-Bremse; Argon2id mit mindestens
-  OWASP-Parametern. Quellen: OWASP Password Storage, Session Management, CSRF Prevention Cheat Sheets.
-- Endpunkte aus §6 (ohne /actions und /events) inkl. Grenzen und Validierung. Es gibt KEINE CRUD-Endpunkte
-  mit Serverzeit – geschrieben wird nur über /sync/push. Zeitstempel der Geräte unverändert übernehmen
-  (nur Klemme > 2 min Zukunft, buddy-core::clamp_future); received_at nur zur Diagnose. Verlierer-Fassungen
-  (replaced UND rejected) in note_revisions. /sync/push idempotent. Jede Antwort mit serverTime
-  (Body bzw. Header X-Server-Time) und Cache-Control: no-store.
-- Statische Auslieferung der Web-App aus BUDDY_WEB_DIR mit SPA-Fallback auf index.html (axum-Beispiel
-  static-file-server); Cache-Header laut vite-plugin-pwa-Doku (no-cache für /, /index.html, /sw.js,
-  /manifest.webmanifest und SPA-Pfade; immutable nur für /assets/*), manifest.webmanifest als
-  application/manifest+json, CSP inkl. worker-src/manifest-src (§7.5).
-- Graceful Shutdown (axum-Beispiel graceful-shutdown).
-Tests: Router-Tests per tower::ServiceExt::oneshot (axum-Beispiel testing) gegen SQLite in einem
-Temp-Verzeichnis: Login/Fehlversuche, Cookie-Attribute, CSRF-Ablehnung, Geräte-Token widerrufen,
-Web-Gerät wiederverwenden, Sync push/pull inkl. LWW mit den gemeinsamen lww_vectors.json, späte
-Offline-Änderung mit altem Zeitstempel (verliert gegen neuere, gewinnt gegen ältere), Klemme, Tombstones,
-Paginierung, 410, Revisionen (replaced/rejected), Idempotenz, Grenzen, Cache-/CSP-Header, Manifest-MIME.
+Auftrag: buddy-server ohne Push-Versand, gemäß PLAN_V3_SYNC §5, §6, §7.1, §7.2 und §7.5.
+Ordner (exklusiv): server/ (außer server/Dockerfile, server/src/reminders/, server/src/push/).
+- Projekt: axum 0.8.x, tokio, tower-http, sqlx (SQLite, migrate; query/query_as), argon2, chrono, chrono-tz,
+  tracing, buddy-core. Konfiguration aus Umgebungsvariablen (§7.1).
+- CLI: serve, user add/passwd, device list/revoke, revisions, restore, vapid generate (P-256-Schlüssel als PEM
+  mit Rechten 0600; öffentlicher Schlüssel base64url ableitbar).
+- Migrationen §7.2 inkl. devices.kind/synced_seq/scheduled_seq/local_notifications/native_push_*,
+  push_subscriptions, push_log pro Gerät.
+- Auth:
+  - POST /devices (kind desktop|mobile, Bearer-Token, nur SHA-256 gespeichert), DELETE /devices/current;
+  - POST/DELETE /session (PWA = Gerät kind=web, deviceId wiederverwenden) mit __Host-Cookie;
+  - CSRF-Prüfung, Login-Bremse, Argon2id (OWASP).
+- Endpunkte: /health, /me, /sync/changes, /sync/push (einziger Schreibweg, idempotent, Gerätezeitstempel
+  unverändert außer Klemme, Revisionen replaced/rejected, deviceState speichern, synced_seq setzen),
+  GET /push/vapid-public-key. Keine CRUD-Endpunkte mit Serverzeit, keine Aktions-Token-URLs.
+- Datensätze ohne timeZone: users.time_zone verwenden (PUT /me).
+- Statische Auslieferung der PWA (SPA-Fallback, axum-Beispiel static-file-server). Cache-Header, Manifest-MIME und
+  CSP laut §7.5. Graceful Shutdown.
+Tests (tower::ServiceExt::oneshot, SQLite im Temp-Verzeichnis):
+- Auth: Login/Bremse, Cookie-Attribute, CSRF, Geräte-Arten.
+- Sync: LWW mit lww_vectors.json, späte Offline-Änderung, Klemme, Tombstones, Paginierung, 410, Revisionen,
+  Idempotenz, deviceState/synced_seq.
+- Sonstiges: Cache-/CSP-Header, VAPID-CLI.
 Checks: cd server && cargo test && cargo clippy --all-targets -- -D warnings && cargo fmt --check.
 ```
 
-### Phase B – Desktop-Sync (Subagent)
+### Phase B – Desktop (Subagent)
 
 ```text
-Auftrag: Sync-Client in der Desktop-App gemäß docs/PLAN_V3_SYNC.md §5, §8 (Server-Vertrag §6).
-Ordner (exklusiv): src-tauri/src/sync/, src-tauri/src/commands/sync.rs, src/windows/settings/,
-src/windows/notes/useNotesStore*, src/lib/api.ts, src/lib/api.test.ts, sowie die nötigen Einträge in
-src-tauri/src/lib.rs, src-tauri/build.rs, src-tauri/capabilities/settings.json und notes.json,
-src-tauri/tests/contract.rs, src-tauri/Cargo.toml, src-tauri/src/commands/mod.rs.
-Hooks in commands/notes.rs und reminders.rs: nur minimale Aufrufe (Outbox markieren), sonst nichts ändern.
-
-Umsetzen:
-- HTTP über tauri_plugin_http::reqwest, nur Rust-seitig, keine JS-Permission (Tauri-Doku
-  plugin/http-client; Muster D-07). TLS-Feature so wählen, dass der Build mit
-  --target x86_64-pc-windows-gnu klappt; das selbst mit dem NSIS-Cross-Build prüfen.
-- Token im Windows-Anmeldeinformationsspeicher über keyring-core und das Windows-Store-Crate
-  (keyring-rs-README), hinter einem Trait; unter Linux in Tests ein Speicher-Mock.
-- Outbox, state.json, Merge (reine Funktionen in sync/merge.rs, LWW nur aus buddy-core), Auslöser,
-  Ablauf, Start-Pull vor dem Nachfeuern, Erst-Verbindung, Fehlerzustände (§8.2). Lock-Reihenfolge
-  dokumentieren; kein Netz unter einem Lock.
-- Uhr-Offset bei jeder Antwort messen (buddy-core::clock), in state.json speichern, über sync-status
-  (clockOffsetMs) melden; sync::corrected_now() für die Erinnerungsaktionen in reminders.rs; Warnung bei
-  |offset| > 2 min; Hinweis, wenn eine lokale Änderung „stale“ war (PLAN_V3_SYNC §5.3/§5.4).
-- Commands sync_status/sync_connect/sync_disconnect/sync_now, Events sync-status und notes-changed
-  (§8.3), komplette 4-Stellen-Regel inkl. api.ts, api.test.ts, plan_commands(), Least-Privilege-Test
-  (sync_status auch für das Notizfenster).
-- useNotesStore: updatedAt über src/lib/clock.ts (korrigierte Gerätezeit; ohne Sync Offset 0 = Verhalten
-  wie 0.2.0); notes-changed einarbeiten (§8.4), TipTap setContent(json, { emitUpdate: false });
+Auftrag: Desktop-Sync und Erinnerungen mit Zeitzone gemäß PLAN_V3_SYNC §5 und §8.
+Ordner (exklusiv):
+- src-tauri/src/sync/, src-tauri/src/commands/sync.rs, src-tauri/src/commands/reminders.rs;
+- src/windows/settings/, src/windows/notes/useNotesStore*, src/windows/notes/Reminder*, src/lib/api*;
+- nötige Einträge in lib.rs, build.rs, capabilities/settings.json und notes.json, tests/contract.rs,
+  Cargo.toml, commands/mod.rs;
+- minimale Hooks in commands/notes.rs und reminders.rs.
+- Sync-Client:
+  - tauri_plugin_http::reqwest nur Rust-seitig; TLS-Backend muss mit x86_64-pc-windows-gnu bauen (selbst per
+    NSIS-Cross-Build prüfen);
+  - Token im Windows-Anmeldeinformationsspeicher (keyring-core + Windows-Store, hinter Trait, Mock für Linux);
+  - Outbox, state.json, Merge nur mit buddy-core-LWW, Ablauf und Start-Pull vor dem Nachfeuern, Fehlerzustände;
+  - Uhr-Offset + sync::corrected_now(); Hinweis bei „stale“; Lock-Reihenfolge dokumentieren.
+- Commands sync_status/connect/disconnect/now, Events sync-status und notes-changed; 4-Stellen-Regel,
+  Least-Privilege-Test.
+- Erinnerungen:
+  - set_reminder mit timeZone;
+  - reminders.rs rechnet ack/snooze/Wiederholung über buddy-core in reminder.timeZone (Fallback: IANA-Zone des PCs
+    per iana-time-zone) statt chrono::Local;
+  - sanitize füllt fehlende Zonen.
+- Reminder-Popover:
+  - Eingabe in der Zone der Erinnerung, Zonen-Auswahl (Intl.supportedValuesOf('timeZone'));
+  - „Bei dir: …“, wenn die Zone abweicht; Banner und Badge mit Originalzeit;
+  - dafür src/lib/zoned.ts nutzen.
+- useNotesStore: updatedAt über src/lib/clock.ts; notes-changed einarbeiten (setContent mit emitUpdate:false);
   Regressionstests in useNotesStore.races.test.ts.
-- Einstellungsfenster: Abschnitt „Synchronisation“ (§8.5) mit Tests.
-- Ohne Sync muss alles exakt wie 0.2.0 funktionieren.
-Tests: Merge/LWW/Outbox als Unit-Tests; Client gegen lokalen HTTP-Mock (Dev-Dependency, z. B. ein
-minimaler axum- oder std-TcpListener-Server); Frontend-Tests für Settings-Abschnitt und Store.
-Checks: npm test, npm run build, cd src-tauri && cargo test, cargo clippy --all-targets -- -D warnings,
-cargo clippy --all-targets --target x86_64-pc-windows-gnu -- -D warnings, cargo fmt --check,
-npm run tauri build -- --target x86_64-pc-windows-gnu (muss bauen).
+- Einstellungsabschnitt „Synchronisation“.
+Tests:
+- Merge/Outbox; Client gegen HTTP-Mock;
+- Erinnerungen mit fremder Zone (PC unter TZ=Europe/Berlin, Erinnerung in America/New_York und umgekehrt);
+- Popover-Anzeige in mehreren Zonen; Store-Rennen.
+Checks: npm test (+ test:tz), npm run build, cargo test, clippy (Linux + windows-gnu), fmt, NSIS-Cross-Build.
 ```
 
 ### Phase C1 – Web-Datenschicht und Sync-Engine (Subagent)
 
 ```text
-Auftrag: offline-first Datenhaltung und Synchronisation der Web-App gemäß docs/PLAN_V3_SYNC.md §5.3–§5.5,
-§9.2 und §9.3 gegen den API-Vertrag §6.
-Ordner (exklusiv): src/web/data/, src/web/sync/ (+ devDependency fake-indexeddb und dependency idb in
-package.json – nur diese Einträge). src/lib/sync/, src/lib/clock.ts, src/lib/schedule.ts nur benutzen,
-nicht ändern (Wünsche in den Bericht).
-Quellen: idb-README (openDB/upgrade), MDN Using IndexedDB, Storage quotas and eviction criteria,
-StorageManager.persist, navigator.onLine, Web Locks API, Broadcast Channel API, Background Synchronization
-API; mdn/browser-compat-data für die Verfügbarkeit (Background Sync nur Chromium → nur optional).
-
-Umsetzen:
-- src/web/data/: IndexedDB „display-buddy“ v1 mit Stores notes, reminders, meta, outbox; Upgrade-Pfad;
-  die Schnittstelle aus §9.2 exakt (listNotes, getNote, saveNote, deleteNote, saveOrder, setReminder,
-  removeReminder, ackReminder, snoozeReminder, pendingCount, subscribe, signOut). Jede Änderung: updatedAt
-  = clock.correctedNow(), Datensatz + Outbox-Eintrag in EINER Transaktion; Outbox fasst je Dokument auf die
-  letzte Fassung zusammen. Erinnerungsaktionen offline über src/lib/schedule.ts. storage.persist() nach dem
-  Login. signOut mit Rückfrage-Möglichkeit bei offenen Änderungen.
-- src/web/sync/: Engine mit Auslösern (Start, online, visibilitychange, 60 s sichtbar, 2 s nach Änderung,
-  manuell), Backoff 5 s/30 s/2 min/5 min, navigator.onLine nur als Hinweis; Push ≤ 200 → Ergebnisse
-  (stale → Serverfassung übernehmen + Hinweis-Ereignis) → Pull ab cursor → Merge über src/lib/sync/lww.ts;
-  Uhr-Offset messen (Median der letzten 5, RTT < 5 s); 401 → Zustand „Anmeldung nötig“, Outbox bleibt;
-  410 → Voll-Neuladen + Merge, Outbox bleibt; navigator.locks.request('buddy-sync') gegen parallele Läufe;
-  BroadcastChannel('buddy-data') für andere Tabs; optional SyncManager, falls vorhanden. Eine einzige
-  fetch-Stelle (src/web/sync/http.ts: credentials same-origin, Header X-Buddy-Request: 1, Fehlercodes →
-  deutsche Meldungen). Status als beobachtbarer Zustand für die Oberfläche (state, pending, lastSyncAt,
-  clockOffsetMs, message).
-Tests (Vitest mit fake-indexeddb und gemocktem fetch, simulierte Uhr): Offline-Bearbeitung landet in
-IndexedDB + Outbox; App-Neustart (neue DB-Verbindung) behält alles; Wiederverbindung sendet die Outbox;
-Szenarien 16a/16b/16c aus PLAN_V3_SYNC §12; stale-Hinweis; 401/410; Backoff; Zusammenfassen der Outbox;
-Lock verhindert Doppel-Sync; BroadcastChannel-Benachrichtigung.
-Checks: npm test, npm run build.
+Auftrag: Datenhaltung und Synchronisation für PWA UND native Hülle gemäß PLAN_V3_SYNC §5, §9.2, §9.3.
+Ordner (exklusiv): src/web/data/, src/web/sync/ (+ dependency idb, devDependency fake-indexeddb in package.json).
+Quellen: idb-README; MDN IndexedDB, Storage quotas, StorageManager.persist, navigator.onLine, Web Locks,
+Broadcast Channel, Background Sync; browser-compat-data.
+- Datenschicht exakt nach der Schnittstelle §9.2:
+  - setReminder mit Wandzeit + timeZone → at über src/lib/zoned.ts;
+  - jede Änderung mit korrigierter Gerätezeit und Outbox in EINER Transaktion; Outbox zusammenfassen;
+  - persist() nach dem Login; signOut mit Rückfrage-Möglichkeit.
+  Die Datenschicht ist ohne DOM nutzbar (auch im Service Worker und in der nativen Hülle).
+- Sync-Engine:
+  - Auslöser, Backoff, Push → Ergebnisse (stale + Hinweis-Ereignis) → Pull → Merge über src/lib/sync/lww.ts;
+  - Uhr-Offset; 401/410 mit erhaltener Outbox; Web Locks; BroadcastChannel; SyncManager nur optional;
+  - Statusobjekt (state, pending, lastSyncAt, clockOffsetMs, message).
+- Plattform-Adapter http.ts mit zwei Implementierungen:
+  - PWA: fetch same-origin, Cookie, X-Buddy-Request;
+  - nativ: fetch aus @tauri-apps/plugin-http mit Bearer-Token aus einem injizierten Token-Provider.
+  Optional deviceState-Callback für die native Planung (scheduledSeq, localNotifications).
+Tests (fake-indexeddb, gemocktes fetch, simulierte Uhr):
+- Offline-Bearbeitung, Neustart, Wiederverbindung;
+- Szenarien 16a/16b/16c; stale; 401/410; Backoff; Outbox-Zusammenfassung; Lock; BroadcastChannel;
+- setReminder in fremder Zone mit TZ-Variationen.
+Checks: npm test (+ test:tz), npm run build.
 ```
 
-### Phase C2 – Web-Oberfläche und installierbare PWA (Subagent)
+### Phase C2 – Web-Oberfläche, PWA und Web Push im Client (Subagent)
 
 ```text
-Auftrag: Oberfläche und PWA-Hülle gemäß docs/PLAN_V3_SYNC.md §9.1 und §9.4.
-Ordner (exklusiv): src/web/ui/, src/web/main.tsx, web.html, vite.web.config.ts, public-web/,
-package.json (nur Skripte dev:web/build:web, devDependency vite-plugin-pwa, ggf. Vitest-Include).
-Geteilte Komponenten (src/components/editor/, src/lib/search.ts, src/lib/datetime.ts) nur lesen.
-Bis C1 fertig ist, gegen einen In-Memory-Fake der Schnittstelle §9.2 und des Sync-Status entwickeln
-(src/web/ui/testing/fakeData.ts); nach der Integration läuft alles über src/web/data und src/web/sync.
-Quellen: MDN Making PWAs installable, Installing, Trigger install prompt, Create a standalone app, Define
-app icons; vite-plugin-pwa-Doku (Getting Started, PWA Minimal Requirements, Prompt for update, React,
-Register service worker, generateSW, Deployment/Cache-Control); TipTap-Doku (Schema-Parität, setContent).
-
-Umsetzen:
-- vite.web.config.ts mit vite-plugin-pwa: generateSW, registerType 'prompt', injectRegister null,
-  navigateFallback '/index.html', navigateFallbackDenylist [/^\/api\//], cleanupOutdatedCaches; Ausgabe
-  dist-web/. Prüfe, dass die gewählte vite-plugin-pwa-Version Vite 8 unterstützt (sonst im Bericht melden
-  und mit dem Orchestrator eine Alternative nach Workbox-Doku abstimmen).
-- Manifest laut §9.1 (name, short_name, description, lang de, start_url, scope, display standalone,
-  theme/background color, Icons 192/512 + maskable), web.html mit viewport, title, description, favicon,
-  apple-touch-icon 180, theme-color. Icons aus dem Buddy-Smiley erzeugen (eigenes Motiv, kein fremdes Logo).
-- Installieren: beforeinstallprompt (nur Chromium) → Knopf „App installieren“; iOS/Firefox → Hinweiskarte
-  (Safari: Teilen → „Zum Home-Bildschirm“, mit dem Hinweis, dass Offline-Daten nur in der installierten App
-  dauerhaft bleiben); installiert erkannt über display-mode: standalone.
-- Update-Banner über useRegisterSW (needRefresh → „Neue Version verfügbar – Aktualisieren“); vor
-  updateServiceWorker(true) warten, bis alle Speichervorgänge in IndexedDB abgeschlossen sind.
-- Seiten /login, /, /notes/<id>, /new, /setup, /settings; dieselben TipTap-Extensions wie am Desktop;
-  NoteEditor/Toolbar wiederverwenden; Suche, Farbe, Erinnerungen inkl. fälliger Liste/Banner; Statusleiste
-  (synchronisiert/offline mit Anzahl wartender Änderungen/Konflikt-Hinweis/Uhr-Warnung); Login-Seite zeigt
-  „n Änderungen werden nach dem Anmelden übertragen“; Abmelden mit Rückfrage bei offenen Änderungen.
-- Mobilgerecht (Ziele ≥ 44 px, umbrechende Toolbar, Safe-Area im Standalone-Modus), aria-label, Tastatur,
-  prefers-reduced-motion, deutsche Texte.
-Tests: Vitest + Testing Library gegen den Fake: Login, Liste/Suche, Bearbeiten + Autosave, Erinnerungs-
-aktionen, Offline-Status, Install-Knopf/-Hinweis (beforeinstallprompt simulieren, iOS-UA), Update-Banner;
-Build-Test: dist-web enthält manifest.webmanifest mit allen Pflichtfeldern, sw.js und Icons in 192/512.
-Checks: npm test, npm run build (Desktop unverändert), npm run build:web.
+Auftrag: Oberfläche, installierbare PWA und Web-Push-Empfang gemäß PLAN_V3_SYNC §9.1, §9.4, §9.5.
+Ordner (exklusiv): src/web/ui/, src/web/notify/ (ohne native*), src/web/sw.ts, src/web/main.tsx, web.html,
+vite.web.config.ts, public-web/, package.json (Skripte, vite-plugin-pwa, workbox-precaching).
+Bis C1 fertig ist, gegen einen In-Memory-Fake der Schnittstelle §9.2 und des Sync-Status arbeiten.
+Quellen:
+- MDN: Making PWAs installable, Installing, Trigger install prompt, Push API, Notifications API,
+  ServiceWorkerRegistration.showNotification;
+- browser-compat-data (actions, notificationclick, tag, navigate, pushsubscriptionchange auf Safari iOS!);
+- Apple „Sending web push notifications in web apps and browsers“;
+- vite-plugin-pwa (injectManifest, Prompt for update, React, Deployment/Cache-Control).
+- PWA:
+  - vite-plugin-pwa mit strategies 'injectManifest', srcDir/filename für src/web/sw.ts, registerType 'prompt',
+    injectRegister null. Vite-8-Kompatibilität prüfen.
+  - Manifest + Icons (eigenes Buddy-Motiv), web.html-Pflichtangaben.
+  - Install-Knopf (beforeinstallprompt) und iOS/Firefox-Anleitung; Update-Banner erst nach abgeschlossenem
+    Speichern.
+- Service Worker src/web/sw.ts:
+  - precacheAndRoute(self.__WB_MANIFEST), cleanupOutdatedCaches, Navigations-Fallback außer /api/.
+  - push: IMMER showNotification. Text mit Gerätezeit + Originalzone; tag/data/actions/navigate nur, wo
+    unterstützt (Notification.maxActions bzw. Feature-Check). Zustand „due“ in IndexedDB über die Datenschicht.
+  - notificationclick (Chromium/Firefox): Aktionen ack/snooze10 über die Datenschicht, danach Sync-Versuch; sonst
+    clients.openWindow('/notes/<id>').
+- src/web/notify/:
+  - „Benachrichtigungen aktivieren“: requestPermission + pushManager.subscribe({userVisibleOnly:true,
+    applicationServerKey}) direkt im Klick-Handler (Nutzergeste);
+  - PUT /push/subscription; Abgleich getSubscription() bei jedem Start (iOS kennt kein
+    pushsubscriptionchange); Testbenachrichtigung;
+  - im Safari-Tab: Hinweis „zuerst zum Home-Bildschirm hinzufügen“;
+  - App-Badge (setAppBadge) für fällige Erinnerungen, wo vorhanden; erledigte Benachrichtigungen per
+    getNotifications() schließen, wo vorhanden.
+- Seiten /login, /, /notes/<id>, /new, /setup, /settings:
+  - dieselben TipTap-Extensions, NoteEditor/Toolbar wiederverwenden;
+  - Liste/Banner fälliger Erinnerungen mit Erledigt/10 Min.;
+  - Erinnerungsdialog mit Zone und „Bei dir: …“; Statusleiste;
+  - mobilgerecht, barrierefrei, deutsch.
+- Die UI-Komponenten müssen auch in der nativen Hülle laufen: kein direkter Zugriff auf
+  navigator.serviceWorker o. Ä. außerhalb von src/web/notify/ bzw. main.tsx.
+Tests (Vitest + Testing Library gegen den Fake):
+- Login, Liste/Suche, Bearbeiten/Autosave, Erinnerungen in fremder Zone;
+- Install-Knopf/-Hinweis (beforeinstallprompt, iOS-UA), Update-Banner;
+- Push-Abo-Ablauf (gemockte PushManager/Notification); SW-Handler als Einheit (push → showNotification
+  immer; notificationclick → Datenschicht).
+- Build-Test: dist-web mit gültigem Manifest, sw.js, Icons 192/512.
+Checks: npm test (+ test:tz), npm run build, npm run build:web.
 ```
 
-### Phase D – Erinnerungen und ntfy auf dem Server (Subagent)
+### Phase D – Server-Scheduler und Push-Versand (Subagent)
 
 ```text
-Auftrag: Server-Scheduler und Push gemäß docs/PLAN_V3_SYNC.md §5.5, §7.3, §7.4.
-Ordner (exklusiv): server/src/reminders/, server/src/ntfy/ (+ Registrierung in server/src/main.rs bzw.
-lib.rs, Migration für push_log falls noch nicht vorhanden).
-Quelle: ntfy-Doku publish.md (Publish as JSON, Action buttons, Click action, Authentication/Access tokens,
-Updating + deleting notifications / Clearing) und config.md (Access control, iOS instant notifications).
-
-Umsetzen:
-- Scheduler-Task mit Notify-Wecken, max. 30 s Schlaf, injizierter Clock; Fällig-Werden ohne updatedAt-
-  Änderung; push_log-Logik „genau einmal pro (noteId, at)“, nicht älter als 24 h; Nachfeuern beim Start.
-- Wiederholungsmathe aus buddy-core in der IANA-Zone des Kontos (chrono-tz).
-- ntfy-Client hinter Trait (echter Client: reqwest, JSON an Root-URL, Bearer-Token; Wiederholungen
-  5 s/30 s/2 min); Nachricht exakt wie §7.4 (max. 3 Aktionen, Titel ≤ 1 KB, Text auf 100 Zeichen).
-- Aktions-Tokens (HMAC-SHA256, 24 h, an (noteId, at) gebunden) + POST /actions/{token} (ack, snooze 10);
-  idempotent, bei veraltetem Vorkommen 204 ohne Änderung.
-- Clear (PUT /<topic>/r-<noteId>/clear), wenn die Erinnerung anderswo erledigt/verschoben/entfernt wird.
-Tests: Zustandsübergänge mit simulierter Uhr, genau eine Nachricht pro Vorkommen (auch wenn ein Gerät
-vorher due gemeldet hat), Wiederholung in Europe/Berlin über die Sommerzeitgrenze, Token-Signatur/
-Ablauf/Manipulation, Aktionen über den Router, Clear-Aufruf, Retry-Verhalten (Fake-ntfy).
+Auftrag: Erinnerungen auf dem Server und Push pro Gerät gemäß PLAN_V3_SYNC §5.5, §7.3, §7.4.
+Ordner (exklusiv): server/src/reminders/, server/src/push/ (+ Registrierung in main.rs/lib.rs, nötige
+Migrationen in Absprache).
+Quellen: Apple „Sending web push notifications in web apps and browsers“ (Header TTL/Urgency/Topic, 4 KB,
+Fehlercodes, VAPID-JWT-Regeln); web-push-Crate (pimeys/rust-web-push, request_builder); MDN Push API.
+- Scheduler: Notify-Wecken, ≤ 30 s Schlaf, injizierte Clock, due ohne updatedAt-Änderung, Nachfeuern beim Start,
+  Vorkommen > 24 h nicht mehr senden.
+- Versandregeln pro Gerät (§7.4) mit push_log (device_id, note_id, at):
+  - web → Web Push;
+  - mobile → nativer Kanal nur bei scheduled_seq < seq oder local_notifications = denied;
+  - desktop → nichts.
+- Web Push:
+  - web-push 0.11 ohne Standard-Client; Anfrage über request_builder bauen, mit reqwest (rustls) senden;
+  - Header TTL 86400, Urgency high, Topic r+base64url(sha256(noteId))[:31] (falls der Builder das nicht
+    setzt, selbst ergänzen); aes128gcm;
+  - VAPID-JWT ≤ 24 h, zwischenspeichern, höchstens stündlich neu;
+  - Payload nach §7.4, ≤ 4 KB;
+  - 404/410 → Abo löschen; 413 → kürzen; 429/5xx → 5 s/30 s/2 min.
+- Endpunkte PUT/DELETE /push/subscription, POST /push/test.
+- Nativer Kanal als Trait NativePushChannel (no-op bis Phase N2).
+Tests:
+- Fake-Push-Dienst, lokal, der verschlüsselte Anfragen mit dem Gegenschlüssel entschlüsselt und prüft;
+- Zustandsübergänge mit simulierter Uhr; genau ein Push pro Gerät und Vorkommen; Topic beim Verschieben;
+- Dedupe-Regel für mobile; 410-Aufräumen; Retry;
+- Wiederholung in reminder.timeZone über DST-Grenzen (schedule_vectors.json); Test-Endpunkt.
 Checks: cd server && cargo test && cargo clippy --all-targets -- -D warnings && cargo fmt --check.
 ```
 
 ### Phase E – Deployment (Subagent)
 
 ```text
-Auftrag: Betrieb auf einem VPS gemäß docs/PLAN_V3_SYNC.md §10.
+Auftrag: Betrieb auf einem VPS gemäß PLAN_V3_SYNC §11. KEIN ntfy.
 Ordner (exklusiv): deploy/, server/Dockerfile, .dockerignore.
-Quellen: ntfy-Doku install.md (Docker, compose, Healthcheck) und config.md (Private instance, Behind a proxy,
-iOS instant notifications); Caddy-Doku (reverse proxy quick-start, automatic HTTPS); Docker-Doku (Compose,
-Multi-Stage-Builds).
+Quellen: Caddy-Doku (reverse proxy, automatic HTTPS), Docker-Doku (Compose, Multi-Stage), vite-plugin-pwa
+Deployment (Cache-Control).
+- Dockerfile:
+  - Multi-Stage: npm ci && npm run build:web → cargo build --release (server) → schlankes Laufzeit-Image;
+  - non-root, /data-Volume, HEALTHCHECK, gepinnte Image-Tags.
+- deploy/compose.yaml (caddy + buddy), Caddyfile (eine Domain, HSTS; Cache-Header des Servers nicht
+  überschreiben), .env.example nur mit Platzhaltern.
+- deploy/README.md (Deutsch, für Laien, jeder Befehl kopierbar):
+  - VPS, DNS, Firewall, .env, vapid generate, Start, Benutzer anlegen;
+  - Handy:
+    - PWA öffnen → anmelden → installieren (Android: „App installieren“, iOS: Safari → Teilen →
+      „Zum Home-Bildschirm“);
+    - „Benachrichtigungen aktivieren“, Testbenachrichtigung;
+    - Hinweis „PWA ODER native App pro Handy“;
+  - PC verbinden;
+  - Backups inklusive vapid.pem; Updates (die PWA zeigt danach „Neue Version verfügbar“); Fehlersuche.
+- Ausgehendes Netz des VPS zu den Push-Diensten dokumentieren.
+Prüfen: Wenn Docker verfügbar ist, Image bauen und `docker compose config`; sonst statisch prüfen und ehrlich
+berichten. Server-Start ohne Docker mit Beispiel-Variablen testen.
+```
 
-Umsetzen:
-- server/Dockerfile: Multi-Stage (Node: npm ci && npm run build:web → Rust: cargo build --release für
-  server/ → schlankes Laufzeit-Image, non-root, /data als Volume, HEALTHCHECK). Image-Tags festpinnen.
-- deploy/compose.yaml (caddy, buddy, ntfy; internes Netz; nur Caddy mit Ports 80/443/443-udp),
-  deploy/Caddyfile, deploy/ntfy/server.yml, deploy/.env.example (nur Platzhalter).
-- deploy/README.md auf Deutsch für einen Laien: VPS, DNS, Firewall, .env (Secrets erzeugen), Start,
-  ntfy-Benutzer/ACL/Token (ntfy user/access/token), buddy-server user add, Handy einrichten (Web-App
-  öffnen, anmelden, installieren – Android: „App installieren“, iOS: Safari → Teilen → „Zum
-  Home-Bildschirm“; ntfy-App + Topic), PC einrichten, Backup außer Haus, Updates (Hinweis: die Web-App
-  zeigt danach „Neue Version verfügbar“), Fehlersuche. Jeder Befehl kopierbar.
-- Caddy darf die Cache-Header von buddy-server nicht überschreiben (kein zusätzliches Caching für
-  /, /index.html, /sw.js, /manifest.webmanifest).
-Prüfen: Ist Docker verfügbar, das Image bauen und `docker compose config` ausführen; sonst
-statisch prüfen und das ehrlich berichten. Den Server-Start ohne Docker mit den Beispiel-Variablen testen.
+### Phase N1 – Native Hülle mit lokaler Planung (Subagent)
+
+```text
+Auftrag: Tauri-2-Mobile-App für Android und iOS gemäß PLAN_V3_SYNC §10.1–§10.4 und §10.6.
+Ordner (exklusiv): mobile/, vite.mobile.config.ts, src/web/notify/native*, .github/workflows/mobile-*.yml,
+package.json (nur Skript build:mobile + Tauri-Plugin-Pakete).
+Quellen:
+- tauri-docs: prerequisites, Mobile-Setup, plugin/notification, plugin/http-client, distribute/app-store,
+  google-play, sign;
+- Quellcode tauri-apps/plugins-workspace/plugins/notification (Android/iOS);
+- keyring-rs (iOS/Android-Stores); Android-Doku zu exakten Alarmen und POST_NOTIFICATIONS.
+- mobile/: eigenes Tauri-2-Projekt (Android + iOS) mit einem Fenster.
+  - Frontend = src/web-Oberfläche, gebaut über vite.mobile.config.ts (ohne Service Worker/PWA-Plugin) mit
+    Plattform-Adapter „nativ“ (Bearer über @tauri-apps/plugin-http, Scope auf BUDDY_PUBLIC_URL aus der
+    Build-Konfiguration).
+  - Anmeldung über POST /devices (kind mobile). Token sicher speichern (keyring-core-Stores; falls nicht
+    tragfähig, offizielles Tauri-Plugin für sicheren Speicher, begründen).
+  - IndexedDB-Persistenz in WKWebView und Android-WebView prüfen; sonst tauri-plugin-sql hinter der Schnittstelle
+    §9.2 (Absprache mit dem Orchestrator).
+- src/web/notify/native*: lokale Planung nach §10.3.
+  - Erlaubnisse (POST_NOTIFICATIONS, exakte Alarme, iOS requestPermission); Channel „Erinnerungen“.
+  - Plan erneuern nach Sync, lokaler Änderung, Start und Fortsetzen: Schedule.at(new Date(at), false, true),
+    stabile IDs aus noteId+at, cancel/removeActive, höchstens 60 Einträge (iOS-Grenze 64).
+  - Aktionen „Erledigt“/„10 Min. später“ über registerActionTypes/onAction → Datenschicht (offline) → neu planen.
+  - deviceState (scheduledSeq, localNotifications) an die Sync-Engine melden.
+- Prüfung §10.4 (iOS-Datumsparser des Plugins): Test-Bildschirm/Debug-Funktion „in 2 min erinnern“ und Vergleich
+  mit pending(). Bei Abweichung GitHub-Issues durchsuchen bzw. anlegen und eine dokumentierte Umgehung (Test!)
+  einbauen.
+- CI:
+  - mobile-android.yml (ubuntu-latest: SDK/NDK, signierte Release-APK aus GitHub-Secrets, Artefakt);
+  - mobile-ios.yml (macos-latest: Build; Signierung nur, wenn Secrets vorhanden);
+  - Android-Emulator-Test für Szenario 28/29, falls im Runner möglich.
+- mobile/README.md (Deutsch):
+  - Android: APK installieren, Erlaubnisse inkl. „Exakte Alarme“, Energiesparmodus-Ausnahme;
+  - iOS: Mac/Xcode oder CI, Apple Developer Program/TestFlight bzw. kostenloses Konto mit 7-Tage-Signatur;
+  - Hinweis „PWA ODER native App“.
+Tests:
+- Vitest für die Planungslogik mit gemocktem Plugin: welche IDs bei welchen Änderungen; 60er-Grenze; Zonenwechsel;
+  Aktionen offline.
+- Builds in CI; Emulator-Test nach Möglichkeit.
+Checks: npm test (+ test:tz), npm run build:mobile; Android-Build (CI), iOS-Build (CI); ehrlich berichten, was
+nur in CI oder gar nicht ausgeführt werden konnte.
+```
+
+### Phase N2 – Nativer Push (Subagent, nur nach Zustimmung des Benutzers)
+
+```text
+Auftrag: native App aufwecken, wenn sie eine Erinnerung noch nicht kennt (PLAN_V3_SYNC §10.5, §7.4).
+Ordner (exklusiv): mobile/ (Push-Teil), server/src/push/native*.
+Quellen: Firebase-Doku (FCM HTTP v1, Android-Einrichtung), Apple-Doku (APNs, Token-Authentifizierung),
+README/Quellcode/Issues der Kandidaten-Plugins, Tauri „Mobile Plugin Development“.
+- Plugin bewerten (tauri-plugin-notifications, tauri-plugin-remote-push, tauri-plugin-mobile-push): Pflege, Lizenz,
+  Tauri-Version, iOS-Token-Art (APNs oder FCM). Ergebnis als D-Eintrag. Ist keines tragfähig, ein minimales
+  eigenes Mobile-Plugin nach offizieller Anleitung bauen.
+- App: Token holen, PUT /devices/current/push; Tipp → App öffnen → Sync → neu planen.
+- Server:
+  - NativePushChannel für FCM HTTP v1 (OAuth2 per Service-Account) und APNs (JWT aus .p8, HTTP/2), oder
+    FCM für beide;
+  - Fehlerbehandlung (ungültiger Token → löschen); Dedupe-Regel aus §7.4.
+- Anleitung: Firebase-Projekt, google-services.json, APNs-Schlüssel; nur Platzhalter im Repo.
+Tests:
+- Server-Kanal gegen Fake-FCM/APNs; Dedupe (kein Push, wenn scheduled_seq aktuell);
+- App-Logik mit gemocktem Plugin.
+Checks: server (cargo test/clippy/fmt), npm test, CI-Builds.
 ```
 
 ### Phase F – Integration (Orchestrator selbst)
 
 ```text
-1. Alle Zweige integrieren; buddy-core-Änderungswünsche aus den Berichten umsetzen.
-2. Lokaler End-to-End-Aufbau: buddy-server (Temp-DB) + Fake-ntfy (kleiner HTTP-Server, der Veröffentlichungen
-   und Clear-Aufrufe protokolliert) + Desktop-App (Linux-Debug-Build unter Xvfb, XDG_DATA_HOME auf ein
-   Testverzeichnis, HANDOFF §4) + Web-App (dist-web über den Server auf http://localhost – laut MDN für
-   Service Worker/Installierbarkeit zulässig; Bedienung mit Playwright, Chromium ist vorinstalliert, nicht
-   neu installieren; WebKit nur, falls vorhanden). Offline über context.setOffline(true); Handy-Uhr-
-   Abweichung über eine überschriebene Zeit im Browser-Kontext (z. B. page.clock) simulieren.
-3. Alle 20 Abnahmeszenarien aus PLAN_V3_SYNC §12 durchspielen und dokumentieren (Befehle, Screenshots),
-   besonders 13–20 (Installierbarkeit, Offline-Start, Offline-Bearbeitung, Zeitstempel-Fälle 16a–c,
-   abgelaufene Session, Update, zwei Tabs, gleiche Entscheidungen in Rust und TypeScript).
-4. docs/MANUAL_TESTS.md um v3 erweitern (Handtests nur für den Benutzer: VPS, Installation unter Android
-   und iOS, Flugmodus-Bearbeitung, 7-Tage-Test auf iOS, ntfy unter Android/iOS, Windows-
-   Anmeldeinformationsspeicher, zwei PCs). README, HANDOFF (Stand, Lektionen, offene Punkte) aktualisieren.
-5. Version 0.3.0 (package.json, Cargo.toml, tauri.conf.json), NSIS-Installer cross-bauen, als ZIP liefern.
+1. Alle Zweige integrieren; Wünsche aus den Berichten umsetzen.
+2. Lokaler End-to-End-Aufbau:
+   - buddy-server mit Temp-DB;
+   - Fake-Push-Dienst (Web Push annehmen, entschlüsseln, protokollieren, zurückhalten, 410 simulieren);
+   - Desktop unter Xvfb mit TZ=Europe/Berlin (HANDOFF §4);
+   - PWA über http://localhost mit Playwright/Chromium (vorinstalliert, nicht neu installieren):
+     - Kontext mit timezoneId 'America/New_York';
+     - Offline über context.setOffline;
+     - Uhr über page.clock;
+     - Benachrichtigungs-Erlaubnis über context.grantPermissions(['notifications']);
+     - Push über den Fake-Dienst bzw. das DevTools-Protokoll auslösen.
+   - Native Hülle im Android-Emulator in CI (Szenarien 28/29), falls möglich.
+3. Alle Abnahmeszenarien aus PLAN_V3_SYNC §13 (1–30) durchspielen und dokumentieren (Befehle, Screenshots).
+   Was nicht automatisierbar ist (iOS-Gerät, echte Push-Dienste), steht als Handtest in MANUAL_TESTS.md.
+4. docs/MANUAL_TESTS.md um v3 erweitern; README, HANDOFF aktualisieren.
+5. Version 0.3.0 (package.json, Cargo.toml, tauri.conf.json, mobile/), NSIS-Installer cross-bauen; APK aus CI
+   holen. Alles als ZIP liefern.
 6. Abschlussbericht (§4).
 ```
 
 ### Phase G – optional (nur nach Rückfrage beim Benutzer)
 
 ```text
-- SSE /api/v1/events (axum-Beispiel sse) + Desktop/Web hören darauf statt 60-s-Takt.
-- GitHub Actions: windows-latest mit MSVC (npm run tauri build, Tests, clippy) – erfüllt die ToDo aus
-  HANDOFF §8 – und ein Workflow, der das Server-Image nach GHCR baut.
-- Web Push direkt in der installierten Web-App (VAPID; iOS nur für Home-Bildschirm-Apps) als mögliche
-  Alternative zur ntfy-App – nur nach Entscheidung des Benutzers, vorher MDN Push API und
-  browser-compat-data prüfen.
+- SSE /api/v1/events für Live-Updates (axum-Beispiel sse).
+- GitHub Actions: Windows-Installer mit MSVC (HANDOFF §8), Server-Image nach GHCR.
+- Declarative Web Push (WebKit, iOS/iPadOS ≥ 18.4) prüfen und ggf. als zusätzliches Payload-Format nutzen.
 ```
 
 ---
@@ -371,11 +470,12 @@ statisch prüfen und das ehrlich berichten. Den Server-Start ohne Docker mit den
 
 ```text
 ## v3 – Ergebnis
-**Was neu ist** (für den Benutzer verständlich, 5–8 Punkte)
-**Getestet** (Befehl → Ergebnis; Abnahmeszenarien 1–20 mit Status)
-**Nur kompiliert / statisch geprüft** (z. B. Docker-Compose ohne Docker, Windows-spezifischer Code)
-**Nicht prüfbar – bitte selbst testen** (Verweis auf MANUAL_TESTS v3, die wichtigsten 5 Schritte)
+**Was neu ist** (5–8 Punkte, verständlich)
+**Getestet** (Befehl → Ergebnis; Abnahmeszenarien 1–30 mit Status)
+**Nur kompiliert / statisch geprüft** (z. B. iOS-Build ohne Gerät, Docker ohne Docker)
+**Nicht prüfbar – bitte selbst testen** (Verweis auf MANUAL_TESTS v3, die wichtigsten Schritte für Android, iOS,
+VPS)
 **Entscheidungen** (neue D-Einträge, je ein Satz)
 **Bekannte Einschränkungen / nächste Schritte**
-**Lieferung** (Installer-ZIP, Pfad; Anleitung deploy/README.md)
+**Lieferung** (Installer-ZIP, APK, Anleitungen deploy/README.md und mobile/README.md)
 ```
