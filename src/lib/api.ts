@@ -53,8 +53,13 @@ export const api = {
   // ---- v2: reminders (Rust owns reminders.json + the scheduler) ------------
   listReminders: () => invoke<Reminder[]>("list_reminders"),
   /** Sets/replaces the reminder of a note; `at` = RFC 3339. `at: null` removes it. */
-  setReminder: (noteId: string, at: string | null, repeat: ReminderRepeat) =>
-    invoke<Reminder | null>("set_reminder", { noteId, at, repeat }),
+  setReminder: (
+    noteId: string,
+    at: string | null,
+    repeat: ReminderRepeat,
+    /** IANA zone of the reminder (v3); null keeps the current one (new: the PC's zone). */
+    timeZone: string | null = null,
+  ) => invoke<Reminder | null>("set_reminder", { noteId, at, repeat, timeZone }),
   /** „Erledigt“: non-repeating → done; repeating → next occurrence scheduled. */
   ackReminder: (noteId: string) => invoke<Reminder | null>("ack_reminder", { noteId }),
   /** „Später“: reschedule `minutes` from now (state → scheduled). */

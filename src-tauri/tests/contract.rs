@@ -64,7 +64,7 @@ fn plan_commands() -> BTreeMap<&'static str, Vec<&'static str>> {
         ("quit_app", vec![]),
         // v2 (Rust parameter names; JS uses camelCase, e.g. noteId)
         ("list_reminders", vec![]),
-        ("set_reminder", vec!["note_id", "at", "repeat"]),
+        ("set_reminder", vec!["note_id", "at", "repeat", "time_zone"]), // v3: + time_zone
         ("ack_reminder", vec!["note_id"]),
         ("snooze_reminder", vec!["note_id", "minutes"]),
         ("open_note", vec!["note_id"]),
@@ -380,7 +380,7 @@ fn default_settings_match_types_ts_default_settings() {
     assert_json_eq(&actual, &expected, "DEFAULT_SETTINGS");
     // sanity: the parser really saw the nested object and all top-level keys
     assert_eq!(expected["buddy"]["faceColor"], "#FFD54A");
-    assert_eq!(keys(&expected).len(), 14);
+    assert_eq!(keys(&expected).len(), 17);
 }
 
 #[test]
@@ -420,6 +420,26 @@ fn rust_structs_have_exactly_the_ts_interface_keys() {
     };
     let v = serde_json::to_value(note).unwrap();
     assert_eq!(keys(&v), sorted(ts_interface_keys(&ts, "Note")));
+
+    let reminder = display_buddy_lib::model::Reminder {
+        note_id: "0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f".into(),
+        at: "2026-01-01T00:00:00.000Z".into(),
+        repeat: Default::default(),
+        state: Default::default(),
+        fired_at: None,
+        updated_at: None,
+        time_zone: None,
+    };
+    let v = serde_json::to_value(reminder).unwrap();
+    assert_eq!(keys(&v), sorted(ts_interface_keys(&ts, "Reminder")));
+
+    let v = serde_json::to_value(display_buddy_lib::model::SyncStatus::default()).unwrap();
+    assert_eq!(keys(&v), sorted(ts_interface_keys(&ts, "SyncStatus")));
+    let v = serde_json::to_value(display_buddy_lib::model::NotesChangedPayload::default()).unwrap();
+    assert_eq!(
+        keys(&v),
+        sorted(ts_interface_keys(&ts, "NotesChangedPayload"))
+    );
 }
 
 #[test]
@@ -464,6 +484,22 @@ fn enums_serialise_to_the_ts_union_values() {
     assert_eq!(
         serde_json::to_value(NoteColor::default()).unwrap(),
         "yellow"
+    );
+    use display_buddy_lib::model::SyncState;
+    let states = [
+        SyncState::Off,
+        SyncState::Idle,
+        SyncState::Syncing,
+        SyncState::Offline,
+        SyncState::Error,
+        SyncState::Unauthorized,
+    ];
+    assert_eq!(
+        ser(states
+            .iter()
+            .map(|c| serde_json::to_value(c).unwrap())
+            .collect()),
+        ts_union(&ts, "SyncState")
     );
 
     // schema versions agree

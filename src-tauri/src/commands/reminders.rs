@@ -16,8 +16,9 @@ pub fn set_reminder(
     note_id: String,
     at: Option<String>,
     repeat: ReminderRepeat,
+    time_zone: Option<String>,
 ) -> Result<Option<Reminder>, String> {
-    reminders::set(&app, &note_id, at.as_deref(), repeat)
+    reminders::set(&app, &note_id, at.as_deref(), repeat, time_zone.as_deref())
 }
 
 #[tauri::command]

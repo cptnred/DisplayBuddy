@@ -1,10 +1,18 @@
 //! Data model shared with the frontend (mirror of `src/types.ts`, camelCase on the wire).
+//! Notes and reminders live in `buddy-core` (shared with the server, D-35) and are re-exported here.
 
-use serde::{Deserialize, Deserializer, Serialize};
+pub use buddy_core::model::{
+    NOTE_SCHEMA_VERSION, Note, NoteColor, REMINDERS_SCHEMA_VERSION, Reminder, ReminderRepeat,
+    ReminderState, RemindersFile, is_valid_note_id,
+};
+
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-pub const NOTE_SCHEMA_VERSION: u32 = 1;
 pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
+
+/// Settings keys that `save_settings` never changes (owned by the sync commands).
+pub const PROTECTED_SYNC_KEYS: [&str; 3] = ["syncEnabled", "syncServerUrl", "syncDeviceName"];
 
 pub const BUDDY_SIZE_MIN: u32 = 48;
 pub const BUDDY_SIZE_MAX: u32 = 192;
@@ -16,50 +24,6 @@ pub const SPEED_MAX: f64 = 2.0;
 pub const NOTES_MIN_WIDTH: f64 = 320.0;
 pub const NOTES_MIN_HEIGHT: f64 = 360.0;
 const NOTES_MAX_EDGE: f64 = 10_000.0;
-
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum NoteColor {
-    #[default]
-    Yellow,
-    Pink,
-    Blue,
-    Green,
-    Purple,
-    Orange,
-}
-
-fn one() -> u32 {
-    1
-}
-
-/// Deserializes a field, falling back to `T::default()` if the value has the
-/// wrong type / an unknown variant (keeps old or hand-edited files loadable).
-fn lenient<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: Deserializer<'de>,
-    T: serde::de::DeserializeOwned + Default,
-{
-    let value = Value::deserialize(deserializer)?;
-    Ok(serde_json::from_value(value).unwrap_or_default())
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct Note {
-    /// Canonical lowercase hyphenated UUID; validated before any file-system use.
-    pub id: String,
-    #[serde(default, deserialize_with = "lenient")]
-    pub title: String,
-    #[serde(default, deserialize_with = "lenient")]
-    pub color: NoteColor,
-    /// TipTap JSON, stored verbatim.
-    pub content: Value,
-    pub created_at: String,
-    pub updated_at: String,
-    #[serde(default = "one")]
-    pub schema_version: u32,
-}
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -152,6 +116,12 @@ pub struct Settings {
     pub reminder_sound: bool,
     pub shortcut_bar_collapsed: bool,
     pub shortcut_bar_tab: ShortcutList,
+    /// v3: sync with the own server is on (set only by `sync_connect`/`sync_disconnect`).
+    pub sync_enabled: bool,
+    /// v3: `https://buddy.<domain>` (localhost may use http). Empty = not configured.
+    pub sync_server_url: String,
+    /// v3: device name shown on the server. The token never lives in settings.json.
+    pub sync_device_name: String,
 }
 
 impl Default for Settings {
@@ -171,6 +141,9 @@ impl Default for Settings {
             reminder_sound: true,
             shortcut_bar_collapsed: false,
             shortcut_bar_tab: ShortcutList::Items,
+            sync_enabled: false,
+            sync_server_url: String::new(),
+            sync_device_name: String::new(),
         }
     }
 }
@@ -179,11 +152,6 @@ impl Default for Settings {
 pub fn is_hex_color(s: &str) -> bool {
     let b = s.as_bytes();
     b.len() == 7 && b[0] == b'#' && b[1..].iter().all(u8::is_ascii_hexdigit)
-}
-
-/// Canonical (lowercase, hyphenated) UUID – the only form accepted as a file name.
-pub fn is_valid_note_id(id: &str) -> bool {
-    uuid::Uuid::parse_str(id).is_ok_and(|u| u.hyphenated().to_string() == id)
 }
 
 fn clamp_f64(v: f64, min: f64, max: f64, fallback: f64) -> f64 {
@@ -261,9 +229,10 @@ impl Settings {
     }
 
     /// Applies a JSON-merge patch (RFC 7396 semantics, objects merged recursively)
-    /// and returns the sanitized result. `schemaVersion` and `autostart` keys in
-    /// the patch are ignored: the schema version is owned by the backend and the
-    /// autostart flag mirrors the OS registration (changed via `set_autostart`).
+    /// and returns the sanitized result. `schemaVersion`, `autostart` and the `sync*`
+    /// keys in the patch are ignored: the schema version is owned by the backend, the
+    /// autostart flag mirrors the OS registration (changed via `set_autostart`) and the
+    /// sync configuration is changed only by `sync_connect`/`sync_disconnect`.
     /// Errors if the patch is not an object or yields values of the wrong type.
     pub fn with_patch(&self, patch: &Value) -> Result<Settings, String> {
         let Some(obj) = patch.as_object() else {
@@ -272,6 +241,9 @@ impl Settings {
         let mut filtered: Map<String, Value> = obj.clone();
         filtered.remove("schemaVersion");
         filtered.remove("autostart");
+        for key in PROTECTED_SYNC_KEYS {
+            filtered.remove(key);
+        }
         let mut target = serde_json::to_value(self).map_err(|e| e.to_string())?;
         merge_patch(&mut target, &Value::Object(filtered));
         let merged: Settings =
@@ -313,50 +285,6 @@ pub enum ShortcutList {
     Bookmarks,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum ReminderRepeat {
-    #[default]
-    None,
-    Daily,
-    Weekdays,
-    Weekly,
-    Monthly,
-}
-
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum ReminderState {
-    #[default]
-    Scheduled,
-    Due,
-    Done,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct Reminder {
-    pub note_id: String,
-    /// RFC 3339 with offset.
-    pub at: String,
-    #[serde(default)]
-    pub repeat: ReminderRepeat,
-    #[serde(default)]
-    pub state: ReminderState,
-    #[serde(default)]
-    pub fired_at: Option<String>,
-}
-
-pub const REMINDERS_SCHEMA_VERSION: u32 = 1;
-
-/// File format of `reminders.json`.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
-#[serde(rename_all = "camelCase", default)]
-pub struct RemindersFile {
-    pub schema_version: u32,
-    pub reminders: Vec<Reminder>,
-}
-
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ShortcutKind {
@@ -373,6 +301,53 @@ pub struct Shortcut {
     pub kind: ShortcutKind,
     pub name: String,
     pub target: String,
+}
+
+// ---- v3: sync (PLAN_V3_SYNC §8) ---------------------------------------------
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SyncState {
+    /// Sync not configured / switched off.
+    #[default]
+    Off,
+    Idle,
+    Syncing,
+    /// Server not reachable; changes wait in the outbox.
+    Offline,
+    Error,
+    /// 401: token revoked or wrong – "Abgemeldet – bitte neu verbinden".
+    Unauthorized,
+}
+
+/// Payload of `sync_status` and the `sync-status` event.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncStatus {
+    pub enabled: bool,
+    pub server_url: String,
+    pub device_name: String,
+    pub state: SyncState,
+    /// Last completed sync (UTC) or `None`.
+    pub last_sync_at: Option<String>,
+    /// Changes waiting in the outbox.
+    pub pending: u32,
+    /// Technical detail of the last error (the UI shows German texts per state).
+    pub message: Option<String>,
+    /// Median offset to the server clock in ms (positive = PC is behind).
+    pub clock_offset_ms: i64,
+}
+
+/// Payload of the `notes-changed` event (remote changes merged by the sync).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct NotesChangedPayload {
+    /// Notes created or changed remotely (full documents).
+    pub notes: Vec<Note>,
+    /// Notes deleted remotely.
+    pub deleted_ids: Vec<String>,
+    /// New order if it changed remotely, else `None`.
+    pub order: Option<Vec<String>>,
 }
 
 pub const SHORTCUTS_SCHEMA_VERSION: u32 = 1;
@@ -453,7 +428,10 @@ mod tests {
                 "reminderNotification": true,
                 "reminderSound": true,
                 "shortcutBarCollapsed": false,
-                "shortcutBarTab": "items"
+                "shortcutBarTab": "items",
+                "syncEnabled": false,
+                "syncServerUrl": "",
+                "syncDeviceName": ""
             })
         );
     }
@@ -509,19 +487,6 @@ mod tests {
         assert!(!is_hex_color("FFD54A0"));
         assert!(!is_hex_color("#GGGGGG"));
         assert!(!is_hex_color("#FFD54A "));
-    }
-
-    #[test]
-    fn note_id_validation() {
-        assert!(is_valid_note_id("0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f"));
-        assert!(!is_valid_note_id("0B9A7A3E-4F5D-4C1E-9D8A-2A6B1C3D4E5F"));
-        assert!(!is_valid_note_id("0b9a7a3e4f5d4c1e9d8a2a6b1c3d4e5f"));
-        assert!(!is_valid_note_id("{0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f}"));
-        assert!(!is_valid_note_id(
-            "urn:uuid:0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f"
-        ));
-        assert!(!is_valid_note_id("../settings"));
-        assert!(!is_valid_note_id(""));
     }
 
     #[test]
@@ -581,6 +546,22 @@ mod tests {
     }
 
     #[test]
+    fn with_patch_ignores_sync_keys() {
+        let s = Settings::default()
+            .with_patch(&json!({
+                "syncEnabled": true,
+                "syncServerUrl": "https://evil.example",
+                "syncDeviceName": "x",
+                "notesPinned": true
+            }))
+            .unwrap();
+        assert!(!s.sync_enabled);
+        assert_eq!(s.sync_server_url, "");
+        assert_eq!(s.sync_device_name, "");
+        assert!(s.notes_pinned);
+    }
+
+    #[test]
     fn with_patch_rejects_bad_input() {
         let base = Settings::default();
         assert!(base.with_patch(&json!([1, 2])).is_err());
@@ -617,26 +598,5 @@ mod tests {
             Settings::from_value_lenient(&json!({"buddy": null})),
             Settings::default()
         );
-    }
-
-    #[test]
-    fn note_defaults_and_lenient_fields() {
-        let n: Note = serde_json::from_value(json!({
-            "id": "0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f",
-            "content": {"type": "doc"},
-            "createdAt": "2026-01-01T00:00:00Z",
-            "updatedAt": "2026-01-01T00:00:00Z",
-            "color": "chartreuse",
-            "extra": true
-        }))
-        .unwrap();
-        assert_eq!(n.title, "");
-        assert_eq!(n.color, NoteColor::Yellow);
-        assert_eq!(n.schema_version, NOTE_SCHEMA_VERSION);
-
-        let v = serde_json::to_value(&n).unwrap();
-        assert!(v.get("createdAt").is_some());
-        assert!(v.get("schemaVersion").is_some());
-        assert_eq!(v["color"], "yellow");
     }
 }

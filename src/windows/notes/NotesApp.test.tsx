@@ -480,7 +480,15 @@ describe("NotesApp / reminders", () => {
     at: string,
     state: Reminder["state"] = "scheduled",
     repeat: Reminder["repeat"] = "none",
-  ): Reminder => ({ noteId, at, repeat, state, firedAt: state === "due" ? at : null });
+  ): Reminder => ({
+    noteId,
+    at,
+    repeat,
+    state,
+    firedAt: state === "due" ? at : null,
+    updatedAt: null,
+    timeZone: null,
+  });
   const bell = () => screen.getByRole("button", { name: "Erinnerung" });
 
   beforeEach(() => {

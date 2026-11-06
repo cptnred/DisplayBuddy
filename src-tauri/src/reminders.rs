@@ -9,18 +9,18 @@
 //! Lock order: the reminders lock is never held while taking an `AppState` lock
 //! (note lookups happen before/after, never inside it).
 
-pub mod schedule;
-pub mod text;
+pub use buddy_core::{schedule, text};
 
 use std::path::PathBuf;
 use std::sync::{Condvar, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use chrono::Local;
+use chrono_tz::Tz;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::clock::corrected_now;
 use crate::model::{
     Note, REMINDERS_SCHEMA_VERSION, Reminder, ReminderRepeat, RemindersFile, is_valid_note_id,
 };
@@ -101,7 +101,7 @@ fn load_file(path: &std::path::Path) -> Vec<Reminder> {
                     file.schema_version
                 );
             }
-            schedule::sanitize(file.reminders)
+            schedule::sanitize(file.reminders, device_zone())
         }
         Ok(Read::Missing) | Ok(Read::Corrupt) => Vec::new(),
         Err(e) => {
@@ -114,6 +114,21 @@ fn load_file(path: &std::path::Path) -> Vec<Reminder> {
 fn reminders_state(app: &AppHandle) -> Result<tauri::State<'_, RemindersState>, String> {
     app.try_state::<RemindersState>()
         .ok_or_else(|| "reminders not ready".to_string())
+}
+
+/// IANA zone of this PC (`iana-time-zone` also maps Windows zone ids); UTC if it
+/// cannot be determined. Default zone for new reminders and data from before v3.
+pub fn device_zone() -> Tz {
+    match iana_time_zone::get_timezone() {
+        Ok(name) => buddy_core::zoned::parse_zone(&name).unwrap_or_else(|| {
+            log::warn!("unknown system time zone {name:?}, using UTC");
+            Tz::UTC
+        }),
+        Err(e) => {
+            log::warn!("could not determine the system time zone ({e}), using UTC");
+            Tz::UTC
+        }
+    }
 }
 
 /// Called from `setup` after `AppState` is managed.
@@ -179,7 +194,7 @@ fn scheduler(app: &AppHandle) {
         let Some(state) = app.try_state::<RemindersState>() else {
             break;
         };
-        let now = Local::now();
+        let now = corrected_now();
         let fired = {
             let mut list = lock(&state.reminders);
             let due = schedule::due_now(&list, &now);
@@ -200,7 +215,7 @@ fn scheduler(app: &AppHandle) {
         let wait = {
             let list = lock(&state.reminders);
             schedule::earliest_scheduled(&list)
-                .and_then(|at| (at.with_timezone(&Local) - Local::now()).to_std().ok())
+                .and_then(|at| (at - corrected_now()).to_std().ok())
                 .map_or(MAX_SLEEP, |d| d.min(MAX_SLEEP))
         };
         // Wake slightly after the target so `at <= now` holds on the next pass.
@@ -290,14 +305,23 @@ pub fn list(app: &AppHandle) -> Result<Vec<Reminder>, String> {
 }
 
 /// `at = None` removes the reminder. Otherwise the note must exist; a time in the
-/// past is allowed (the reminder fires right away).
+/// past is allowed (the reminder fires right away). `time_zone` (IANA) is the zone
+/// of the reminder; `None` keeps the current one (new reminder: the PC's zone).
 pub fn set(
     app: &AppHandle,
     note_id: &str,
     at: Option<&str>,
     repeat: ReminderRepeat,
+    time_zone: Option<&str>,
 ) -> Result<Option<Reminder>, String> {
     check_note_id(note_id)?;
+    let zone = match time_zone {
+        None => None,
+        Some(name) => Some(
+            buddy_core::zoned::parse_zone(name)
+                .ok_or_else(|| format!("unknown time zone: {name}"))?,
+        ),
+    };
     let at = match at {
         None => None,
         Some(s) => {
@@ -305,24 +329,41 @@ pub fn set(
                 schedule::parse_time(s).ok_or_else(|| format!("invalid time (RFC 3339): {s}"))?;
             // checked before taking the reminders lock (lock order)
             load_note(app, note_id).map_err(|e| format!("note not found: {e}"))?;
-            Some(parsed.with_timezone(&Local))
+            Some(parsed)
         }
     };
+    let now = corrected_now();
     modify(app, |list| {
-        Ok(schedule::set::<Local>(list, note_id, at.as_ref(), repeat))
+        let zone = zone
+            .or_else(|| {
+                list.iter()
+                    .find(|r| r.note_id == note_id)
+                    .map(|r| schedule::reminder_zone(r, device_zone()))
+            })
+            .unwrap_or_else(device_zone);
+        Ok(schedule::set(
+            list,
+            note_id,
+            at.as_ref(),
+            repeat,
+            zone,
+            &now,
+        ))
     })
 }
 
 pub fn ack(app: &AppHandle, note_id: &str) -> Result<Option<Reminder>, String> {
     check_note_id(note_id)?;
-    modify(app, |list| schedule::ack(list, note_id, &Local::now()))
+    let now = corrected_now();
+    modify(app, |list| {
+        schedule::ack(list, note_id, &now, device_zone())
+    })
 }
 
 pub fn snooze(app: &AppHandle, note_id: &str, minutes: u32) -> Result<Reminder, String> {
     check_note_id(note_id)?;
-    modify(app, |list| {
-        schedule::snooze(list, note_id, minutes, &Local::now())
-    })
+    let now = corrected_now();
+    modify(app, |list| schedule::snooze(list, note_id, minutes, &now))
 }
 
 /// Shows the notes window and asks it to select the note.
@@ -373,6 +414,8 @@ mod tests {
             repeat: ReminderRepeat::Daily,
             state: ReminderState::Due,
             fired_at: Some("2026-11-05T09:00:01+01:00".into()),
+            updated_at: Some("2026-11-05T07:00:00.000Z".into()),
+            time_zone: Some("Europe/Berlin".into()),
         };
         let state = RemindersState::new(path.clone(), Vec::new());
         state.persist(std::slice::from_ref(&r));

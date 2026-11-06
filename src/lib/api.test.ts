@@ -56,7 +56,7 @@ const COMMAND_CASES: CommandCase[] = [
   ["quitApp", [], "quit_app"],
   // v2 (PLAN §11) – JS args camelCase
   ["listReminders", [], "list_reminders"],
-  ["setReminder", ["11111111-1111-4111-8111-111111111111", "2026-11-05T14:30:00+01:00", "daily"], "set_reminder", { noteId: "11111111-1111-4111-8111-111111111111", at: "2026-11-05T14:30:00+01:00", repeat: "daily" }],
+  ["setReminder", ["11111111-1111-4111-8111-111111111111", "2026-11-05T14:30:00+01:00", "daily"], "set_reminder", { noteId: "11111111-1111-4111-8111-111111111111", at: "2026-11-05T14:30:00+01:00", repeat: "daily", timeZone: null }],
   ["ackReminder", ["11111111-1111-4111-8111-111111111111"], "ack_reminder", { noteId: "11111111-1111-4111-8111-111111111111" }],
   ["snoozeReminder", ["11111111-1111-4111-8111-111111111111", 10], "snooze_reminder", { noteId: "11111111-1111-4111-8111-111111111111", minutes: 10 }],
   ["openNote", ["11111111-1111-4111-8111-111111111111"], "open_note", { noteId: "11111111-1111-4111-8111-111111111111" }],
@@ -139,6 +139,17 @@ describe("api commands", () => {
     expect(commandMethods.sort()).toEqual(COMMAND_CASES.map((c) => c[0]).sort());
   });
 
+  it("setReminder passes the reminder time zone (v3)", async () => {
+    invokeMock.mockResolvedValueOnce(null);
+    await api.setReminder("11111111-1111-4111-8111-111111111111", "2026-11-05T13:30:00.000Z", "daily", "America/New_York");
+    expect(invokeMock).toHaveBeenLastCalledWith("set_reminder", {
+      noteId: "11111111-1111-4111-8111-111111111111",
+      at: "2026-11-05T13:30:00.000Z",
+      repeat: "daily",
+      timeZone: "America/New_York",
+    });
+  });
+
   it("propagates backend errors as rejections", async () => {
     invokeMock.mockRejectedValueOnce("note not found: x");
     await expect(api.loadNote("x")).rejects.toBe("note not found: x");
@@ -170,6 +181,8 @@ describe("api events", () => {
       shortcutsChanged: "shortcuts-changed",
       shortcutDrag: "shortcut-drag",
       skinsChanged: "skins-changed",
+      syncStatus: "sync-status",
+      notesChanged: "notes-changed",
     });
   });
 

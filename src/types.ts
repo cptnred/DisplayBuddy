@@ -95,6 +95,12 @@ export interface Settings {
   shortcutBarCollapsed: boolean;
   /** Active tab of the shortcut bar. */
   shortcutBarTab: ShortcutList;
+  /** v3: sync with the own server on. Changed only via sync_connect/sync_disconnect. */
+  syncEnabled: boolean;
+  /** v3: server address, e.g. "https://buddy.example.org". Empty = not configured. */
+  syncServerUrl: string;
+  /** v3: name of this PC on the server. The token never lives in settings. */
+  syncDeviceName: string;
 }
 
 export const DEFAULT_BUDDY: BuddyConfig = {
@@ -123,6 +129,9 @@ export const DEFAULT_SETTINGS: Settings = {
   reminderSound: true,
   shortcutBarCollapsed: false,
   shortcutBarTab: "items",
+  syncEnabled: false,
+  syncServerUrl: "",
+  syncDeviceName: "",
 };
 
 // ---- v2: reminders -----------------------------------------------------------
@@ -133,12 +142,19 @@ export type ReminderState = "scheduled" | "due" | "done";
 
 export interface Reminder {
   noteId: string;
-  /** Next/last fire time, RFC 3339 with offset (e.g. "2026-11-05T14:30:00+01:00"). */
+  /**
+   * Absolute next/last fire time, RFC 3339. v3 writes UTC ("2026-11-05T13:30:00.000Z"),
+   * older data may carry an offset. Always compare as an instant.
+   */
   at: string;
   repeat: ReminderRepeat;
   state: ReminderState;
   /** When it last fired (RFC 3339) or null. */
   firedAt: string | null;
+  /** v3: time of the last user action (set/ack/snooze) on the acting device, UTC. Firing does not change it. */
+  updatedAt: string | null;
+  /** v3: IANA zone in which wall time and repetition apply, e.g. "Europe/Berlin". */
+  timeZone: string | null;
 }
 
 export const REMINDER_REPEAT_LABELS: Record<ReminderRepeat, string> = {
@@ -192,6 +208,34 @@ export interface SkinData {
   data: string;
 }
 
+// ---- v3: sync (PLAN_V3_SYNC §8) -------------------------------------------------
+
+export type SyncState = "off" | "idle" | "syncing" | "offline" | "error" | "unauthorized";
+
+/** Payload of sync_status and the `sync-status` event. */
+export interface SyncStatus {
+  enabled: boolean;
+  serverUrl: string;
+  deviceName: string;
+  state: SyncState;
+  /** Last completed sync (UTC) or null. */
+  lastSyncAt: string | null;
+  /** Changes waiting in the outbox. */
+  pending: number;
+  /** Technical detail of the last error (UI shows German texts per state). */
+  message: string | null;
+  /** Median offset to the server clock in ms (positive = PC is behind). Warn above 2 min. */
+  clockOffsetMs: number;
+}
+
+/** Payload of `notes-changed` (remote changes merged by the sync). */
+export interface NotesChangedPayload {
+  notes: Note[];
+  deletedIds: string[];
+  /** New order if it changed remotely, else null. */
+  order: string[] | null;
+}
+
 /** Event names (Rust <-> windows). */
 export const EVENTS = {
   /** payload: Settings. Emitted by Rust to all windows after save_settings. */
@@ -214,4 +258,8 @@ export const EVENTS = {
   shortcutDrag: "shortcut-drag",
   /** payload: SkinInfo[]. Rust -> all after import/delete. */
   skinsChanged: "skins-changed",
+  /** v3 payload: SyncStatus. Rust -> settings + notes whenever the sync status changes. */
+  syncStatus: "sync-status",
+  /** v3 payload: NotesChangedPayload. Rust -> notes after merging remote changes. */
+  notesChanged: "notes-changed",
 } as const;

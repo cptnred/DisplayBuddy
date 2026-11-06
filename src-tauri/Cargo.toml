@@ -20,6 +20,9 @@ uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std", "serde"] }
 base64 = "0.22"
 log = "0.4"
+buddy-core = { path = "../crates/buddy-core" }
+chrono-tz = "0.10.4"
+iana-time-zone = "0.1.65"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2.5.5"

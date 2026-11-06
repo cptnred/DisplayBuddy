@@ -261,6 +261,8 @@ const reminder = (noteId: string, patch: Partial<Reminder> = {}): Reminder => ({
   repeat: "none",
   state: "due",
   firedAt: "2026-11-05T10:00:00+01:00",
+  updatedAt: null,
+  timeZone: null,
   ...patch,
 });
 

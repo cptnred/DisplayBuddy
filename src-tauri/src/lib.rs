@@ -2,6 +2,7 @@
 
 pub mod autostart;
 pub mod clickthrough;
+pub mod clock;
 pub mod commands;
 pub mod crash;
 pub mod debounce;
