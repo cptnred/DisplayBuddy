@@ -1,0 +1,25 @@
+# Display Buddy – Caddy in front of buddy-server (PLAN_V3_SYNC §11, D-40).
+#
+# Caddy docs: "Automatic HTTPS" (certificate for the site address, HTTP→HTTPS redirect),
+# "reverse_proxy" (sets X-Forwarded-For to the client IP and ignores incoming
+# X-Forwarded-* headers from untrusted clients), "header", "encode".
+#
+# Cache-Control, CSP, nosniff and Referrer-Policy come from buddy-server
+# (server/src/web.rs: /assets/* immutable, sw.js/index.html/manifest no-cache, API
+# no-store). Do not set or override them here, otherwise PWA updates break.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$BUDDY_DOMAIN} {
+	# HSTS is the only header added here (the server leaves it to the proxy).
+	# One year; no "preload" (that is a separate, hard-to-revert opt-in).
+	header Strict-Transport-Security "max-age=31536000"
+	# Hide the "Server: Caddy" banner.
+	header -Server
+
+	encode zstd gzip
+
+	reverse_proxy buddy:8080
+}

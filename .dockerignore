@@ -1,0 +1,37 @@
+# Build context for server/Dockerfile is the repository root. Keep it small and
+# never send secrets or local data to the Docker daemon.
+
+# VCS, agents, editors
+.git
+.claude
+.vscode
+.idea
+
+# Build output and dependencies (rebuilt inside the image)
+**/node_modules
+**/target
+dist
+dist-ssr
+dist-web
+release
+src-tauri/gen
+mobile/src-tauri/gen
+
+# Deployment files and anything secret
+deploy
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p8
+**/*.jks
+**/*.keystore
+**/google-services.json
+**/GoogleService-Info.plist
+**/*service-account*.json
+
+# Local databases and logs
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.log
