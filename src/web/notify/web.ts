@@ -11,18 +11,20 @@
  * the UI never touches them.
  */
 import type { PushSubscriptionJson, VapidPublicKey } from "../../lib/sync/types";
-import { API_BASE } from "../../lib/sync/types";
 import type { Reminder } from "../../types";
 import type { HttpAdapter } from "../contract";
 import { base64UrlToBytes, currentPlatform, isIos, isStandalone, sameBytes, type PlatformInfo } from "./platform";
 import { closeResolved, type SwRegistration } from "./swHandlers";
 import type { Notifier, NotifierStatus } from "./types";
 
-/** API paths (absolute, incl. API_BASE) for the web push endpoints of §6. */
+/**
+ * Paths of the web push endpoints of §6, relative to API_BASE (the HttpAdapter of
+ * src/web/sync/http.ts prepends `/api/v1` and adds cookie + X-Buddy-Request).
+ */
 export const PUSH_PATHS = {
-  vapidKey: `${API_BASE}/push/vapid-public-key`,
-  subscription: `${API_BASE}/push/subscription`,
-  test: `${API_BASE}/push/test`,
+  vapidKey: "/push/vapid-public-key",
+  subscription: "/push/subscription",
+  test: "/push/test",
 } as const;
 
 /** localStorage key: the user turned notifications on in this browser (per-device convenience). */

@@ -10,7 +10,6 @@ import {
   parsePayload,
   safeUrl,
   type BuddyNotificationOptions,
-  type ShownNotification,
   type SwDeps,
 } from "./swHandlers";
 
@@ -80,10 +79,10 @@ function setup(opts: { maxActions?: number; storeFails?: boolean; reminders?: Re
   return { store, shown, deps, client };
 }
 
-const shownNotification = (data: unknown, tag?: string): ShownNotification & { close: ReturnType<typeof vi.fn> } => ({
+const shownNotification = (data: unknown, tag?: string) => ({
   data,
   tag,
-  close: vi.fn(),
+  close: vi.fn<() => void>(),
 });
 
 describe("payload helpers", () => {

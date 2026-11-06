@@ -4,10 +4,15 @@ import { useRouter } from "../router";
 import { useServices } from "../services";
 import styles from "../ui.module.css";
 
-function errorText(e: unknown): string {
-  const status = (e as { status?: number } | null)?.status;
-  if (status === 401 || status === 403) return "Benutzername oder Passwort ist falsch.";
-  if (status === 429) return "Zu viele Versuche. Bitte später erneut versuchen.";
+/** German text for a login failure (SyncError.code / HTTP status of src/web/sync). */
+export function errorText(e: unknown): string {
+  const { code, status } = (e ?? {}) as { code?: string; status?: number };
+  if (code === "unauthorized" || status === 401 || status === 403) return "Benutzername oder Passwort ist falsch.";
+  if (code === "too_many_requests" || status === 429) return "Zu viele Versuche. Bitte später erneut versuchen.";
+  if (code === "account_mismatch") {
+    return "Auf diesem Gerät ist ein anderes Konto angemeldet. Bitte zuerst in den Einstellungen abmelden.";
+  }
+  if (code === "http" || code === "invalid_response") return "Der Server hat unerwartet geantwortet.";
   return "Der Server ist nicht erreichbar. Bitte Verbindung prüfen.";
 }
 

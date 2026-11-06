@@ -106,7 +106,7 @@ describe("web notifier", () => {
     expect(calls).toEqual(["requestPermission", "subscribe:true"]);
     expect(http.requests.find((r) => r.method === "PUT")).toEqual({
       method: "PUT",
-      path: "/api/v1/push/subscription",
+      path: "/push/subscription",
       body: { endpoint: "https://push.example/abc", keys: { p256dh: "p256", auth: "auth" } },
     });
     expect(store.get(WANTED_KEY)).toBe("1");
@@ -165,7 +165,7 @@ describe("web notifier", () => {
     expect(sub.unsubscribe).toHaveBeenCalled();
     expect(http.requests.at(-1)).toEqual({
       method: "DELETE",
-      path: "/api/v1/push/subscription",
+      path: "/push/subscription",
       body: { endpoint: "https://push.example/abc" },
     });
     expect(store.has(WANTED_KEY)).toBe(false);
@@ -174,7 +174,7 @@ describe("web notifier", () => {
   it("sends a test notification and reports server errors", async () => {
     const { notifier, http } = setup({ permission: "granted" });
     await notifier.test();
-    expect(http.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/v1/push/test" });
+    expect(http.requests.at(-1)).toMatchObject({ method: "POST", path: "/push/test" });
     http.route("POST", PUSH_PATHS.test, () => ({ status: 500 }));
     await expect(notifier.test()).rejects.toThrow();
   });
