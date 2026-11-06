@@ -1,6 +1,6 @@
 [package]
 name = "display-buddy"
-version = "0.1.0"
+version = "0.2.0"
 description = "Display Buddy – animated always-on-top smiley with notes"
 authors = ["Display Buddy"]
 edition = "2024"
