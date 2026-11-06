@@ -5,10 +5,10 @@
 //! - `tauri-plugin-notification` (local scheduling, actions, channels),
 //! - `tauri-plugin-http` with a scope limited to `BUDDY_PUBLIC_URL/api/v1/*`,
 //! - secure token storage (`token.rs`),
-//! - `shell_config` (server origin from the build).
-//!
-//! Native push (phase N2, Android/FCM only, D-55) will be registered here as another
-//! plugin; see `mobile/README.md` → „Nativer Push (später)“.
+//! - `shell_config` (server origin from the build),
+//! - native push (phase N2, Android/FCM only, D-55): the own plugin `buddy-push`
+//!   (`mobile/plugins/buddy-push`); token registration, wake-up sync and re-planning live
+//!   in the web layer (`src/web/notify/native-push.ts`).
 
 // normalize() is used by build.rs and the tests; the app only needs api_scope()
 #[cfg_attr(not(test), allow(dead_code))]
@@ -93,6 +93,7 @@ pub fn run() {
         .manage(TokenVault::platform())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_buddy_push::init())
         .setup(|app| {
             if let Some(origin) = SERVER_ORIGIN {
                 app.add_capability(http_capability(origin))?;

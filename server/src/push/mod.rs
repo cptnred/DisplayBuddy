@@ -1,6 +1,7 @@
 //! Push delivery (PLAN_V3_SYNC §6, §7.4): Web Push for the PWA, a native channel trait for
 //! the mobile shell (FCM in phase N2), and the endpoints
-//! `PUT/DELETE /push/subscription` (session cookie) and `POST /push/test` (both auth kinds).
+//! `PUT/DELETE /push/subscription` (session cookie), `PUT/DELETE /devices/current/push`
+//! (Bearer, native shell, phase N2) and `POST /push/test` (both auth kinds).
 //!
 //! Endpoint hardening (the server POSTs to URLs supplied by clients): only `https://` with
 //! a DNS host name (no IP literals, no `localhost`, no credentials), at most 2048 bytes,
@@ -9,6 +10,8 @@
 
 pub mod dispatch;
 pub mod native;
+pub mod native_api;
+pub mod native_fcm;
 pub mod payload;
 pub mod webpush;
 
@@ -123,6 +126,10 @@ pub fn router(state: AppState) -> Router<AppState> {
             put(put_subscription).delete(delete_subscription),
         )
         .route("/push/test", post(push_test))
+        .route(
+            "/devices/current/push",
+            put(native_api::put_token).delete(native_api::delete_token),
+        )
         .layer(middleware::from_fn_with_state(state, auth::extend_session))
 }
 

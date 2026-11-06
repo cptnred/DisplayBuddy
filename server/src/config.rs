@@ -10,8 +10,9 @@
 //! | `BUDDY_VAPID_SUBJECT` | – | `mailto:…` or `https://…` (VAPID `sub`, used by phase D) |
 //! | `BUDDY_TRUSTED_PROXIES` | – | comma-separated CIDRs (Caddy's Docker network); only from there `X-Forwarded-For` counts |
 //! | `BUDDY_BACKUP_DIR` | `<dir of BUDDY_DB>/backups` | nightly `VACUUM INTO` target (14 kept) |
+//! | `BUDDY_FCM_SERVICE_ACCOUNT_FILE` | – | Firebase service account key (JSON) for native push to Android (FCM HTTP v1, phase N2); without it no native push |
 //!
-//! Phase N2 adds `BUDDY_FCM_SERVICE_ACCOUNT_FILE` (and optionally the APNs variables).
+//! APNs is not implemented (D-55).
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -30,6 +31,7 @@ pub struct Config {
     pub vapid_subject: Option<String>,
     pub trusted_proxies: Vec<IpNet>,
     pub backup_dir: PathBuf,
+    pub fcm_service_account_file: Option<PathBuf>,
 }
 
 pub const DEFAULT_LISTEN: &str = "0.0.0.0:8080";
@@ -119,6 +121,7 @@ impl Config {
             vapid_subject,
             trusted_proxies: parse_proxies(&get("BUDDY_TRUSTED_PROXIES").unwrap_or_default())?,
             backup_dir,
+            fcm_service_account_file: get("BUDDY_FCM_SERVICE_ACCOUNT_FILE").map(PathBuf::from),
         })
     }
 
@@ -137,6 +140,7 @@ impl Config {
             vapid_subject: None,
             trusted_proxies: Vec::new(),
             backup_dir: dir.join("backups"),
+            fcm_service_account_file: None,
         }
     }
 }
@@ -173,6 +177,7 @@ mod tests {
         assert_eq!(c.listen.to_string(), "0.0.0.0:8080");
         assert_eq!(c.backup_dir, PathBuf::from("/srv/b/backups"));
         assert!(c.web_dir.is_none() && c.trusted_proxies.is_empty());
+        assert!(c.fcm_service_account_file.is_none());
     }
 
     #[test]
@@ -185,12 +190,17 @@ mod tests {
                 ("BUDDY_VAPID_PRIVATE_KEY_FILE", "/data/vapid.pem"),
                 ("BUDDY_VAPID_SUBJECT", "mailto:admin@example.org"),
                 ("BUDDY_TRUSTED_PROXIES", "172.30.0.0/16, 10.0.0.2"),
+                ("BUDDY_FCM_SERVICE_ACCOUNT_FILE", "/data/fcm.json"),
             ]),
             true,
         )
         .unwrap();
         assert_eq!(c.public_origin, "https://buddy.example.org");
         assert_eq!(c.trusted_proxies.len(), 2);
+        assert_eq!(
+            c.fcm_service_account_file,
+            Some(PathBuf::from("/data/fcm.json"))
+        );
         assert!(
             Config::from_vars(
                 vars(&[

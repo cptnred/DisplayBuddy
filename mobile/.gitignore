@@ -8,6 +8,9 @@ src-tauri/gen/
 patches/*/android/.tauri/
 patches/*/ios/.tauri/
 patches/*/android/build/
+plugins/*/android/.tauri/
+plugins/*/android/build/
+plugins/*/target/
 # Signing material must never be committed
 *.keystore
 *.jks

@@ -1,0 +1,10 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Token, launch data and the push events (token, message, opened)."
+permissions = [
+  "allow-get-token",
+  "allow-take-launch-data",
+  "allow-register-listener",
+  "allow-remove-listener",
+]

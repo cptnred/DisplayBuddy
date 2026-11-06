@@ -6,7 +6,8 @@
 //!   never lost); [`reminders::run`] waits on it;
 //! - [`AppState::clock`] is the injected [`clock::Clock`];
 //! - [`AppState::vapid`] holds the loaded key, [`AppState::push`] the push channels
-//!   ([`push::PushService`]: Web Push, native channel trait for phase N2);
+//!   ([`push::PushService`]: Web Push, native FCM channel of phase N2 when
+//!   `BUDDY_FCM_SERVICE_ACCOUNT_FILE` is set);
 //! - `build_app` merges [`push::router`], `serve` spawns the scheduler with a clone of the
 //!   shutdown receiver.
 
@@ -119,7 +120,22 @@ pub async fn state_from_config(config: Config) -> Result<AppState> {
     if let Some(dir) = &config.web_dir {
         web::check_web_dir(dir);
     }
-    Ok(AppState::new(db, config, Arc::new(SystemClock), vapid))
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+    let fcm = match &config.fcm_service_account_file {
+        Some(p) => Some(push::native_fcm::FcmChannel::from_file(p, clock.clone())?),
+        None => {
+            tracing::info!("BUDDY_FCM_SERVICE_ACCOUNT_FILE not set: no native push (Android)");
+            None
+        }
+    };
+    let state = AppState::new(db, config, clock, vapid);
+    Ok(match fcm {
+        Some(channel) => state.with_push(push::PushOptions {
+            native: Arc::new(channel),
+            ..Default::default()
+        }),
+        None => state,
+    })
 }
 
 async fn shutdown_signal(tx: tokio::sync::watch::Sender<bool>) {

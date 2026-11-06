@@ -11,6 +11,8 @@
 #   ANDROID_KEYSTORE_PASSWORD keystore password
 #   ANDROID_KEY_ALIAS         key alias
 #   ANDROID_KEY_PASSWORD      key password (often the same as the keystore password)
+#   GOOGLE_SERVICES_JSON_BASE64  optional: base64 of google-services.json (Firebase, native
+#                             push over FCM, phase N2). Without it the APK has no push.
 # Variable (not secret): BUDDY_PUBLIC_URL, e.g. https://buddy.example.org (the server origin
 #   baked into the app; without it the build uses the placeholder https://buddy.example.org).
 #
@@ -72,6 +74,8 @@ jobs:
       - run: npm test
       - run: npm run test:tz
       - run: npm run build:mobile
+      - name: Firebase setup script (node:test)
+        run: node --test mobile/scripts/android-firebase.test.mjs
       - name: Rust checks of the shell (host)
         working-directory: mobile/src-tauri
         env:
@@ -79,6 +83,7 @@ jobs:
         run: |
           cargo fetch --locked
           cargo fmt --check
+          cargo fmt --check --manifest-path ../plugins/buddy-push/Cargo.toml
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked
 
@@ -117,6 +122,10 @@ jobs:
         run: |
           npx tauri android init --ci
           npx tauri icon ../public-web/icons/icon.svg
+      - name: Firebase for native push (only with the secret GOOGLE_SERVICES_JSON_BASE64)
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: node mobile/scripts/android-firebase.mjs mobile/src-tauri/gen/android de.displaybuddy.mobile
       - name: Build release APK
         working-directory: mobile
         run: |

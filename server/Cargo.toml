@@ -27,6 +27,8 @@ clap = { version = "=4.6.7", features = ["derive"] }
 ipnet = "=2.12.2"
 p256 = { version = "=0.14.0", features = ["pem", "pkcs8"] }
 rand = "=0.10.3"
+# RS256 for the FCM OAuth assertion (N2); same version rustls already uses (D-52).
+ring = "=0.17.14"
 reqwest = { version = "=0.13.5", default-features = false, features = ["rustls-no-provider", "http2"] }
 rpassword = "=7.5.4"
 # ring provider for reqwest (D-52: no aws-lc-rs/cmake); installed in push::http_client.
@@ -48,6 +50,9 @@ web-push = { version = "=0.11.0", default-features = false }
 ece = "=2.4.2"
 p256 = { version = "=0.14.0", features = ["ecdsa"] }
 http-body-util = "=0.1.5"
+# Fake FCM/OAuth in tests: generates a throwaway RSA key and verifies the RS256 assertion
+# (already in the tree through web-push/ece, D-56).
+openssl = "=0.10.82"
 tempfile = "=3.27.0"
 
 # Argon2id (19 MiB, t=2) is very slow unoptimised; keep tests fast.
