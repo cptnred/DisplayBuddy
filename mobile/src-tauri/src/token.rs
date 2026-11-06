@@ -9,8 +9,6 @@
 //!
 //! The token never reaches logs; errors carry only the keyring error kind.
 
-use std::sync::Mutex;
-
 /// Keychain service / user of the token entry.
 #[cfg_attr(not(mobile), allow(dead_code))]
 pub const SERVICE: &str = "de.displaybuddy.mobile";
@@ -77,7 +75,7 @@ impl TokenVault {
 /// In-memory backend (development machine and tests).
 #[cfg(any(test, not(any(target_os = "ios", target_os = "android"))))]
 #[derive(Default)]
-pub struct MemoryBackend(Mutex<Option<String>>);
+pub struct MemoryBackend(std::sync::Mutex<Option<String>>);
 
 #[cfg(any(test, not(any(target_os = "ios", target_os = "android"))))]
 impl SecretBackend for MemoryBackend {

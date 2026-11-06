@@ -335,10 +335,21 @@ main().then(
   () => log("all emulator checks passed"),
   (e) => {
     console.error(`[e2e] FAILED: ${e.message}`);
+    // Diagnostics: is the app alive, and what did it (and Android) log? Never contains
+    // secrets: the app logs no tokens or note contents (PLAN §7.5).
     try {
-      console.error(adb("logcat", "-d", "-t", "300", "-s", "Tauri/Console:V", "Notification:V", "AndroidRuntime:E"));
+      console.error(`[e2e] app pid: ${adb("shell", "pidof", "de.displaybuddy.mobile").trim() || "(not running)"}`);
     } catch {
-      // ignore
+      console.error("[e2e] app pid: (not running)");
+    }
+    try {
+      const all = adb("logcat", "-d", "-v", "brief").split("\n");
+      const relevant = all.filter((l) =>
+        /buddy|tauri|Console|chromium|AndroidRuntime|FATAL|Firebase|Notification|AlarmManager|de\.displaybuddy/i.test(l),
+      );
+      console.error(relevant.slice(-250).join("\n"));
+    } catch (err) {
+      console.error(`[e2e] logcat failed: ${err.message}`);
     }
     process.exit(1);
   },
