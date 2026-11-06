@@ -1,0 +1,53 @@
+# Variante B: Display Buddy hinter einem bereits vorhandenen Reverse-Proxy
+# (z. B. Nginx Proxy Manager), der Ports 80/443 belegt. Kein eigener Caddy, keine
+# veröffentlichten Ports. In .env steht COMPOSE_FILE=compose.npm.yaml, dann gelten alle
+# "docker compose"-Befehle der README unverändert:
+#   docker compose up -d --build
+# Proxy-Host: Forward Hostname "displaybuddy-buddy-1", Port 8080, Scheme http.
+
+name: displaybuddy
+
+services:
+  buddy:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    image: displaybuddy/buddy-server:local
+    restart: unless-stopped
+    environment:
+      BUDDY_PUBLIC_URL: https://${BUDDY_DOMAIN:?set BUDDY_DOMAIN in deploy/.env}
+      BUDDY_LISTEN: 0.0.0.0:8080
+      BUDDY_DB: /data/buddy.db
+      BUDDY_BACKUP_DIR: /data/backups
+      BUDDY_WEB_DIR: /app/web
+      BUDDY_VAPID_PRIVATE_KEY_FILE: /data/vapid.pem
+      BUDDY_VAPID_SUBJECT: ${BUDDY_VAPID_SUBJECT:?set BUDDY_VAPID_SUBJECT in deploy/.env}
+      # Subnetz des Netzes "proxy" (dort liegt NPM), damit die Login-Bremse die echte Client-IP zählt.
+      BUDDY_TRUSTED_PROXIES: ${PROXY_SUBNET:-172.18.0.0/16}
+      RUST_LOG: ${RUST_LOG:-info,sqlx=warn,tower_http=warn}
+      # Phase N2 (nur Android/FCM, optional): Dienstkonto-JSON ins Daten-Volume legen und aktivieren.
+      # BUDDY_FCM_SERVICE_ACCOUNT_FILE: /data/fcm-service-account.json
+    volumes:
+      - buddy-data:/data
+    networks:
+      - proxy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-proxy} # Docker-Netz, in dem auch der Reverse-Proxy hängt
+
+volumes:
+  buddy-data:

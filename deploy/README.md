@@ -9,13 +9,32 @@ im Terminal einfügen können. Ersetzen Sie nur die Beispielwerte (`buddy.exampl
 
 **Was läuft auf dem Server?**
 
-- **Caddy** nimmt die Verbindungen aus dem Internet an und holt automatisch ein HTTPS-Zertifikat
-  (Let's Encrypt). Nur Caddy ist von außen erreichbar (Ports 80 und 443).
 - **buddy-server** speichert die Daten (SQLite), liefert die Web-App aus und verschickt Benachrichtigungen.
-  Er ist nur über Caddy erreichbar.
+  Er ist nur über einen vorgeschalteten Webserver (Reverse-Proxy) erreichbar.
+- Der **Reverse-Proxy** nimmt die Verbindungen aus dem Internet an und sorgt für HTTPS (Let's Encrypt).
+  Das ist entweder der mitgelieferte **Caddy** (Variante A) oder ein bei Ihnen schon vorhandener Proxy wie
+  **Nginx Proxy Manager** (Variante B).
 
 Alles läuft in Docker. Die Daten liegen im Docker-Volume `displaybuddy_buddy-data` (Datenbank, tägliche Backups,
 der Push-Schlüssel `vapid.pem`).
+
+## Welche Variante passt zu Ihnen?
+
+| | Variante A – frischer VPS | Variante B – vorhandener Reverse-Proxy |
+|---|---|---|
+| Wann? | Auf dem Server läuft noch nichts auf Port 80/443 | Port 80/443 ist schon belegt (Nginx Proxy Manager, Traefik, Caddy …) |
+| HTTPS/Zertifikat | mitgelieferter Caddy, automatisch | Ihr vorhandener Proxy |
+| Compose-Datei | `compose.yaml` (Standard) | `compose.npm.yaml` (in `.env` eingetragen) |
+| Schritte | 1 – 15 | 2, 3 (falls Docker fehlt), 5 – 15; statt Schritt 4 und 7 → [Variante B](#variante-b-hinter-nginx-proxy-manager) |
+
+Prüfen, ob Port 80/443 belegt ist:
+
+```sh
+sudo ss -ltnp | grep -E ':(80|443) '
+```
+
+Erscheint hier eine Zeile, nehmen Sie **Variante B**. Alle `docker compose`-Befehle in dieser Anleitung sind in
+beiden Varianten identisch.
 
 ---
 
@@ -24,10 +43,10 @@ der Push-Schlüssel `vapid.pem`).
 1. [VPS mieten und einloggen](#1-vps-mieten-und-einloggen)
 2. [DNS-Eintrag anlegen](#2-dns-eintrag-anlegen)
 3. [Docker installieren](#3-docker-installieren)
-4. [Firewall einrichten](#4-firewall-einrichten)
+4. [Firewall einrichten](#4-firewall-einrichten) (nur Variante A)
 5. [Display Buddy herunterladen und `.env` ausfüllen](#5-display-buddy-herunterladen-und-env-ausfüllen)
 6. [Push-Schlüssel erzeugen (`vapid generate`)](#6-push-schlüssel-erzeugen)
-7. [Starten](#7-starten)
+7. [Starten](#7-starten) · [Variante B: hinter Nginx Proxy Manager](#variante-b-hinter-nginx-proxy-manager)
 8. [Benutzer anlegen](#8-benutzer-anlegen)
 9. [Handy einrichten](#9-handy-einrichten)
 10. [PC verbinden](#10-pc-verbinden)
@@ -118,6 +137,9 @@ Alle folgenden Befehle gehen davon aus, dass Sie als `root` eingeloggt sind. Als
 
 ## 4. Firewall einrichten
 
+> **Nur Variante A.** In Variante B ist die Firewall bereits eingerichtet (Ports 80/443 gehören Ihrem Proxy);
+> überspringen Sie diesen Schritt.
+
 Offen bleiben nur SSH (22), HTTP (80, für das Zertifikat und die Umleitung auf HTTPS) und HTTPS (443, auch UDP
 für HTTP/3):
 
@@ -150,6 +172,10 @@ cp .env.example .env
 nano .env
 ```
 
+> Enthält der Ordner `~/DisplayBuddy` danach keine Ordner `server/` und `crates/`, liegt der Server-Code noch
+> nicht im Hauptzweig. Dann stattdessen den Entwicklungszweig klonen:
+> `git clone --branch claude/display-buddy-v3-c9w0c8 https://github.com/cptnred/DisplayBuddy.git`
+
 In `nano` die drei Werte anpassen:
 
 ```ini
@@ -157,6 +183,25 @@ BUDDY_DOMAIN=buddy.example.org
 ACME_EMAIL=ihre-adresse@example.org
 BUDDY_VAPID_SUBJECT=mailto:ihre-adresse@example.org
 ```
+
+**Nur Variante B** – zusätzlich diese Zeilen am Ende der `.env` eintragen (im Beispiel sind sie auskommentiert,
+das `#` entfernen):
+
+```ini
+COMPOSE_FILE=compose.npm.yaml
+PROXY_NETWORK=proxy
+PROXY_SUBNET=172.18.0.0/16
+```
+
+- `COMPOSE_FILE` sorgt dafür, dass `docker compose` die Datei für vorhandene Proxys nutzt – ohne eigenen Caddy
+  und ohne veröffentlichte Ports.
+- `PROXY_NETWORK` ist der Name des Docker-Netzes, in dem Ihr Proxy läuft. Ermitteln:
+  `docker inspect <Proxy-Containername> --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'`
+  (Containername mit `docker ps` ablesen, z. B. `nginx-proxy-manager`).
+- `PROXY_SUBNET` ist das Subnetz dieses Netzes: `docker network inspect proxy --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'`
+  (`proxy` ggf. durch den Netznamen ersetzen). Nur Verbindungen aus diesem Netz gelten als vertrauenswürdiger
+  Proxy; dadurch zählt die Anmelde-Bremse die echte Besucher-IP.
+- `ACME_EMAIL` wird in Variante B nicht verwendet (das Zertifikat holt Ihr Proxy), muss aber nicht entfernt werden.
 
 - `BUDDY_DOMAIN`: genau die Subdomain aus Schritt 2, **ohne** `https://`.
 - `ACME_EMAIL`: dorthin schickt Let's Encrypt Warnungen, falls ein Zertifikat abläuft.
@@ -214,6 +259,39 @@ curl -fsS https://buddy.example.org/api/v1/health
 Antwort: `{"ok":true,"serverTime":"…"}`. Wenn nicht: [Fehlersuche](#13-fehlersuche).
 
 Die Dienste starten nach einem Neustart des VPS automatisch wieder (`restart: unless-stopped`).
+
+> **Variante B:** `docker compose ps` zeigt nur `buddy` (healthy), keinen Caddy. Der Test von außen klappt erst
+> nach dem nächsten Abschnitt. Vorab testen Sie lokal:
+> `docker compose exec buddy curl -fsS http://127.0.0.1:8080/api/v1/health`
+
+### Variante B: hinter Nginx Proxy Manager
+
+Ihr Proxy leitet `https://buddy.example.org` an den Container `displaybuddy-buddy-1` (Port 8080) weiter. Das
+Docker-Netz muss dazu dasselbe sein wie das des Proxys (`PROXY_NETWORK`, Schritt 5).
+
+1. Nginx-Proxy-Manager-Oberfläche öffnen → **Hosts → Proxy Hosts → Add Proxy Host**.
+2. Reiter **Details**:
+   - **Domain Names:** `buddy.example.org`
+   - **Scheme:** `http`
+   - **Forward Hostname / IP:** `displaybuddy-buddy-1`
+   - **Forward Port:** `8080`
+   - **Block Common Exploits** an, **Websockets Support** nicht nötig.
+3. Reiter **SSL**: **Request a new SSL Certificate**, **Force SSL** und **HTTP/2 Support** einschalten,
+   Nutzungsbedingungen akzeptieren, **Save**.
+4. Reiter **Advanced** leer lassen. Insbesondere keine eigenen `add_header`-Zeilen für Cache-Control oder
+   Content-Security-Policy eintragen – die setzt buddy-server selbst, sonst gehen PWA-Updates kaputt.
+5. Test von außen:
+
+```sh
+curl -fsS https://buddy.example.org/api/v1/health
+```
+
+Antwort: `{"ok":true,"serverTime":"…"}`.
+
+Anderer Proxy (Traefik, eigener Caddy/nginx)? Das Prinzip ist dasselbe: Proxy und `buddy` im selben Docker-Netz,
+Weiterleitung an `http://displaybuddy-buddy-1:8080`, `X-Forwarded-For` setzen (machen alle gängigen Proxys
+von selbst), HTTPS am Proxy beenden. Optional kann der Proxy `Strict-Transport-Security: max-age=31536000`
+hinzufügen.
 
 ## 8. Benutzer anlegen
 
@@ -351,7 +429,7 @@ Die Web-App auf dem Handy merkt das Update beim nächsten Öffnen und zeigt den 
 „Aktualisieren“ tippen, dann lädt sie neu. Der PC braucht nur dann ein Update, wenn eine neue Display-Buddy-Version
 veröffentlicht wird.
 
-Caddy und die Basis-Images sind mit festen Versionen eingetragen; sie ändern sich nur mit einem `git pull`,
+Caddy (nur Variante A) und die Basis-Images sind mit festen Versionen eingetragen; sie ändern sich nur mit einem `git pull`,
 nie von selbst.
 
 ## 13. Fehlersuche
@@ -361,7 +439,7 @@ Die wichtigsten Befehle (immer im Ordner `~/DisplayBuddy/deploy`):
 ```sh
 docker compose ps
 docker compose logs --tail 100 buddy
-docker compose logs --tail 100 caddy
+docker compose logs --tail 100 caddy   # nur Variante A
 docker compose logs -f
 ```
 
@@ -371,7 +449,7 @@ docker compose logs -f
 
 - DNS prüfen: `getent hosts buddy.example.org` muss die IP des VPS zeigen.
 - Ports prüfen: `sudo ufw status` und die Firewall im Kundenmenü des Anbieters (80 und 443 offen?).
-- In `docker compose logs caddy` nach `obtaining certificate` / `error` suchen. Typische Ursachen: DNS zeigt noch
+- In `docker compose logs caddy` (Variante B: in den Logs bzw. im SSL-Reiter Ihres Proxys) nach `obtaining certificate` / `error` suchen. Typische Ursachen: DNS zeigt noch
   woanders hin, Port 80 ist gesperrt, `BUDDY_DOMAIN` in `.env` hat einen Tippfehler oder `https://` davor.
 - Nach einer Korrektur: `docker compose up -d`.
 
@@ -385,7 +463,10 @@ docker compose logs -f
 | `BUDDY_PUBLIC_URL must …` | `BUDDY_DOMAIN` in `.env` ohne `https://` und ohne `/` am Ende eintragen |
 | `BUDDY_VAPID_SUBJECT must start with mailto: or https://` | in `.env` `mailto:` vor die Adresse setzen |
 | `set BUDDY_DOMAIN in deploy/.env` (beim `docker compose`-Befehl) | `.env` fehlt oder Wert leer – Schritt 5 |
-| `Pool overlaps with other one on this address space` | das Netz 172.30.0.0/24 ist schon belegt: in `.env` z. B. `BUDDY_SUBNET=172.31.250.0/24`, `BUDDY_IP_RANGE=172.31.250.128/25` und `CADDY_IP=172.31.250.10` setzen, dann `docker compose up -d` |
+| `Pool overlaps with other one on this address space` (Variante A) | das Netz 172.30.0.0/24 ist schon belegt: in `.env` z. B. `BUDDY_SUBNET=172.31.250.0/24`, `BUDDY_IP_RANGE=172.31.250.128/25` und `CADDY_IP=172.31.250.10` setzen, dann `docker compose up -d` |
+| `network proxy declared as external, but could not be found` (Variante B) | `PROXY_NETWORK` in `.env` stimmt nicht: Netznamen mit `docker network ls` nachsehen und eintragen |
+| NPM zeigt **502 Bad Gateway** (Variante B) | Proxy-Host muss auf `displaybuddy-buddy-1`, Port `8080`, Scheme `http` zeigen, und der Proxy muss im Netz `PROXY_NETWORK` hängen. Test: `docker exec <Proxy-Container> curl -fsS http://displaybuddy-buddy-1:8080/api/v1/health` |
+| Anmelde-Sperre trifft alle Geräte gleichzeitig (Variante B) | `PROXY_SUBNET` in `.env` stimmt nicht mit dem Subnetz des Proxy-Netzes überein: `docker network inspect <Netz> --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'`, dann `docker compose up -d` |
 
 ### Anmeldung klappt nicht
 
@@ -421,7 +502,7 @@ diese Ziele erlaubt sein:
 
 | Wer | Ziel | Wofür |
 |---|---|---|
-| Caddy | `acme-v02.api.letsencrypt.org` (Ausweichstelle: `acme.zerossl.com`) | HTTPS-Zertifikat holen und alle 60–90 Tage erneuern |
+| Caddy (Variante A) bzw. Ihr Proxy (Variante B) | `acme-v02.api.letsencrypt.org` (Ausweichstelle: `acme.zerossl.com`) | HTTPS-Zertifikat holen und alle 60–90 Tage erneuern |
 | buddy-server | `fcm.googleapis.com` | Web Push an Chrome/Android (und Edge/Brave/Samsung Internet auf Android) |
 | buddy-server | `web.push.apple.com` (Apple nutzt Adressen unter `*.push.apple.com`) | Web Push an iPhone/iPad und Safari auf dem Mac |
 | buddy-server | `updates.push.services.mozilla.com` | Web Push an Firefox |
@@ -454,7 +535,7 @@ Alle im Ordner `~/DisplayBuddy/deploy`:
 ### Optional: native Android-App mit Firebase (Phase N2)
 
 Nur wenn Sie die native Android-App mit Push über Firebase nutzen: Die Dienstkonto-Datei von Firebase in das
-Daten-Volume kopieren und in `compose.yaml` die Zeile `BUDDY_FCM_SERVICE_ACCOUNT_FILE` einkommentieren. Die
+Daten-Volume kopieren und in `compose.yaml` (Variante B: `compose.npm.yaml`) die Zeile `BUDDY_FCM_SERVICE_ACCOUNT_FILE` hinzufügen bzw. einkommentieren. Die
 genaue Anleitung steht in `mobile/README.md`. Diese Datei ist ein Geheimnis – niemals ins Git-Repository legen.
 Nach `docker compose up -d` steht im Log (`docker compose logs buddy`) „native push via FCM HTTP v1 enabled“;
 ist die Datei unlesbar oder kein Dienstkonto-Schlüssel, startet der Server nicht und nennt den Grund.
