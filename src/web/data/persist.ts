@@ -1,8 +1,8 @@
 /**
  * Persistent storage request after login (PLAN_V3_SYNC §9.2; MDN StorageManager.persist(),
  * "Storage quotas and eviction criteria"). Optional everywhere: missing API → false.
- * Chrome Android and Safari iOS ≥ 15.2 support it per browser-compat-data; the
- * browser decides (Chromium heuristics, Safari: installed web apps).
+ * Treated as optional (not verified against browser-compat-data here); the browser
+ * decides whether to grant it.
  */
 export async function requestPersistentStorage(): Promise<boolean> {
   const storage = (globalThis.navigator as { storage?: StorageManager } | undefined)?.storage;
