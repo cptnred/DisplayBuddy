@@ -129,7 +129,15 @@ Siehe `docs/MANUAL_TESTS.md` §21–25 (v2) und die ⚠️-Punkte davor. Insbeso
 - Lottie-CPU-Last, Click-Through (experimentell), DPI/Mehrmonitor, RAM-Ziel < 80 MB (nie gemessen).
 - Autostart-Eintrag (wird nach `enable()` mit Anführungszeichen neu geschrieben).
 
-## 8. Bekannte Einschränkungen / Ideen für v3
+## 8. ToDo-Liste (vom Benutzer bestätigt)
+
+- [ ] **Windows-CI-Build mit GitHub Actions** (`windows-latest`, MSVC-Toolchain, `npm run tauri build`):
+  Installer als Release-Artefakt, optional mit Code-Signing. Ersetzt den MinGW-Cross-Build aus der
+  Linux-Cloud (D-17) und macht die zusätzliche `WebView2Loader.dll` im Installer überflüssig.
+  Idealerweise läuft dort auch `npm test`, `cargo test` und `cargo clippy --all-targets -- -D warnings`
+  bei jedem Push.
+
+## 9. Bekannte Einschränkungen / Ideen für v3
 
 - Monatliche Erinnerung am 29.–31. rutscht dauerhaft auf den Monatsletzten (Modell hat kein `anchorDay`, D-27).
 - Toast-Klick öffnet die Notiz nicht (Plugin bietet unter Windows keine Aktionen); Öffnen über den Buddy.
