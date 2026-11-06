@@ -144,6 +144,10 @@ Umgesetzt nach `docs/PLAN_V3_SYNC.md`, Entscheidungen D-28…D-80:
   Desktop-Crate ohne `cdylib` (MinGW-Export-Limit, D-65). Plattenkontingent der Cloud ist knapp: `target/`-Ordner
   nach Gebrauch löschen. `dl.google.com` und `deb.debian.org` sind in der Cloud gesperrt (Android nur in CI,
   Docker-`apt-get` nur außerhalb).
+- `tauri-plugin-notification` 2.8.0 ist auf Android fehlerhaft (`show` speichert nicht, `sourceJson` nie gesetzt
+  → leere Pending-Liste, keine Wiederherstellung nach Neustart); gepatcht in `mobile/patches/` (D-76 Punkt 5/6).
+  Bei Problemen im Emulator-Job druckt `mobile/e2e/emulator.mjs` App-Zustand, Plan, Alarme und Logcat.
+- Server-Betrieb beim Benutzer: hinter Nginx Proxy Manager (`deploy/compose.npm.yaml`, Variante B).
 - Handtests: `docs/MANUAL_TESTS.md` §26–31.
 
 ## 8. ToDo-Liste (vom Benutzer bestätigt)
