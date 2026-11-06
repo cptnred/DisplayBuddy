@@ -246,7 +246,7 @@ Am Ende steht `Benutzer martin angelegt.`
 ### 9.2 Installieren (Symbol auf dem Startbildschirm)
 
 - **Android (Chrome):** Menü **⋮** → **„App installieren“** (bzw. „Zum Startbildschirm hinzufügen“). Erscheint in
-  der App ein Knopf „Installieren“, geht es auch darüber.
+  der App der Knopf „App installieren“, geht es auch darüber.
 - **iPhone/iPad (Safari):** unten (iPad: oben) auf **Teilen** (Quadrat mit Pfeil) → **„Zum Home-Bildschirm“** →
   „Hinzufügen“.
 
@@ -260,7 +260,7 @@ Danach Display Buddy **über das neue Symbol** öffnen und gegebenenfalls noch e
 
 1. In der App **Einstellungen → Benachrichtigungen** öffnen.
 2. Auf **„Benachrichtigungen aktivieren“** tippen und die Rückfrage des Systems mit **„Erlauben“** bestätigen.
-3. Auf **„Testbenachrichtigung“** tippen. Innerhalb weniger Sekunden muss eine Benachrichtigung erscheinen.
+3. Auf **„Testbenachrichtigung senden“** tippen. Innerhalb weniger Sekunden muss eine Benachrichtigung erscheinen.
 
 Kommt keine: [Fehlersuche → Keine Benachrichtigung](#keine-benachrichtigung-auf-dem-handy).
 
@@ -347,8 +347,8 @@ docker compose up -d --build
 docker image prune -f
 ```
 
-Die Web-App auf dem Handy merkt das Update beim nächsten Öffnen und zeigt **„Neue Version verfügbar“** – darauf
-tippen, dann lädt sie neu. Der PC braucht nur dann ein Update, wenn eine neue Display-Buddy-Version
+Die Web-App auf dem Handy merkt das Update beim nächsten Öffnen und zeigt den Hinweis **„Eine neue Version von Display Buddy ist verfügbar.“** – auf
+„Aktualisieren“ tippen, dann lädt sie neu. Der PC braucht nur dann ein Update, wenn eine neue Display-Buddy-Version
 veröffentlicht wird.
 
 Caddy und die Basis-Images sind mit festen Versionen eingetragen; sie ändern sich nur mit einem `git pull`,
@@ -399,7 +399,7 @@ docker compose logs -f
 - iPhone/iPad: nur in der **installierten** App (Symbol auf dem Home-Bildschirm), iOS 16.4 oder neuer.
 - In den Systemeinstellungen des Handys prüfen, ob Benachrichtigungen für Display Buddy bzw. Chrome erlaubt sind
   (und kein „Nicht stören“/Fokus aktiv ist).
-- „Testbenachrichtigung“ erneut tippen und dabei `docker compose logs -f buddy` beobachten. Fehler beim
+- „Testbenachrichtigung senden“ erneut tippen und dabei `docker compose logs -f buddy` beobachten. Fehler beim
   Versand deuten meist auf gesperrte **ausgehende** Verbindungen hin ([Abschnitt 14](#14-ausgehende-verbindungen-des-servers)).
 - Wurde `vapid.pem` neu erzeugt, auf jedem Handy „Benachrichtigungen aktivieren“ noch einmal tippen.
 
