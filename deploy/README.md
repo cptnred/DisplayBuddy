@@ -456,3 +456,5 @@ Alle im Ordner `~/DisplayBuddy/deploy`:
 Nur wenn Sie die native Android-App mit Push über Firebase nutzen: Die Dienstkonto-Datei von Firebase in das
 Daten-Volume kopieren und in `compose.yaml` die Zeile `BUDDY_FCM_SERVICE_ACCOUNT_FILE` einkommentieren. Die
 genaue Anleitung steht in `mobile/README.md`. Diese Datei ist ein Geheimnis – niemals ins Git-Repository legen.
+Nach `docker compose up -d` steht im Log (`docker compose logs buddy`) „native push via FCM HTTP v1 enabled“;
+ist die Datei unlesbar oder kein Dienstkonto-Schlüssel, startet der Server nicht und nennt den Grund.

@@ -1,9 +1,10 @@
 //! Native push channel of the mobile shell (PLAN_V3_SYNC §7.4, §10.5; D-55: Android/FCM
-//! only, implemented in phase N2 under `server/src/push/native*`).
+//! only). The FCM HTTP v1 implementation is [`crate::push::native_fcm::FcmChannel`]
+//! (enabled by `BUDDY_FCM_SERVICE_ACCOUNT_FILE`), the token endpoints are in
+//! [`crate::push::native_api`].
 //!
-//! Until then [`NoopNativeChannel`] is used: it supports no platform, so nothing is sent
-//! and nothing is written to `push_log` (a token registered later still gets the push
-//! while the occurrence is < 24 h old).
+//! Without configuration [`NoopNativeChannel`] is used: it supports no platform, so nothing
+//! is sent and nothing is written to `push_log`.
 //!
 //! Dedupe rule for `mobile` devices ([`mobile_needs_push`]): the shell plans every reminder
 //! locally after each sync. A push is only sent when the device has **not** planned the
@@ -29,7 +30,7 @@ pub enum NativeOutcome {
     Failed(String),
 }
 
-/// A native push transport (FCM HTTP v1 in phase N2).
+/// A native push transport (FCM HTTP v1: `native_fcm`).
 pub trait NativePushChannel: Send + Sync + 'static {
     /// Whether this channel can deliver to `platform` (configured credentials).
     fn supports(&self, platform: NativePushPlatform) -> bool;
@@ -43,7 +44,7 @@ pub trait NativePushChannel: Send + Sync + 'static {
     ) -> BoxFuture<'a, NativeOutcome>;
 }
 
-/// Placeholder until phase N2: supports nothing.
+/// Used when native push is not configured: supports nothing.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NoopNativeChannel;
 
