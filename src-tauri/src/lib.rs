@@ -15,6 +15,7 @@ pub mod shutdown;
 pub mod skins;
 pub mod state;
 pub mod storage;
+pub mod sync;
 pub mod tray;
 pub mod windows;
 
@@ -89,6 +90,11 @@ fn setup_inner(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // v2 modules (each manages its own state; failures are logged, never fatal)
     if let Err(e) = reminders::init(app) {
         log::error!("reminders init failed: {e}");
+    }
+    // after reminders: the scheduler waits for the sync start-up pull (§8)
+    if let Err(e) = sync::init(app) {
+        log::error!("sync init failed: {e}");
+        sync::release_start_gate();
     }
     if let Err(e) = shortcuts::init(app) {
         log::error!("shortcuts init failed: {e}");
@@ -166,6 +172,10 @@ pub fn run() {
             commands::skins::import_skin,
             commands::skins::delete_skin,
             commands::skins::load_skin,
+            commands::sync::sync_status,
+            commands::sync::sync_connect,
+            commands::sync::sync_disconnect,
+            commands::sync::sync_now,
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| crash::fatal("Die App konnte nicht gestartet werden", &e));

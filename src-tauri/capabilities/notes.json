@@ -28,6 +28,7 @@
     "allow-remove-shortcut",
     "allow-reorder-shortcuts",
     "allow-open-shortcut",
-    "allow-shortcut-icon"
+    "allow-shortcut-icon",
+    "allow-sync-status"
   ]
 }

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "Settings window: read/write settings, autostart",
+  "description": "Settings window: read/write settings, autostart, skins, sync connection",
   "windows": [
     "settings"
   ],
@@ -15,6 +15,10 @@
     "allow-list-skins",
     "allow-import-skin",
     "allow-delete-skin",
-    "allow-load-skin"
+    "allow-load-skin",
+    "allow-sync-status",
+    "allow-sync-connect",
+    "allow-sync-disconnect",
+    "allow-sync-now"
   ]
 }

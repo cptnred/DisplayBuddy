@@ -35,6 +35,11 @@ const COMMANDS: &[&str] = &[
     "import_skin",
     "delete_skin",
     "load_skin",
+    // v3
+    "sync_status",
+    "sync_connect",
+    "sync_disconnect",
+    "sync_now",
 ];
 
 fn main() {
