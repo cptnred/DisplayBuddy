@@ -1,0 +1,41 @@
+{
+  "$comment": "Shared LWW vectors (Rust buddy-core::lww + TypeScript src/lib/sync/lww.ts). winner = which copy a device keeps after merging remote into local.",
+  "notes": [
+    { "name": "remote newer wins", "local": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "pc" }, "remote": { "updatedAt": "2026-11-06T10:00:00.001Z", "updatedBy": "phone" }, "winner": "remote" },
+    { "name": "local newer stays", "local": { "updatedAt": "2026-11-06T10:05:00.000Z", "updatedBy": "pc" }, "remote": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "phone" }, "winner": "local" },
+    { "name": "tie: larger updatedBy wins (remote)", "local": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "a-device" }, "remote": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "b-device" }, "winner": "remote" },
+    { "name": "tie: larger updatedBy wins (local)", "local": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "b-device" }, "remote": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "a-device" }, "winner": "local" },
+    { "name": "identical stamp keeps local (echo)", "local": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "pc" }, "remote": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "pc" }, "winner": "local" },
+    { "name": "compared as instants, not strings (offset form)", "local": { "updatedAt": "2026-11-06T10:30:00.000Z", "updatedBy": "pc" }, "remote": { "updatedAt": "2026-11-06T11:00:00.000+01:00", "updatedBy": "phone" }, "winner": "local" },
+    { "name": "compared as instants: +05:30 later than Z", "local": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "pc" }, "remote": { "updatedAt": "2026-11-06T15:31:00.000+05:30", "updatedBy": "phone" }, "winner": "remote" },
+    { "name": "tombstone newer than edit wins", "local": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "pc" }, "remote": { "updatedAt": "2026-11-06T10:01:00.000Z", "updatedBy": "phone", "deleted": true }, "winner": "remote" },
+    { "name": "later edit beats tombstone (note comes back)", "local": { "updatedAt": "2026-11-06T10:01:00.000Z", "updatedBy": "pc", "deleted": true }, "remote": { "updatedAt": "2026-11-06T10:02:00.000Z", "updatedBy": "phone" }, "winner": "remote" },
+    { "name": "16a late upload of an older offline edit loses", "local": { "updatedAt": "2026-11-06T12:00:00.000Z", "updatedBy": "pc" }, "remote": { "updatedAt": "2026-11-06T09:00:00.000Z", "updatedBy": "phone" }, "winner": "local" },
+    { "name": "16b newer offline edit wins although it arrives later", "local": { "updatedAt": "2026-11-06T09:00:00.000Z", "updatedBy": "pc" }, "remote": { "updatedAt": "2026-11-06T09:30:00.000Z", "updatedBy": "phone" }, "winner": "remote" },
+    { "name": "unparseable remote time sorts oldest", "local": { "updatedAt": "2026-11-06T09:00:00.000Z", "updatedBy": "pc" }, "remote": { "updatedAt": "garbage", "updatedBy": "zzz" }, "winner": "local" }
+  ],
+  "reminders": [
+    { "name": "remote newer wins", "local": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "pc", "state": "scheduled" }, "remote": { "updatedAt": "2026-11-06T10:00:01.000Z", "updatedBy": "phone", "state": "scheduled" }, "winner": "remote" },
+    { "name": "due beats scheduled of the same edit (remote due)", "local": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "pc", "state": "scheduled" }, "remote": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "pc", "state": "due" }, "winner": "remote" },
+    { "name": "due beats scheduled of the same edit (local due)", "local": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "pc", "state": "due" }, "remote": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "pc", "state": "scheduled" }, "winner": "local" },
+    { "name": "state rank before updatedBy", "local": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "zzz", "state": "scheduled" }, "remote": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "aaa", "state": "due" }, "winner": "remote" },
+    { "name": "ack on the phone (newer) beats a due copy from an offline PC", "local": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "pc", "state": "due" }, "remote": { "updatedAt": "2026-11-06T10:05:00.000Z", "updatedBy": "phone", "state": "done" }, "winner": "remote" },
+    { "name": "PC firing offline never resurrects an acknowledged reminder", "local": { "updatedAt": "2026-11-06T10:05:00.000Z", "updatedBy": "phone", "state": "scheduled" }, "remote": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "pc", "state": "due" }, "winner": "local" },
+    { "name": "tombstone newer wins", "local": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "pc", "state": "due" }, "remote": { "updatedAt": "2026-11-06T10:00:30.000Z", "updatedBy": "phone", "deleted": true }, "winner": "remote" },
+    { "name": "re-set after removal wins", "local": { "updatedAt": "2026-11-06T10:00:30.000Z", "updatedBy": "phone", "deleted": true }, "remote": { "updatedAt": "2026-11-06T10:01:00.000Z", "updatedBy": "pc", "state": "scheduled" }, "winner": "remote" },
+    { "name": "identical copy keeps local", "local": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "pc", "state": "due" }, "remote": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "pc", "state": "due" }, "winner": "local" }
+  ],
+  "order": [
+    { "name": "newer order wins", "local": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "pc" }, "remote": { "updatedAt": "2026-11-06T10:00:00.500Z", "updatedBy": "phone" }, "winner": "remote" },
+    { "name": "older order loses", "local": { "updatedAt": "2026-11-06T10:00:00.500Z", "updatedBy": "pc" }, "remote": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "phone" }, "winner": "local" },
+    { "name": "tie by updatedBy", "local": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "phone" }, "remote": { "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "pc" }, "winner": "local" }
+  ],
+  "clamp": [
+    { "name": "past kept verbatim", "ts": "2026-11-06T09:00:00.000Z", "serverNow": "2026-11-06T10:00:00.000Z", "expected": "2026-11-06T09:00:00.000Z" },
+    { "name": "offset form kept verbatim", "ts": "2026-11-06T10:00:00.000+01:00", "serverNow": "2026-11-06T10:00:00.000Z", "expected": "2026-11-06T10:00:00.000+01:00" },
+    { "name": "exactly 2 min ahead kept", "ts": "2026-11-06T10:02:00.000Z", "serverNow": "2026-11-06T10:00:00.000Z", "expected": "2026-11-06T10:02:00.000Z" },
+    { "name": "more than 2 min ahead clamped", "ts": "2026-11-06T10:02:00.001Z", "serverNow": "2026-11-06T10:00:00.000Z", "expected": "2026-11-06T10:00:00.000Z" },
+    { "name": "16c phone 10 min ahead clamped", "ts": "2026-11-06T10:10:00.000Z", "serverNow": "2026-11-06T10:00:00.000Z", "expected": "2026-11-06T10:00:00.000Z" },
+    { "name": "garbage rejected", "ts": "yesterday", "serverNow": "2026-11-06T10:00:00.000Z", "expected": null }
+  ]
+}

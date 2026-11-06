@@ -1,0 +1,48 @@
+{
+  "$comment": "One example per API message (PLAN_V3_SYNC §6). Rust round-trips them (buddy-core::sync); TypeScript type-checks them against src/lib/sync/types.ts.",
+  "syncChanges": {
+    "cursor": 42,
+    "hasMore": false,
+    "notes": [
+      { "id": "0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f", "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "8c7d1e2f-0000-4000-8000-000000000001", "deleted": false,
+        "note": { "id": "0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f", "title": "Einkauf", "color": "yellow", "content": { "type": "doc", "content": [] }, "createdAt": "2026-11-01T08:00:00.000Z", "updatedAt": "2026-11-06T10:00:00.000Z", "schemaVersion": 1 } },
+      { "id": "1b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f", "updatedAt": "2026-11-06T10:01:00.000Z", "updatedBy": "8c7d1e2f-0000-4000-8000-000000000002", "deleted": true, "note": null }
+    ],
+    "reminders": [
+      { "noteId": "0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f", "updatedAt": "2026-11-06T10:00:00.000Z", "updatedBy": "8c7d1e2f-0000-4000-8000-000000000001", "deleted": false,
+        "reminder": { "noteId": "0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f", "at": "2026-11-07T08:00:00.000Z", "repeat": "daily", "state": "scheduled", "firedAt": null, "updatedAt": "2026-11-06T10:00:00.000Z", "timeZone": "Europe/Berlin" } }
+    ],
+    "order": { "updatedAt": "2026-11-06T09:00:00.000Z", "updatedBy": "8c7d1e2f-0000-4000-8000-000000000001", "ids": ["0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f"] },
+    "serverTime": "2026-11-06T10:02:00.000Z"
+  },
+  "pushRequest": {
+    "notes": [],
+    "reminders": [
+      { "noteId": "0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f", "updatedAt": "2026-11-06T10:03:00.000Z", "updatedBy": "8c7d1e2f-0000-4000-8000-000000000003", "deleted": true, "reminder": null }
+    ],
+    "order": null,
+    "deviceState": { "scheduledSeq": 41, "localNotifications": "granted" }
+  },
+  "pushResponse": {
+    "results": [
+      { "kind": "reminder", "id": "0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f", "status": "applied" },
+      { "kind": "note", "id": "1b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f", "status": "stale",
+        "note": { "id": "1b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f", "updatedAt": "2026-11-06T10:01:00.000Z", "updatedBy": "8c7d1e2f-0000-4000-8000-000000000002", "deleted": true, "note": null } },
+      { "kind": "order", "id": "order", "status": "applied", "clampedUpdatedAt": "2026-11-06T10:02:00.000Z" },
+      { "kind": "note", "id": "../x", "status": "invalid", "message": "invalid note id" }
+    ],
+    "cursor": 43,
+    "serverTime": "2026-11-06T10:03:00.100Z"
+  },
+  "deviceLogin": { "username": "martin", "password": "correct horse battery", "deviceName": "Büro-PC", "kind": "desktop" },
+  "deviceLoginResponse": { "deviceId": "8c7d1e2f-0000-4000-8000-000000000001", "token": "opaque-token", "serverTime": "2026-11-06T10:00:00.000Z" },
+  "sessionLogin": { "username": "martin", "password": "correct horse battery", "deviceName": "Handy (Chrome)", "deviceId": null },
+  "sessionResponse": { "deviceId": "8c7d1e2f-0000-4000-8000-000000000003", "serverTime": "2026-11-06T10:00:00.000Z" },
+  "me": { "username": "martin", "timeZone": "Europe/Berlin", "deviceId": "8c7d1e2f-0000-4000-8000-000000000003", "serverTime": "2026-11-06T10:00:00.000Z" },
+  "meUpdate": { "timeZone": "Europe/Berlin" },
+  "pushSubscription": { "endpoint": "https://push.example.invalid/abc", "keys": { "p256dh": "BOr0Example", "auth": "authExample" } },
+  "nativePushToken": { "platform": "fcm", "token": "fcm-token" },
+  "vapidPublicKey": { "key": "BExampleKey" },
+  "reminderPushPayload": { "v": 1, "type": "reminder", "noteId": "0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f", "at": "2026-11-07T08:00:00.000Z", "timeZone": "Europe/Berlin", "title": "Erinnerung: Einkauf", "body": "Milch, Brot", "url": "/notes/0b9a7a3e-4f5d-4c1e-9d8a-2a6b1c3d4e5f" },
+  "apiError": { "error": "full_resync_required", "message": "cursor too old" }
+}

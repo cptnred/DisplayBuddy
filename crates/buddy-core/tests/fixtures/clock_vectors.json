@@ -1,0 +1,22 @@
+{
+  "$comment": "Shared clock-offset vectors (buddy-core::clock + src/lib/clock.ts). All values Unix ms.",
+  "samples": [
+    { "name": "server ahead by 10 s, rtt 200", "serverTimeMs": 1000010100, "sentMs": 1000000000, "receivedMs": 1000000200, "expected": 10000 },
+    { "name": "server behind by 1 s", "serverTimeMs": 999999050, "sentMs": 1000000000, "receivedMs": 1000000100, "expected": -1000 },
+    { "name": "odd rtt truncates", "serverTimeMs": 1000000000, "sentMs": 1000000000, "receivedMs": 1000000001, "expected": 0 },
+    { "name": "rtt 4999 accepted", "serverTimeMs": 1000002499, "sentMs": 1000000000, "receivedMs": 1000004999, "expected": 0 },
+    { "name": "rtt 5000 rejected", "serverTimeMs": 1000002500, "sentMs": 1000000000, "receivedMs": 1000005000, "expected": null },
+    { "name": "negative rtt rejected", "serverTimeMs": 1000000000, "sentMs": 1000000000, "receivedMs": 999999999, "expected": null },
+    { "name": "phone 10 min ahead", "serverTimeMs": 1000000000, "sentMs": 1000600000, "receivedMs": 1000600100, "expected": -600050 }
+  ],
+  "median": [
+    { "name": "no samples", "pushes": [], "expectedOffsetMs": 0, "expectedKept": [], "warning": false },
+    { "name": "single", "pushes": [150], "expectedOffsetMs": 150, "expectedKept": [150], "warning": false },
+    { "name": "even count mean of middle", "pushes": [100, 300], "expectedOffsetMs": 200, "expectedKept": [100, 300], "warning": false },
+    { "name": "even count negative truncates toward zero", "pushes": [-101, -100], "expectedOffsetMs": -100, "expectedKept": [-101, -100], "warning": false },
+    { "name": "outlier ignored", "pushes": [10, 12, 5000, 11, 9], "expectedOffsetMs": 11, "expectedKept": [10, 12, 5000, 11, 9], "warning": false },
+    { "name": "only last five kept", "pushes": [900000, 900000, 900000, 1, 2, 3, 4, 5], "expectedOffsetMs": 3, "expectedKept": [1, 2, 3, 4, 5], "warning": false },
+    { "name": "warning above 2 min", "pushes": [-600050, -600000, -599990], "expectedOffsetMs": -600000, "expectedKept": [-600050, -600000, -599990], "warning": true },
+    { "name": "exactly 2 min no warning", "pushes": [120000], "expectedOffsetMs": 120000, "expectedKept": [120000], "warning": false }
+  ]
+}

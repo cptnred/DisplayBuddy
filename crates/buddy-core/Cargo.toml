@@ -1,0 +1,18 @@
+[package]
+name = "buddy-core"
+version = "0.3.0"
+description = "Display Buddy shared logic: models, reminder math (time-zone aware), LWW, clock"
+edition = "2024"
+publish = false
+
+# No workspace on purpose (D-35): src-tauri, server and mobile/src-tauri use this crate via a path dependency.
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = "1"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std", "serde"] }
+chrono-tz = "0.10.4"
+log = "0.4"
+
+[dev-dependencies]

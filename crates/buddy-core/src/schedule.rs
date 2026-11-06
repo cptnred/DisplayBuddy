@@ -1,16 +1,23 @@
 //! Pure reminder logic: repeat math and state transitions on `Vec<Reminder>`.
 //!
-//! Everything here is generic over [`chrono::TimeZone`] so it can be tested with
-//! `FixedOffset` and a hand-made DST zone instead of the machine's `Local` zone.
+//! v3 (PLAN_V3_SYNC §5.5): every reminder has its own IANA zone (`timeZone`).
+//! Wall time and repetition are computed in that zone, never in the device zone;
+//! "now", `at`, `firedAt` and `updatedAt` are UTC instants. Only the acting device
+//! computes a new `at` (set/ack/snooze); everybody else takes the instant as is.
+//!
+//! [`next_occurrence`] is generic over [`chrono::TimeZone`] so it can be tested with
+//! a hand-made DST zone as well as with `chrono_tz::Tz`.
 
 use std::fmt::Display;
 
 use chrono::{
-    DateTime, Datelike, Duration, FixedOffset, LocalResult, NaiveDate, NaiveDateTime,
-    SecondsFormat, TimeZone, Timelike, Weekday,
+    DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, SecondsFormat, TimeZone, Utc, Weekday,
 };
+use chrono_tz::Tz;
 
 use crate::model::{Reminder, ReminderRepeat, ReminderState, is_valid_note_id};
+pub use crate::zoned::{format_utc, parse_instant as parse_time, resolve_local};
+use crate::zoned::{parse_zone, wall_to_instant};
 
 pub const SNOOZE_MIN: u32 = 1;
 pub const SNOOZE_MAX: u32 = 1440;
@@ -18,38 +25,21 @@ pub const SNOOZE_MAX: u32 = 1440;
 /// Safety bound for the candidate loops (never reached for sane input).
 const MAX_STEPS: u32 = 1000;
 
-/// RFC 3339 with offset and whole seconds, e.g. `2026-11-05T14:30:00+01:00`.
-pub fn format_time<Tz: TimeZone>(t: &DateTime<Tz>) -> String
+/// RFC 3339 with offset and whole seconds, e.g. `2026-11-05T14:30:00+01:00`
+/// (display/tests; stored instants use [`format_utc`]).
+pub fn format_time<Z: TimeZone>(t: &DateTime<Z>) -> String
 where
-    Tz::Offset: Display,
+    Z::Offset: Display,
 {
     t.to_rfc3339_opts(SecondsFormat::Secs, false)
 }
 
-pub fn parse_time(s: &str) -> Option<DateTime<FixedOffset>> {
-    DateTime::parse_from_rfc3339(s.trim()).ok()
-}
-
-/// Turns a local wall-clock time into an instant:
-/// ambiguous (DST fold) → the earlier instant; nonexistent (DST gap) → the first
-/// valid local minute after it (e.g. 02:30 in a 02:00→03:00 gap becomes 03:00).
-pub fn resolve_local<Tz: TimeZone>(tz: &Tz, local: NaiveDateTime) -> Option<DateTime<Tz>> {
-    let mut candidate = local;
-    for _ in 0..=24 * 60 {
-        match tz.from_local_datetime(&candidate) {
-            LocalResult::Single(t) => return Some(t),
-            LocalResult::Ambiguous(a, b) => return Some(if a <= b { a } else { b }),
-            LocalResult::None => {
-                // Step to the next whole minute.
-                let next = candidate + Duration::minutes(1);
-                candidate = next
-                    .with_second(0)
-                    .and_then(|t| t.with_nanosecond(0))
-                    .unwrap_or(next);
-            }
-        }
-    }
-    None
+/// The zone of a reminder, or `default` if it has none / an unknown one.
+pub fn reminder_zone(r: &Reminder, default: Tz) -> Tz {
+    r.time_zone
+        .as_deref()
+        .and_then(parse_zone)
+        .unwrap_or(default)
 }
 
 fn days_in_month(year: i32, month: u32) -> u32 {
@@ -81,11 +71,11 @@ fn is_weekday(d: NaiveDate) -> bool {
 /// wall-clock time: daily (+1 day), weekdays (next Mon–Fri), weekly (+7 days),
 /// monthly (same day of month, clamped to the month's end). `None` for
 /// [`ReminderRepeat::None`].
-pub fn next_occurrence<Tz: TimeZone>(
-    at: &DateTime<Tz>,
+pub fn next_occurrence<Z: TimeZone>(
+    at: &DateTime<Z>,
     repeat: ReminderRepeat,
-    now: &DateTime<Tz>,
-) -> Option<DateTime<Tz>> {
+    now: &DateTime<Z>,
+) -> Option<DateTime<Z>> {
     if repeat == ReminderRepeat::None {
         return None;
     }
@@ -135,11 +125,23 @@ pub fn next_occurrence<Tz: TimeZone>(
     }
 }
 
+/// [`next_occurrence`] for UTC instants, computed in the reminder zone `tz`.
+pub fn next_occurrence_in(
+    tz: Tz,
+    at: &DateTime<Utc>,
+    repeat: ReminderRepeat,
+    now: &DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
+    next_occurrence(&at.with_timezone(&tz), repeat, &now.with_timezone(&tz))
+        .map(|t| t.with_timezone(&Utc))
+}
+
 /// Drops reminders with an invalid note id or an unparseable time and duplicates
-/// (first one per note wins).
-pub fn sanitize(list: Vec<Reminder>) -> Vec<Reminder> {
+/// (first one per note wins). A missing or unknown `timeZone` is replaced by
+/// `default_zone` (the device zone; server: the account zone).
+pub fn sanitize(list: Vec<Reminder>, default_zone: Tz) -> Vec<Reminder> {
     let mut out: Vec<Reminder> = Vec::with_capacity(list.len());
-    for r in list {
+    for mut r in list {
         if !is_valid_note_id(&r.note_id) || parse_time(&r.at).is_none() {
             log::warn!("dropping invalid reminder for note {:?}", r.note_id);
             continue;
@@ -147,13 +149,16 @@ pub fn sanitize(list: Vec<Reminder>) -> Vec<Reminder> {
         if out.iter().any(|o| o.note_id == r.note_id) {
             continue;
         }
+        if r.time_zone.as_deref().and_then(parse_zone).is_none() {
+            r.time_zone = Some(default_zone.name().to_string());
+        }
         out.push(r);
     }
     out
 }
 
-/// Indices of scheduled reminders whose time is ≤ `now`.
-pub fn due_now<Tz: TimeZone>(list: &[Reminder], now: &DateTime<Tz>) -> Vec<usize> {
+/// Indices of scheduled reminders whose time is ≤ `now`. Zone independent.
+pub fn due_now(list: &[Reminder], now: &DateTime<Utc>) -> Vec<usize> {
     list.iter()
         .enumerate()
         .filter(|(_, r)| {
@@ -164,19 +169,17 @@ pub fn due_now<Tz: TimeZone>(list: &[Reminder], now: &DateTime<Tz>) -> Vec<usize
 }
 
 /// Earliest `at` of all scheduled reminders.
-pub fn earliest_scheduled(list: &[Reminder]) -> Option<DateTime<FixedOffset>> {
+pub fn earliest_scheduled(list: &[Reminder]) -> Option<DateTime<Utc>> {
     list.iter()
         .filter(|r| r.state == ReminderState::Scheduled)
         .filter_map(|r| parse_time(&r.at))
         .min()
 }
 
-/// Marks the given reminders as due (fired at `now`).
-pub fn fire<Tz: TimeZone>(list: &mut [Reminder], indices: &[usize], now: &DateTime<Tz>)
-where
-    Tz::Offset: Display,
-{
-    let fired_at = format_time(now);
+/// Marks the given reminders as due (fired at `now`). Does **not** touch
+/// `updatedAt`: firing is not an edit (D-30).
+pub fn fire(list: &mut [Reminder], indices: &[usize], now: &DateTime<Utc>) {
+    let fired_at = format_utc(now);
     for &i in indices {
         if let Some(r) = list.get_mut(i) {
             r.state = ReminderState::Due;
@@ -186,16 +189,16 @@ where
 }
 
 /// Creates/replaces (`Some(at)`) or removes (`None`) the reminder of a note.
-/// A new time always means state `scheduled`; `firedAt` is kept.
-pub fn set<Tz: TimeZone>(
+/// A new time always means state `scheduled`; `firedAt` is kept. `time_zone`
+/// is the reminder's IANA zone; `now` (corrected device time) becomes `updatedAt`.
+pub fn set(
     list: &mut Vec<Reminder>,
     note_id: &str,
-    at: Option<&DateTime<Tz>>,
+    at: Option<&DateTime<Utc>>,
     repeat: ReminderRepeat,
-) -> Option<Reminder>
-where
-    Tz::Offset: Display,
-{
+    time_zone: Tz,
+    now: &DateTime<Utc>,
+) -> Option<Reminder> {
     let pos = list.iter().position(|r| r.note_id == note_id);
     let Some(at) = at else {
         if let Some(pos) = pos {
@@ -203,13 +206,17 @@ where
         }
         return None;
     };
-    let at = format_time(at);
+    let at = format_utc(at);
+    let zone = Some(time_zone.name().to_string());
+    let updated = Some(format_utc(now));
     let reminder = match pos {
         Some(pos) => {
             let r = &mut list[pos];
             r.at = at;
             r.repeat = repeat;
             r.state = ReminderState::Scheduled;
+            r.time_zone = zone;
+            r.updated_at = updated;
             r.clone()
         }
         None => {
@@ -219,6 +226,8 @@ where
                 repeat,
                 state: ReminderState::Scheduled,
                 fired_at: None,
+                updated_at: updated,
+                time_zone: zone,
             };
             list.push(r.clone());
             r
@@ -227,47 +236,60 @@ where
     Some(reminder)
 }
 
+/// [`set`] from a wall-clock time in the reminder zone (gap → next valid minute,
+/// fold → earlier instant).
+pub fn set_wall(
+    list: &mut Vec<Reminder>,
+    note_id: &str,
+    wall: NaiveDateTime,
+    repeat: ReminderRepeat,
+    time_zone: Tz,
+    now: &DateTime<Utc>,
+) -> Result<Reminder, String> {
+    let at = wall_to_instant(&time_zone, wall)
+        .ok_or_else(|| format!("no valid time near {wall} in {}", time_zone.name()))?;
+    set(list, note_id, Some(&at), repeat, time_zone, now)
+        .ok_or_else(|| "reminder not set".to_string())
+}
+
 /// Acknowledges a reminder: one-off → `done`; repeating → next occurrence
-/// strictly after `max(now, at)` in `now`'s zone, `scheduled`.
+/// strictly after `max(now, at)`, computed in the reminder's zone (fallback
+/// `default_zone`), `scheduled`. Sets `updatedAt = now`.
 /// `Ok(None)` if the note has no reminder.
-pub fn ack<Tz: TimeZone>(
+pub fn ack(
     list: &mut [Reminder],
     note_id: &str,
-    now: &DateTime<Tz>,
-) -> Result<Option<Reminder>, String>
-where
-    Tz::Offset: Display,
-{
+    now: &DateTime<Utc>,
+    default_zone: Tz,
+) -> Result<Option<Reminder>, String> {
     let Some(r) = list.iter_mut().find(|r| r.note_id == note_id) else {
         return Ok(None);
     };
+    let tz = reminder_zone(r, default_zone);
     if r.repeat == ReminderRepeat::None {
         r.state = ReminderState::Done;
-        return Ok(Some(r.clone()));
+    } else {
+        let at = parse_time(&r.at).ok_or_else(|| format!("invalid reminder time: {}", r.at))?;
+        // Acknowledging ahead of time skips the upcoming occurrence.
+        let after = if at > *now { at } else { *now };
+        let next = next_occurrence_in(tz, &at, r.repeat, &after)
+            .ok_or_else(|| "could not compute the next occurrence".to_string())?;
+        r.at = format_utc(&next);
+        r.state = ReminderState::Scheduled;
     }
-    let tz = now.timezone();
-    let at = parse_time(&r.at)
-        .ok_or_else(|| format!("invalid reminder time: {}", r.at))?
-        .with_timezone(&tz);
-    // Acknowledging ahead of time skips the upcoming occurrence.
-    let after = if at > *now { at.clone() } else { now.clone() };
-    let next = next_occurrence(&at, r.repeat, &after)
-        .ok_or_else(|| "could not compute the next occurrence".to_string())?;
-    r.at = format_time(&next);
-    r.state = ReminderState::Scheduled;
+    r.time_zone = Some(tz.name().to_string());
+    r.updated_at = Some(format_utc(now));
     Ok(Some(r.clone()))
 }
 
-/// Postpones a reminder to `now + minutes` (1..=1440), state `scheduled`.
-pub fn snooze<Tz: TimeZone>(
+/// Postpones a reminder to `now + minutes` (1..=1440), state `scheduled`,
+/// `updatedAt = now`. Zone independent (absolute offset).
+pub fn snooze(
     list: &mut [Reminder],
     note_id: &str,
     minutes: u32,
-    now: &DateTime<Tz>,
-) -> Result<Reminder, String>
-where
-    Tz::Offset: Display,
-{
+    now: &DateTime<Utc>,
+) -> Result<Reminder, String> {
     if !(SNOOZE_MIN..=SNOOZE_MAX).contains(&minutes) {
         return Err(format!(
             "minutes must be between {SNOOZE_MIN} and {SNOOZE_MAX}, got {minutes}"
@@ -277,12 +299,14 @@ where
         .iter_mut()
         .find(|r| r.note_id == note_id)
         .ok_or_else(|| format!("no reminder for note {note_id}"))?;
-    r.at = format_time(&(now.clone() + Duration::minutes(i64::from(minutes))));
+    r.at = format_utc(&(*now + Duration::minutes(i64::from(minutes))));
     r.state = ReminderState::Scheduled;
+    r.updated_at = Some(format_utc(now));
     Ok(r.clone())
 }
 
-/// Removes a note's reminder; returns whether one existed.
+/// Removes a note's reminder; returns whether one existed. (The sync layer turns
+/// a removal into a tombstone record stamped by the acting device.)
 pub fn remove(list: &mut Vec<Reminder>, note_id: &str) -> bool {
     let before = list.len();
     list.retain(|r| r.note_id != note_id);
@@ -292,7 +316,7 @@ pub fn remove(list: &mut Vec<Reminder>, note_id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{MappedLocalTime, NaiveTime, Offset};
+    use chrono::{FixedOffset, MappedLocalTime, NaiveTime, Offset};
 
     const ID: &str = "123e4567-e89b-42d3-a456-426614174000";
     const ID2: &str = "123e4567-e89b-42d3-a456-426614174001";
@@ -385,6 +409,8 @@ mod tests {
             repeat,
             state,
             fired_at: None,
+            updated_at: None,
+            time_zone: Some("Europe/Berlin".into()),
         }
     }
 
@@ -604,15 +630,41 @@ mod tests {
 
     // ------------------------------------------------------------ transitions
 
+    fn berlin() -> Tz {
+        "Europe/Berlin".parse().unwrap()
+    }
+    fn new_york() -> Tz {
+        "America/New_York".parse().unwrap()
+    }
+    fn u(s: &str) -> DateTime<Utc> {
+        parse_time(s).unwrap()
+    }
+
     #[test]
-    fn sanitize_drops_invalid_and_duplicates() {
+    fn sanitize_drops_invalid_and_duplicates_and_fills_zone() {
+        let mut no_zone = reminder(
+            ID,
+            "2026-11-05T09:00:00+01:00",
+            ReminderRepeat::None,
+            ReminderState::Scheduled,
+        );
+        no_zone.time_zone = None;
+        let mut bad_zone = reminder(
+            "123e4567-e89b-42d3-a456-426614174002",
+            "2026-11-05T09:00:00+01:00",
+            ReminderRepeat::None,
+            ReminderState::Scheduled,
+        );
+        bad_zone.time_zone = Some("Mars/Olympus".into());
+        let mut tokyo = reminder(
+            "123e4567-e89b-42d3-a456-426614174003",
+            "2026-11-05T09:00:00Z",
+            ReminderRepeat::None,
+            ReminderState::Scheduled,
+        );
+        tokyo.time_zone = Some("Asia/Tokyo".into());
         let list = vec![
-            reminder(
-                ID,
-                "2026-11-05T09:00:00+01:00",
-                ReminderRepeat::None,
-                ReminderState::Scheduled,
-            ),
+            no_zone,
             reminder(
                 "../evil",
                 "2026-11-05T09:00:00+01:00",
@@ -631,10 +683,18 @@ mod tests {
                 ReminderRepeat::None,
                 ReminderState::Scheduled,
             ),
+            bad_zone,
+            tokyo,
         ];
-        let out = sanitize(list);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].at, "2026-11-05T09:00:00+01:00");
+        let out = sanitize(list, new_york());
+        assert_eq!(out.len(), 3);
+        assert_eq!(
+            out[0].at, "2026-11-05T09:00:00+01:00",
+            "at is kept verbatim"
+        );
+        assert_eq!(out[0].time_zone.as_deref(), Some("America/New_York"));
+        assert_eq!(out[1].time_zone.as_deref(), Some("America/New_York"));
+        assert_eq!(out[2].time_zone.as_deref(), Some("Asia/Tokyo"));
     }
 
     #[test]
@@ -659,34 +719,34 @@ mod tests {
                 ReminderState::Due,
             ),
         ];
-        // other offset, same instant as 10:00+01:00
-        let now = t("2026-11-05T09:00:00+00:00");
-        assert_eq!(due_now(&list, &now), vec![0]);
-        assert_eq!(due_now(&list, &t("2026-11-05T09:00:00+01:00")), vec![0]);
-        assert!(due_now(&list, &t("2026-11-05T08:59:59+01:00")).is_empty());
-        assert_eq!(
-            earliest_scheduled(&list),
-            Some(t("2026-11-05T09:00:00+01:00"))
-        );
+        assert_eq!(due_now(&list, &u("2026-11-05T09:00:00Z")), vec![0]);
+        assert_eq!(due_now(&list, &u("2026-11-05T08:00:00Z")), vec![0]);
+        assert!(due_now(&list, &u("2026-11-05T07:59:59Z")).is_empty());
+        assert_eq!(earliest_scheduled(&list), Some(u("2026-11-05T08:00:00Z")));
     }
 
     #[test]
-    fn fire_marks_due_with_fired_at() {
+    fn fire_marks_due_without_touching_updated_at() {
         let mut list = vec![reminder(
             ID,
             "2026-11-05T09:00:00+01:00",
             ReminderRepeat::Daily,
             ReminderState::Scheduled,
         )];
-        let now = t("2026-11-05T09:00:05+01:00");
+        list[0].updated_at = Some("2026-11-01T10:00:00.000Z".into());
+        let now = u("2026-11-05T08:00:05Z");
         let due = due_now(&list, &now);
         fire(&mut list, &due, &now);
         assert_eq!(list[0].state, ReminderState::Due);
         assert_eq!(
             list[0].fired_at.as_deref(),
-            Some("2026-11-05T09:00:05+01:00")
+            Some("2026-11-05T08:00:05.000Z")
         );
         assert_eq!(list[0].at, "2026-11-05T09:00:00+01:00");
+        assert_eq!(
+            list[0].updated_at.as_deref(),
+            Some("2026-11-01T10:00:00.000Z")
+        );
         assert!(due_now(&list, &now).is_empty(), "fires only once");
         assert_eq!(earliest_scheduled(&list), None);
     }
@@ -694,31 +754,63 @@ mod tests {
     #[test]
     fn set_creates_replaces_and_removes() {
         let mut list = Vec::new();
-        let at = t("2026-11-05T09:00:00+01:00");
-        let r = set(&mut list, ID, Some(&at), ReminderRepeat::Weekly).unwrap();
+        let now = u("2026-11-04T12:00:00.123Z");
+        let at = u("2026-11-05T09:00:00+01:00");
+        let r = set(
+            &mut list,
+            ID,
+            Some(&at),
+            ReminderRepeat::Weekly,
+            berlin(),
+            &now,
+        )
+        .unwrap();
         assert_eq!(r.state, ReminderState::Scheduled);
-        assert_eq!(r.at, "2026-11-05T09:00:00+01:00");
+        assert_eq!(r.at, "2026-11-05T08:00:00.000Z");
+        assert_eq!(r.time_zone.as_deref(), Some("Europe/Berlin"));
+        assert_eq!(r.updated_at.as_deref(), Some("2026-11-04T12:00:00.123Z"));
         assert_eq!(list.len(), 1);
 
         list[0].state = ReminderState::Due;
         list[0].fired_at = Some("x".into());
-        let at2 = t("2026-11-06T10:15:30.250+01:00");
-        let r = set(&mut list, ID, Some(&at2), ReminderRepeat::None).unwrap();
+        let at2 = u("2026-11-06T10:15:30.250+01:00");
+        let r = set(
+            &mut list,
+            ID,
+            Some(&at2),
+            ReminderRepeat::None,
+            new_york(),
+            &now,
+        )
+        .unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(r.state, ReminderState::Scheduled);
         assert_eq!(r.repeat, ReminderRepeat::None);
-        assert_eq!(r.at, "2026-11-06T10:15:30+01:00");
+        assert_eq!(r.at, "2026-11-06T09:15:30.250Z");
+        assert_eq!(r.fired_at.as_deref(), Some("x"));
+        assert_eq!(r.time_zone.as_deref(), Some("America/New_York"));
 
         assert_eq!(
-            set::<FixedOffset>(&mut list, ID, None, ReminderRepeat::None),
+            set(&mut list, ID, None, ReminderRepeat::None, berlin(), &now),
             None
         );
         assert!(list.is_empty());
         // removing a missing one is fine
         assert_eq!(
-            set::<FixedOffset>(&mut list, ID, None, ReminderRepeat::None),
+            set(&mut list, ID, None, ReminderRepeat::None, berlin(), &now),
             None
         );
+    }
+
+    #[test]
+    fn set_wall_uses_the_reminder_zone() {
+        let mut list = Vec::new();
+        let now = u("2026-11-04T12:00:00Z");
+        let wall = crate::zoned::parse_wall("2026-11-05T09:00").unwrap();
+        let r = set_wall(&mut list, ID, wall, ReminderRepeat::Daily, berlin(), &now).unwrap();
+        assert_eq!(r.at, "2026-11-05T08:00:00.000Z");
+        let r = set_wall(&mut list, ID, wall, ReminderRepeat::Daily, new_york(), &now).unwrap();
+        assert_eq!(r.at, "2026-11-05T14:00:00.000Z");
     }
 
     #[test]
@@ -729,28 +821,61 @@ mod tests {
             ReminderRepeat::None,
             ReminderState::Due,
         )];
-        let now = t("2026-11-05T09:05:00+01:00");
-        let r = ack(&mut list, ID, &now).unwrap().unwrap();
+        let now = u("2026-11-05T08:05:00Z");
+        let r = ack(&mut list, ID, &now, berlin()).unwrap().unwrap();
         assert_eq!(r.state, ReminderState::Done);
+        assert_eq!(r.updated_at.as_deref(), Some("2026-11-05T08:05:00.000Z"));
         assert_eq!(list[0].state, ReminderState::Done);
-        assert_eq!(ack(&mut list, ID2, &now), Ok(None));
+        assert_eq!(ack(&mut list, ID2, &now, berlin()), Ok(None));
     }
 
     #[test]
-    fn ack_repeating_schedules_next() {
+    fn ack_repeating_schedules_next_in_reminder_zone() {
         let mut list = vec![reminder(
             ID,
             "2026-11-06T09:00:00+01:00",
             ReminderRepeat::Weekdays,
             ReminderState::Due,
         )];
-        let now = t("2026-11-06T09:05:00+01:00");
-        let r = ack(&mut list, ID, &now).unwrap().unwrap();
+        let now = u("2026-11-06T08:05:00Z");
+        // the default zone is ignored: the reminder has its own (Berlin)
+        let r = ack(&mut list, ID, &now, new_york()).unwrap().unwrap();
         assert_eq!(r.state, ReminderState::Scheduled);
-        assert_eq!(r.at, "2026-11-09T09:00:00+01:00");
+        assert_eq!(r.at, "2026-11-09T08:00:00.000Z"); // Mon 09:00 Berlin
         // acknowledging early skips the upcoming occurrence
-        let r = ack(&mut list, ID, &now).unwrap().unwrap();
-        assert_eq!(r.at, "2026-11-10T09:00:00+01:00");
+        let r = ack(&mut list, ID, &now, new_york()).unwrap().unwrap();
+        assert_eq!(r.at, "2026-11-10T08:00:00.000Z");
+    }
+
+    #[test]
+    fn ack_daily_keeps_berlin_wall_time_across_eu_switch_while_us_does_not() {
+        // 09:00 Berlin daily, acknowledged from a device in New York during the
+        // week where the EU already switched back (Oct 25) but the US has not (Nov 1).
+        let mut list = vec![reminder(
+            ID,
+            "2026-10-24T07:00:00Z", // Sat 09:00 CEST
+            ReminderRepeat::Daily,
+            ReminderState::Due,
+        )];
+        let now = u("2026-10-24T07:10:00Z");
+        let r = ack(&mut list, ID, &now, new_york()).unwrap().unwrap();
+        assert_eq!(r.at, "2026-10-25T08:00:00.000Z"); // Sun 09:00 CET
+    }
+
+    #[test]
+    fn ack_without_zone_uses_default_and_records_it() {
+        let mut list = vec![reminder(
+            ID,
+            "2026-11-06T14:00:00Z",
+            ReminderRepeat::Daily,
+            ReminderState::Due,
+        )];
+        list[0].time_zone = None;
+        let r = ack(&mut list, ID, &u("2026-11-06T14:01:00Z"), new_york())
+            .unwrap()
+            .unwrap();
+        assert_eq!(r.at, "2026-11-07T14:00:00.000Z");
+        assert_eq!(r.time_zone.as_deref(), Some("America/New_York"));
     }
 
     #[test]
@@ -761,16 +886,17 @@ mod tests {
             ReminderRepeat::Daily,
             ReminderState::Due,
         )];
-        let now = t("2026-11-05T09:05:00+01:00");
+        let now = u("2026-11-05T08:05:00Z");
         assert!(snooze(&mut list, ID, 0, &now).is_err());
         assert!(snooze(&mut list, ID, 1441, &now).is_err());
         assert!(snooze(&mut list, ID2, 10, &now).is_err());
         let r = snooze(&mut list, ID, 10, &now).unwrap();
-        assert_eq!(r.at, "2026-11-05T09:15:00+01:00");
+        assert_eq!(r.at, "2026-11-05T08:15:00.000Z");
         assert_eq!(r.state, ReminderState::Scheduled);
         assert_eq!(r.repeat, ReminderRepeat::Daily);
+        assert_eq!(r.updated_at.as_deref(), Some("2026-11-05T08:05:00.000Z"));
         let r = snooze(&mut list, ID, 1440, &now).unwrap();
-        assert_eq!(r.at, "2026-11-06T09:05:00+01:00");
+        assert_eq!(r.at, "2026-11-06T08:05:00.000Z");
     }
 
     #[test]
