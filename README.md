@@ -23,6 +23,16 @@ Plattform: **Windows 10/11 (x64)**, gebaut mit Tauri 2, React 18, TypeScript und
 - Endloses Karussell mit Seitenkarten. Navigation über Pfeil-Buttons, Mausrad über den Seitenkarten, Klick auf eine Seitenkarte oder die Tastatur.
 - Automatisches Speichern 500 ms nach der letzten Änderung, beim Ausblenden und beim Beenden
 
+**Neu in v2**
+- **Skins:** Smiley, Katze, Roboter, Geist, dazu eigene Bilder (PNG/SVG/GIF/WebP) und Lottie-Animationen (`.json`, z. B. von LottieFiles) importieren. Auswahl in den Einstellungen.
+- **Erinnerungen an Notizen:** Glocke in der Notiz → Datum, Uhrzeit, Wiederholung (einmalig, täglich, werktags, wöchentlich, monatlich). Bei Fälligkeit wackelt der Buddy und zeigt ein Glocken-Badge, dazu kommen eine Windows-Benachrichtigung und ein Ton (beides abschaltbar). Klick auf den Buddy öffnet die Notiz mit „Erledigt“ / „10 Min. später“ / „1 Std. später“. Verpasste Erinnerungen kommen beim nächsten Start.
+- **Suche** über alle Notizen mit `Strg+F` oder der Lupe. Groß-/Kleinschreibung und Umlaute werden ignoriert.
+- **Shortcut-Leiste** unter den Notizen mit zwei Reitern:
+  - „Programme & Ordner“: Dateien, Programme und Ordner aus dem Explorer hineinziehen oder mit „+“ auswählen.
+  - „Lesezeichen“: Web-Links, die im Standardbrowser öffnen.
+  - Umbenennen, Verschieben und Entfernen per Rechtsklick; die Leiste ist einklappbar.
+- **Abmelden/Herunterfahren:** Ausstehende Eingaben werden noch gespeichert („Notizen werden gespeichert …“).
+
 **System**
 - Tray-Symbol: Notizen öffnen, Neue Notiz, Buddy ein-/ausblenden, Einstellungen, Mit Windows starten, Beenden
 - Ein zweiter Start öffnet nur die Notizen der laufenden Instanz
@@ -35,6 +45,7 @@ Plattform: **Windows 10/11 (x64)**, gebaut mit Tauri 2, React 18, TypeScript und
 | `Strg+←` / `Strg+→` | Vorherige / nächste Notiz (auch im Editor) |
 | `Strg+Shift+←` / `Strg+Shift+→` | Aktive Notiz in der Reihenfolge verschieben |
 | `Strg+N` | Neue Notiz |
+| `Strg+F` | Notizen durchsuchen |
 | `Esc` | Notizfenster ausblenden |
 | `Strg+B` / `Strg+I` / `Strg+U` | Fett / Kursiv / Unterstrichen |
 | `Strg+Shift+7` / `8` / `9` | Nummerierung / Aufzählung / Checkliste |
@@ -54,7 +65,11 @@ Plattform: **Windows 10/11 (x64)**, gebaut mit Tauri 2, React 18, TypeScript und
 | Einstellungen | `%APPDATA%\de.displaybuddy.desktop\settings.json` |
 | Notiz-Reihenfolge | `%APPDATA%\de.displaybuddy.desktop\notes\index.json` |
 | Notizen | `%APPDATA%\de.displaybuddy.desktop\notes\<uuid>.json` (TipTap-JSON) |
+| Erinnerungen | `%APPDATA%\de.displaybuddy.desktop\reminders.json` |
+| Shortcut-Leiste | `%APPDATA%\de.displaybuddy.desktop\shortcuts.json` |
+| Eigene Skins | `%APPDATA%\de.displaybuddy.desktop\skins\` |
 | Log | `%LOCALAPPDATA%\de.displaybuddy.desktop\logs\` |
+| Startdiagnose | `%LOCALAPPDATA%\de.displaybuddy.desktop\diagnostics.log` |
 
 Jede Datei wird atomar geschrieben (erst `*.tmp`, dann umbenennen). Eine beschädigte Datei wird in `*.corrupt` umbenannt und protokolliert, die App läuft weiter. Bei der Deinstallation bleiben die Daten erhalten, außer man setzt das Häkchen „Anwendungsdaten löschen“.
 
@@ -112,7 +127,9 @@ src-tauri/src/                            Speicher, Commands, Fenster, Tray, Aut
 ## Bekannte Einschränkungen (v1)
 
 - **Nicht unter Windows getestet.** v1 wurde unter Linux entwickelt und für Windows cross-kompiliert. Alles, was vom Fenster- und Systemverhalten abhängt, muss nach `docs/MANUAL_TESTS.md` von Hand geprüft werden: Transparenz, Z-Reihenfolge, DPI, Tray, Autostart, Installer.
-- Beim **Abmelden oder Herunterfahren** von Windows können Eingaben der letzten ≤ 0,5 s verloren gehen. Normales Beenden über Tray oder Menü wartet dagegen, bis alles gespeichert ist (D-20).
+- Das Speichern beim **Abmelden/Herunterfahren** (v2) ist nur kompiliert und noch nicht unter Windows erprobt (`docs/MANUAL_TESTS.md` §21).
+- Dateien lassen sich nicht in den Editor-Text ziehen: Die native Dateiablage ist für die Shortcut-Leiste reserviert (D-24).
+- Monatliche Erinnerungen am 29.–31. rutschen nach einem kürzeren Monat dauerhaft auf dessen letzten Tag (D-27).
 - **Exklusive Vollbild-Anwendungen** (manche Spiele) liegen über allen „immer im Vordergrund“-Fenstern. Der Buddy ist dort nicht sichtbar.
 - Das Ziel „Leerlauf unter 80 MB RAM“ ist nicht gemessen und mit zwei dauerhaft geladenen WebView2-Fenstern (Buddy + Notizen) eher knapp. Die Messung steht in `docs/MANUAL_TESTS.md`.
 - Der Installer ist unsigniert und wurde mit der MinGW-Toolchain gebaut. Für eine Veröffentlichung besser unter Windows mit MSVC bauen und signieren.
