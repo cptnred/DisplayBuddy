@@ -119,6 +119,29 @@ function compareCreated(a: Note, b: Note): number {
   return ta - tb || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 
+interface Stamp {
+  ms: number;
+  iso: string;
+}
+
+interface WriteCtx {
+  deviceId: string;
+  /** Corrected now (ms) – for logic that is not a document stamp (markDue). */
+  nowMs: number;
+  /** Stamp for a document edit: corrected now, but strictly after its previous stamp. */
+  stamp(kind: RecordKind, id: string): Promise<Stamp>;
+}
+
+/**
+ * Two edits of one document within the same millisecond (or after the corrected clock
+ * stepped back) must still get distinct, increasing stamps; otherwise the server treats
+ * the second as an echo of the first (full LWW tie, D-58) and drops it.
+ */
+export function nextStampMs(previous: string | null | undefined, nowMs: number): number {
+  const prev = previous ? parseInstant(previous) : null;
+  return prev !== null && prev >= nowMs ? prev + 1 : nowMs;
+}
+
 class IdbDataStore implements DataStore {
   readonly clock: Clock;
   private readonly name: string;
@@ -233,7 +256,7 @@ class IdbDataStore implements DataStore {
   // ---- write helper: record + outbox in ONE transaction ------------------------------
 
   private async write<T>(
-    fn: (tx: WriteTx, ctx: { deviceId: string; now: string; nowMs: number }) => Promise<T>,
+    fn: (tx: WriteTx, ctx: WriteCtx) => Promise<T>,
     change: (result: T) => Omit<DataChange, "source"> | null,
   ): Promise<T> {
     const db = await this.db();
@@ -244,7 +267,17 @@ class IdbDataStore implements DataStore {
     try {
       const deviceId = (await getMeta(tx, "deviceId")) ?? uuidV4();
       const nowMs = this.clock.correctedNow();
-      result = await fn(tx, { deviceId, nowMs, now: new Date(nowMs).toISOString() });
+      const stamp = async (kind: RecordKind, id: string): Promise<Stamp> => {
+        const prev =
+          kind === "note"
+            ? await tx.objectStore("notes").get(id)
+            : kind === "reminder"
+              ? await tx.objectStore("reminders").get(id)
+              : await getMeta(tx, "order");
+        const ms = nextStampMs(prev?.updatedAt, nowMs);
+        return { ms, iso: new Date(ms).toISOString() };
+      };
+      result = await fn(tx, { deviceId, nowMs, stamp });
     } catch (e) {
       try {
         tx.abort();
@@ -305,7 +338,8 @@ class IdbDataStore implements DataStore {
   async saveNote(note: Note): Promise<Note> {
     if (!note.id) throw new Error("note id missing");
     return this.write(
-      async (tx, { deviceId, now }) => {
+      async (tx, { deviceId, stamp }) => {
+        const now = (await stamp("note", note.id)).iso;
         const stored: Note = { ...note, updatedAt: now };
         await IdbDataStore.putNote(tx, { id: note.id, updatedAt: now, updatedBy: deviceId, deleted: false, note: stored });
         return stored;
@@ -316,13 +350,15 @@ class IdbDataStore implements DataStore {
 
   async deleteNote(id: string): Promise<void> {
     await this.write(
-      async (tx, { deviceId, now }) => {
+      async (tx, { deviceId, stamp }) => {
         const existing = await tx.objectStore("notes").get(id);
         if (!existing || existing.deleted) return false;
+        const now = (await stamp("note", id)).iso;
         await IdbDataStore.putNote(tx, { id, updatedAt: now, updatedBy: deviceId, deleted: true, note: null });
         const rem = await tx.objectStore("reminders").get(id);
         if (rem && !rem.deleted) {
-          await IdbDataStore.putReminder(tx, { noteId: id, updatedAt: now, updatedBy: deviceId, deleted: true, reminder: null });
+          const remAt = (await stamp("reminder", id)).iso;
+          await IdbDataStore.putReminder(tx, { noteId: id, updatedAt: remAt, updatedBy: deviceId, deleted: true, reminder: null });
         }
         return true;
       },
@@ -338,7 +374,8 @@ class IdbDataStore implements DataStore {
   async saveOrder(ids: string[]): Promise<void> {
     const unique = [...new Set(ids)];
     await this.write(
-      async (tx, { deviceId, now }) => {
+      async (tx, { deviceId, stamp }) => {
+        const now = (await stamp("order", "order")).iso;
         const rec: OrderRecord = { updatedAt: now, updatedBy: deviceId, ids: unique };
         await tx.objectStore("meta").put(rec, "order");
         await IdbDataStore.enqueue(tx, { kind: "order", id: "order", record: rec });
@@ -389,11 +426,12 @@ class IdbDataStore implements DataStore {
     const wall = wallFromInputs(wallDate, wallTime);
     if (!wall) throw new Error(`invalid date/time: ${wallDate} ${wallTime}`);
     return this.write(
-      async (tx, { deviceId, now, nowMs }) => {
+      async (tx, { deviceId, nowMs, stamp }) => {
         await IdbDataStore.requireLiveNote(tx, noteId);
         const existing = await IdbDataStore.liveReminder(tx, noteId);
-        const r = setReminderWall(existing, noteId, wall, repeat, zone, nowMs);
-        await IdbDataStore.putReminder(tx, { noteId, updatedAt: now, updatedBy: deviceId, deleted: false, reminder: r });
+        const now = await stamp("reminder", noteId);
+        const r = { ...setReminderWall(existing, noteId, wall, repeat, zone, nowMs), updatedAt: now.iso };
+        await IdbDataStore.putReminder(tx, { noteId, updatedAt: now.iso, updatedBy: deviceId, deleted: false, reminder: r });
         return r;
       },
       () => ({ kind: "reminders", ids: [noteId] }),
@@ -402,8 +440,9 @@ class IdbDataStore implements DataStore {
 
   async removeReminder(noteId: string): Promise<void> {
     await this.write(
-      async (tx, { deviceId, now }) => {
+      async (tx, { deviceId, stamp }) => {
         if (!(await IdbDataStore.liveReminder(tx, noteId))) return false;
+        const now = (await stamp("reminder", noteId)).iso;
         await IdbDataStore.putReminder(tx, { noteId, updatedAt: now, updatedBy: deviceId, deleted: true, reminder: null });
         return true;
       },
@@ -413,13 +452,14 @@ class IdbDataStore implements DataStore {
 
   async ackReminder(noteId: string): Promise<Reminder | null> {
     return this.write(
-      async (tx, { deviceId, now, nowMs }) => {
+      async (tx, { deviceId, nowMs, stamp }) => {
         const existing = await IdbDataStore.liveReminder(tx, noteId);
         if (!existing) return null;
         const account = await getMeta(tx, "account");
         const fallback = account?.timeZone && isValidZone(account.timeZone) ? account.timeZone : this.deviceZone();
-        const r = ackReminderMath(existing, nowMs, fallback);
-        await IdbDataStore.putReminder(tx, { noteId, updatedAt: now, updatedBy: deviceId, deleted: false, reminder: r });
+        const now = await stamp("reminder", noteId);
+        const r = { ...ackReminderMath(existing, nowMs, fallback), updatedAt: now.iso };
+        await IdbDataStore.putReminder(tx, { noteId, updatedAt: now.iso, updatedBy: deviceId, deleted: false, reminder: r });
         return r;
       },
       (r) => (r ? { kind: "reminders", ids: [noteId] } : null),
@@ -428,11 +468,12 @@ class IdbDataStore implements DataStore {
 
   async snoozeReminder(noteId: string, minutes: number): Promise<Reminder> {
     return this.write(
-      async (tx, { deviceId, now, nowMs }) => {
+      async (tx, { deviceId, nowMs, stamp }) => {
         const existing = await IdbDataStore.liveReminder(tx, noteId);
         if (!existing) throw new Error(`no reminder for note ${noteId}`);
-        const r = snoozeReminderMath(existing, minutes, nowMs);
-        await IdbDataStore.putReminder(tx, { noteId, updatedAt: now, updatedBy: deviceId, deleted: false, reminder: r });
+        const now = await stamp("reminder", noteId);
+        const r = { ...snoozeReminderMath(existing, minutes, nowMs), updatedAt: now.iso };
+        await IdbDataStore.putReminder(tx, { noteId, updatedAt: now.iso, updatedBy: deviceId, deleted: false, reminder: r });
         return r;
       },
       () => ({ kind: "reminders", ids: [noteId] }),

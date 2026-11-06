@@ -7,6 +7,7 @@ import type { NoteRecord } from "../../lib/sync/types";
 import type { Note } from "../../types";
 import type { DataChange, DataStore } from "../contract";
 import { openDataStore, syncAccess } from "./index";
+import { nextStampMs } from "./store";
 
 const T0 = Date.parse("2026-11-06T10:00:00.000Z");
 
@@ -90,6 +91,18 @@ describe("notes", () => {
     const a = (await sync.outbox()).find((e) => e.key === "note:a");
     expect((a?.record as NoteRecord).note?.title).toBe("zwei");
     expect((await sync.outbox()).find((e) => e.key === "order:order")?.record).toMatchObject({ ids: ["a", "b"] });
+  });
+
+  it("edits within the same millisecond get strictly increasing stamps", async () => {
+    const { store, sync } = await setup();
+    const first = await store.saveNote(note("a"));
+    await store.deleteNote("a");
+    const tomb = (await sync.outbox())[0].record;
+    expect(first.updatedAt).toBe("2026-11-06T10:00:00.000Z");
+    expect(tomb.updatedAt).toBe("2026-11-06T10:00:00.001Z");
+    expect(nextStampMs("2026-11-06T10:05:00.000Z", T0)).toBe(Date.parse("2026-11-06T10:05:00.001Z"));
+    expect(nextStampMs(null, T0)).toBe(T0);
+    expect(nextStampMs("kaputt", T0)).toBe(T0);
   });
 
   it("lists live notes in saved order, others appended by createdAt", async () => {
