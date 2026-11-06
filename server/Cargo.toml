@@ -1,0 +1,51 @@
+[package]
+name = "buddy-server"
+version = "0.3.0"
+description = "Display Buddy sync server: accounts, devices, LWW sync, PWA hosting (PLAN_V3_SYNC §7)"
+edition = "2024"
+publish = false
+
+# No workspace on purpose (D-35): buddy-core is a path dependency.
+
+[lib]
+name = "buddy_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "buddy-server"
+path = "src/main.rs"
+
+[dependencies]
+buddy-core = { path = "../crates/buddy-core" }
+anyhow = "=1.0.104"
+argon2 = "=0.6.0"
+axum = { version = "=0.8.9", features = ["macros"] }
+base64 = "=0.23.1"
+chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std", "serde"] }
+chrono-tz = "=0.10.4"
+clap = { version = "=4.6.7", features = ["derive"] }
+ipnet = "=2.12.2"
+p256 = { version = "=0.14.0", features = ["pem", "pkcs8"] }
+rand = "=0.10.3"
+rpassword = "=7.5.4"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+sha2 = "=0.11.1"
+sqlx = { version = "=0.9.0", default-features = false, features = ["sqlite", "migrate", "runtime-tokio", "macros", "json"] }
+tokio = { version = "=1.54.1", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "time", "fs"] }
+tower = { version = "=0.5.3", features = ["util"] }
+tower-http = { version = "=0.7.1", features = ["fs", "set-header", "trace", "limit"] }
+tracing = "=0.1.44"
+tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "fmt"] }
+uuid = { version = "=1.29.0", features = ["v4"] }
+
+[dev-dependencies]
+http-body-util = "=0.1.5"
+tempfile = "=3.27.0"
+
+# Argon2id (19 MiB, t=2) is very slow unoptimised; keep tests fast.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3
