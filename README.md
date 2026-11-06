@@ -4,6 +4,12 @@ Ein kleiner, animierter Smiley, der immer im Vordergrund über allen Fenstern sc
 
 Plattform: **Windows 10/11 (x64)**, gebaut mit Tauri 2, React 18, TypeScript und TipTap 3.
 
+**Neu in 0.3.0 (v3):** Notizen und Erinnerungen lassen sich über einen eigenen Server (VPS) zwischen PC und Handy
+synchronisieren. Am Handy gibt es eine **installierbare Web-App** (offline nutzbar, Erinnerungen per Web Push) und
+eine **native Android/iOS-App**, die Erinnerungen lokal plant und deshalb auch ohne Internet klingelt. Jede
+Erinnerung hat ihre eigene Zeitzone. Ohne Server funktioniert die Desktop-App genau wie bisher.
+Einrichtung: Server `deploy/README.md`, Handy-App `mobile/README.md`.
+
 ## Funktionen
 
 **Buddy**
@@ -38,6 +44,12 @@ Plattform: **Windows 10/11 (x64)**, gebaut mit Tauri 2, React 18, TypeScript und
 - Ein zweiter Start öffnet nur die Notizen der laufenden Instanz
 - Globales Tastenkürzel `Strg+Alt+N` (abschaltbar)
 
+**Synchronisation (v3, optional)**
+- Einstellungen → „Synchronisation“: Server-Adresse, Benutzer, Passwort, Gerätename → „Verbinden“
+- Arbeitet offline weiter („Offline – n Änderungen warten“) und gleicht automatisch ab; die neueste Änderung gewinnt
+- Das Geräte-Token liegt in der Windows-Anmeldeinformationsverwaltung, nie in `settings.json`
+- Erinnerungen: Zeitzone wählbar; weicht sie ab, zeigt der PC zusätzlich die Originalzeit („03:00 (09:00 Berlin)“)
+
 ### Tastenkürzel im Notizfenster
 
 | Kürzel | Aktion |
@@ -54,7 +66,7 @@ Plattform: **Windows 10/11 (x64)**, gebaut mit Tauri 2, React 18, TypeScript und
 
 ## Installation
 
-1. `Display Buddy_0.1.0_x64-setup.exe` ausführen. Die Installation läuft nur für den aktuellen Benutzer, Administratorrechte sind nicht nötig.
+1. `Display Buddy_0.3.0_x64-setup.exe` ausführen. Die Installation läuft nur für den aktuellen Benutzer, Administratorrechte sind nicht nötig.
 2. Fehlt die WebView2-Laufzeit (unter Windows 11 und aktuellem Windows 10 ist sie vorinstalliert), lädt der Installer sie automatisch nach.
 3. Der Installer ist **nicht signiert**. Windows SmartScreen kann deshalb warnen („Weitere Informationen“ → „Trotzdem ausführen“).
 
@@ -70,6 +82,7 @@ Plattform: **Windows 10/11 (x64)**, gebaut mit Tauri 2, React 18, TypeScript und
 | Eigene Skins | `%APPDATA%\de.displaybuddy.desktop\skins\` |
 | Log | `%LOCALAPPDATA%\de.displaybuddy.desktop\logs\` |
 | Startdiagnose | `%LOCALAPPDATA%\de.displaybuddy.desktop\diagnostics.log` |
+| Sync (v3) | `%APPDATA%\de.displaybuddy.desktop\sync\` (Outbox, Zustand); Token in der Windows-Anmeldeinformationsverwaltung |
 
 Jede Datei wird atomar geschrieben (erst `*.tmp`, dann umbenennen). Eine beschädigte Datei wird in `*.corrupt` umbenannt und protokolliert, die App läuft weiter. Bei der Deinstallation bleiben die Daten erhalten, außer man setzt das Häkchen „Anwendungsdaten löschen“.
 
@@ -92,6 +105,11 @@ npm run tauri dev
 | `cd src-tauri && cargo test` | Rust-Tests (Speicher, Logik, Vertragstests) |
 | `cd src-tauri && cargo clippy --all-targets -- -D warnings` | Lint |
 | `npm run tauri build` | NSIS-Installer (unter Windows, MSVC) |
+| `npm run test:tz` | Frontend-Tests zusätzlich mit Gerätezone New York und Tokio |
+| `npm run build:web` / `npm run build:mobile` | Web-App (`dist-web/`) bzw. Oberfläche der Handy-App (`mobile/dist`) |
+| `cd server && cargo test` | Sync-Server (Auth, Sync, Web Push, FCM) |
+| `cd crates/buddy-core && cargo test` | gemeinsame Logik (Zeitzonen, LWW, Uhr) gegen die Testvektoren |
+| `npm run e2e` | Ende-zu-Ende: echter Server + Web-App in Chromium (vorher `build:web` und Server-Release-Build) |
 
 Cross-Build von Linux (so wurde v1 gebaut, siehe `docs/DECISIONS.md` D-17):
 
@@ -112,6 +130,8 @@ Wichtige Dokumente:
 - `docs/DECISIONS.md`: technische Entscheidungen
 - `docs/MANUAL_TESTS.md`: Checkliste für den Handtest unter Windows
 - `CLAUDE.md`: Kurzleitfaden für die Arbeit mit Claude Code
+- `docs/PLAN_V3_SYNC.md`: Plan und Verträge für v3 (Sync, Web-App, Handy-App, Zeitzonen)
+- `deploy/README.md`: Server auf einem VPS einrichten · `mobile/README.md`: Handy-App bauen und installieren
 
 Projektstruktur (Kurzform):
 
@@ -121,10 +141,15 @@ src/windows/{buddy,notes,settings}/       Fenster-Apps
 src/components/editor/                    TipTap-Editor + Toolbar
 src/lib/carousel.ts                       Karussell-Logik (rein, getestet)
 src/lib/api.ts                            typisierte invoke()/Event-Wrapper
-src-tauri/src/                            Speicher, Commands, Fenster, Tray, Autostart, Beenden
+src-tauri/src/                            Speicher, Commands, Fenster, Tray, Autostart, Beenden, sync/
+crates/buddy-core/                        gemeinsame Rust-Logik (Modelle, Zeitzonen, LWW, Uhr) + Testvektoren
+server/                                   Sync-Server (axum + SQLite, Web Push, FCM)
+deploy/                                   Docker Compose + Caddy für den VPS
+src/web/                                  Web-App/PWA: data/ (IndexedDB), sync/, ui/, notify/, sw.ts
+mobile/                                   native Android/iOS-App (Tauri 2 Mobile)
 ```
 
-## Bekannte Einschränkungen (v1)
+## Bekannte Einschränkungen
 
 - **Nicht unter Windows getestet.** v1 wurde unter Linux entwickelt und für Windows cross-kompiliert. Alles, was vom Fenster- und Systemverhalten abhängt, muss nach `docs/MANUAL_TESTS.md` von Hand geprüft werden: Transparenz, Z-Reihenfolge, DPI, Tray, Autostart, Installer.
 - Das Speichern beim **Abmelden/Herunterfahren** (v2) ist nur kompiliert und noch nicht unter Windows erprobt (`docs/MANUAL_TESTS.md` §21).
@@ -134,3 +159,8 @@ src-tauri/src/                            Speicher, Commands, Fenster, Tray, Aut
 - Das Ziel „Leerlauf unter 80 MB RAM“ ist nicht gemessen und mit zwei dauerhaft geladenen WebView2-Fenstern (Buddy + Notizen) eher knapp. Die Messung steht in `docs/MANUAL_TESTS.md`.
 - Der Installer ist unsigniert und wurde mit der MinGW-Toolchain gebaut. Für eine Veröffentlichung besser unter Windows mit MSVC bauen und signieren.
 - Click-Through der Ecken ist experimentell und standardmäßig aus.
+- v3: Die Web-App kann ohne Internet nicht zur fälligen Zeit klingeln (keine Browser-Technik dafür); die
+  Benachrichtigung kommt nach, sobald das Handy wieder online ist. Pünktlich offline klingelt nur die native App.
+- v3: iOS-App nur über den eigenen Mac mit kostenlosem Apple-Konto (alle 7 Tage neu signieren); nativer Push nur
+  für Android (Firebase), unter iOS plant die App lokal nach jedem Öffnen/Sync.
+- v3: Web-App und native App nicht gleichzeitig auf demselben Handy nutzen (doppelte Benachrichtigungen).

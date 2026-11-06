@@ -1,6 +1,6 @@
 [package]
 name = "display-buddy-mobile"
-version = "0.2.0"
+version = "0.3.0"
 description = "Display Buddy – native shell for Android and iOS (notes, sync, local reminders)"
 authors = ["Display Buddy"]
 edition = "2024"

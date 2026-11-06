@@ -1,6 +1,6 @@
 # Übergabe an den nächsten Agenten – Display Buddy
 
-Stand: 2026-11-06, Version **0.2.0**, Branch `main`. Diese Datei fasst zusammen, was existiert,
+Stand: 2026-11-06, Version **0.3.0** (v3), Branch `claude/display-buddy-v3-c9w0c8`. Diese Datei fasst zusammen, was existiert,
 wie man baut/testet, was gelernt wurde und was offen ist. Verbindliche Details stehen in
 `docs/PLAN.md` (Schnittstellen v1 §1–9, v2 §10–12), Begründungen in `docs/DECISIONS.md` (D-01…D-27),
 die Handtest-Checkliste in `docs/MANUAL_TESTS.md`.
@@ -129,9 +129,26 @@ Siehe `docs/MANUAL_TESTS.md` §21–25 (v2) und die ⚠️-Punkte davor. Insbeso
 - Lottie-CPU-Last, Click-Through (experimentell), DPI/Mehrmonitor, RAM-Ziel < 80 MB (nie gemessen).
 - Autostart-Eintrag (wird nach `enable()` mit Anführungszeichen neu geschrieben).
 
+## 7a. v3 (0.3.0) – Stand
+
+Umgesetzt nach `docs/PLAN_V3_SYNC.md`, Entscheidungen D-28…D-80:
+- `crates/buddy-core` (Modelle, zeitzonenfähige Erinnerungsmathe, LWW, Uhr) + gemeinsame Testvektoren
+  (`tests/fixtures/*.json`, Generator `gen_schedule_vectors.py`), TypeScript-Spiegel in `src/lib/`.
+- `server/` (axum + SQLite): Auth (Bearer/Cookie, CSRF, Login-Bremse), Sync, Scheduler, Web Push, FCM (Android).
+- `deploy/`: Docker Compose + Caddy + Anleitung. Desktop-Sync in `src-tauri/src/sync/`.
+- `src/web/`: PWA (IndexedDB, Outbox, Sync-Engine, UI, Service Worker). `mobile/`: Tauri-2-Mobile-Hülle mit lokaler
+  Planung; `mobile/patches/tauri-plugin-notification` (D-76), eigenes Plugin `mobile/plugins/buddy-push` (FCM).
+- CI: `.github/workflows/mobile-android.yml` (Checks, APK, Emulator-Szenarien 28/29), `mobile-ios.yml`
+  (Rust für iOS, unsignierter Simulator-Build).
+- Lektionen v3: Der generierte Android-Gradle-Build ruft `npm run tauri` – `mobile/package.json` ist dafür Pflicht.
+  Desktop-Crate ohne `cdylib` (MinGW-Export-Limit, D-65). Plattenkontingent der Cloud ist knapp: `target/`-Ordner
+  nach Gebrauch löschen. `dl.google.com` und `deb.debian.org` sind in der Cloud gesperrt (Android nur in CI,
+  Docker-`apt-get` nur außerhalb).
+- Handtests: `docs/MANUAL_TESTS.md` §26–31.
+
 ## 8. ToDo-Liste (vom Benutzer bestätigt)
 
-- [ ] **v3: Notiz-Sync, installierbare Offline-Web-App mit eigenem Web Push, native Android/iOS-Hülle
+- [x] **v3: Notiz-Sync, installierbare Offline-Web-App mit eigenem Web Push, native Android/iOS-Hülle
   (Erinnerungen auch ohne Internet), Erinnerungen mit eigener Zeitzone** – Plan `docs/PLAN_V3_SYNC.md`,
   Agenten-Prompts `docs/AGENT_PROMPT_V3.md`, Entscheidungen D-28…D-50. ntfy entfällt.
 - [ ] **Windows-CI-Build mit GitHub Actions** (`windows-latest`, MSVC-Toolchain, `npm run tauri build`):
