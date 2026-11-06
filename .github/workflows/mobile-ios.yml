@@ -1,0 +1,133 @@
+# Native shell for iOS – control build only (D-54): the user builds and signs the app on
+# their own Mac with Xcode (free Apple account, 7-day signature), see mobile/README.md.
+#
+# - rust-ios:  builds the shell's Rust library for device and simulator. On macOS this also
+#              compiles the Swift sources of the plugins (tauri-plugin build script, swift-rs),
+#              i.e. the patched mobile/patches/tauri-plugin-notification/ios.
+# - xcode:     generates the Xcode project (gen/ is not committed) and builds the app for the
+#              simulator without code signing.
+# - signed:    only when signing secrets exist (Apple Developer Program, not used today):
+#              IOS_CERTIFICATE, IOS_CERTIFICATE_PASSWORD, IOS_MOBILE_PROVISION (tauri-docs
+#              distribute/sign/ios), APPLE_DEVELOPMENT_TEAM.
+#
+# Variable (not secret): BUDDY_PUBLIC_URL (server origin; placeholder otherwise).
+name: mobile-ios
+
+on:
+  push:
+    paths:
+      - "mobile/**"
+      - "src/web/**"
+      - "src/lib/**"
+      - "src/types.ts"
+      - "vite.mobile.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/mobile-ios.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_TOOLCHAIN: "1.97.0"
+  NODE_VERSION: "22"
+  CARGO_TERM_COLOR: always
+  BUDDY_PUBLIC_URL: ${{ vars.BUDDY_PUBLIC_URL || 'https://buddy.example.org' }}
+
+jobs:
+  rust-ios:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust ${{ env.RUST_TOOLCHAIN }} + iOS targets
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy
+          rustup default "$RUST_TOOLCHAIN"
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+      - name: Build the library for device and simulator (incl. Swift of the plugins)
+        working-directory: mobile/src-tauri
+        run: |
+          cargo build --locked --lib --target aarch64-apple-ios-sim
+          cargo build --locked --lib --release --target aarch64-apple-ios
+      - name: Clippy for iOS (keyring/keychain code paths)
+        working-directory: mobile/src-tauri
+        run: cargo clippy --locked --lib --target aarch64-apple-ios-sim -- -D warnings
+
+  xcode:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Rust ${{ env.RUST_TOOLCHAIN }} + iOS targets
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+      - name: XcodeGen (used by tauri ios init)
+        run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - run: npm ci
+      - name: Generate the Xcode project
+        working-directory: mobile
+        run: |
+          npx tauri ios init --ci
+          npx tauri icon ../public-web/icons/icon.svg
+      - name: Simulator build without signing
+        working-directory: mobile
+        run: npx tauri ios build --ci --debug --target aarch64-sim
+      - name: Built products
+        if: always()
+        run: find mobile/src-tauri/gen/apple/build -maxdepth 3 \( -name "*.app" -o -name "*.ipa" \) -print || true
+
+  signed:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      HAS_SIGNING: ${{ secrets.IOS_CERTIFICATE != '' && secrets.IOS_MOBILE_PROVISION != '' && secrets.APPLE_DEVELOPMENT_TEAM != '' }}
+    steps:
+      - name: Skip without signing secrets
+        if: env.HAS_SIGNING != 'true'
+        run: echo "No iOS signing secrets – the signed build is skipped (expected without the Apple Developer Program)."
+      - uses: actions/checkout@v4
+        if: env.HAS_SIGNING == 'true'
+      - uses: actions/setup-node@v4
+        if: env.HAS_SIGNING == 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Rust + targets
+        if: env.HAS_SIGNING == 'true'
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+          rustup target add aarch64-apple-ios
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Signed IPA (tauri-docs distribute/sign/ios)
+        if: env.HAS_SIGNING == 'true'
+        working-directory: mobile
+        env:
+          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
+        run: |
+          npm ci --prefix ..
+          npx tauri ios init --ci
+          npx tauri icon ../public-web/icons/icon.svg
+          npx tauri ios build --ci --export-method debugging
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_SIGNING == 'true'
+        with:
+          name: display-buddy-ios
+          path: mobile/src-tauri/gen/apple/build/**/*.ipa
+          if-no-files-found: error
+          retention-days: 14
