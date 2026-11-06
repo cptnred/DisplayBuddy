@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import type { JSONContent } from "@tiptap/core";
 import { DEFAULT_SETTINGS, NOTE_SCHEMA_VERSION, type Note, type Reminder, type Settings } from "../../types";
 import { formatReminder, toRfc3339Local } from "../../lib/datetime";
+import { deviceZone } from "../../lib/zoned";
 import type { NoteEditorProps } from "./NotesApp";
 import { NotesApp } from "./NotesApp";
 import { REMINDER_ERROR_TEXT, RETRY_DELAY_MS, SAVE_ERROR_TEXT } from "./useNotesStore";
@@ -10,6 +11,16 @@ import { PAST_TEXT } from "./Reminder";
 import { docToPlainText, plainTextToDoc } from "./docText";
 
 const h = vi.hoisted(() => {
+  const SYNC_OFF = {
+    enabled: false,
+    serverUrl: "",
+    deviceName: "",
+    state: "off",
+    lastSyncAt: null,
+    pending: 0,
+    message: null,
+    clockOffsetMs: 0,
+  };
   const handlers: Record<string, ((payload?: unknown) => void) | undefined> = {};
   const unlisten = vi.fn();
   const on = (name: string) =>
@@ -41,6 +52,9 @@ const h = vi.hoisted(() => {
     onFlushRequest: on("flushRequest"),
     onRemindersChanged: on("remindersChanged"),
     onOpenNote: on("openNote"),
+    onSyncStatus: on("syncStatus"),
+    onNotesChanged: on("notesChanged"),
+    syncStatus: vi.fn(async () => ({ ...SYNC_OFF })),
     listReminders: vi.fn(),
     setReminder: vi.fn(),
     ackReminder: vi.fn(),
@@ -397,8 +411,9 @@ describe("NotesApp / useNotesStore", () => {
     const { unmount } = await setup([A()]);
     unmount();
     await tick();
-    // 7 store/app subscriptions (hidden, flush, create, settings, reminders, shown, open-note)
-    expect(h.unlisten).toHaveBeenCalledTimes(7);
+    // 9 store/app subscriptions (hidden, flush, create, settings, reminders, sync-status,
+    // notes-changed, shown, open-note)
+    expect(h.unlisten).toHaveBeenCalledTimes(9);
   });
 });
 
@@ -495,7 +510,7 @@ describe("NotesApp / reminders", () => {
     vi.setSystemTime(NOW);
   });
 
-  it("popover saves date/time/repeat as local RFC 3339", async () => {
+  it("popover saves date/time/repeat as a UTC instant plus the PC zone (v3)", async () => {
     await setup([A(), B()]);
     const at = toRfc3339Local("2026-11-06", "14:30");
     api.setReminder.mockResolvedValue(rem(ID.a, at, "scheduled", "weekly"));
@@ -513,7 +528,8 @@ describe("NotesApp / reminders", () => {
     fireEvent.change(within(dialog).getByLabelText("Wiederholung"), { target: { value: "weekly" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Speichern" }));
     await tick();
-    expect(api.setReminder).toHaveBeenCalledWith(ID.a, at, "weekly");
+    // entered in the reminder zone (default: this PC's zone) → UTC instant + zone
+    expect(api.setReminder).toHaveBeenCalledWith(ID.a, new Date(at).toISOString(), "weekly", deviceZone());
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(bell()).toHaveAttribute("data-state", "scheduled");
     expect(bell()).toHaveAttribute("title", "Erinnerung: Morgen, 14:30");
@@ -549,7 +565,7 @@ describe("NotesApp / reminders", () => {
     expect((within(dialog).getByLabelText("Wiederholung") as HTMLSelectElement).value).toBe("daily");
     fireEvent.click(within(dialog).getByRole("button", { name: "Entfernen" }));
     await tick();
-    expect(api.setReminder).toHaveBeenCalledWith(ID.a, null, "none");
+    expect(api.setReminder).toHaveBeenCalledWith(ID.a, null, "none", null);
     expect(bell()).toHaveAttribute("data-state", "none");
   });
 

@@ -188,6 +188,7 @@ export function NotesApp({ Editor, renderPreview = defaultRenderPreview, footer 
         onColorChange={(color: NoteColor) => store.updateNote(note.id, { color })}
         // bound to this note's id: a late onChange from an unmounting editor can never hit another note
         onContentChange={(content: JSONContent) => store.updateNote(note.id, { content })}
+        contentRevision={store.remoteRevision[note.id] ?? 0}
         banner={
           reminder?.state === "due" ? (
             <DueBanner
@@ -201,7 +202,7 @@ export function NotesApp({ Editor, renderPreview = defaultRenderPreview, footer 
           <ReminderControl
             key={note.id}
             reminder={reminder}
-            onSave={(at, repeat) => store.setReminder(note.id, at, repeat)}
+            onSave={(at, repeat, timeZone) => store.setReminder(note.id, at, repeat, timeZone)}
             onRemove={() => store.setReminder(note.id, null, "none")}
           />
         }
@@ -234,6 +235,11 @@ export function NotesApp({ Editor, renderPreview = defaultRenderPreview, footer 
       {(store.saveError || store.actionError || store.loadError) && (
         <div className={styles.banner} role="alert">
           {store.saveError ? SAVE_ERROR_TEXT : (store.loadError ?? store.actionError)}
+        </div>
+      )}
+      {store.syncNotice && !(store.saveError || store.actionError || store.loadError) && (
+        <div className={styles.banner} role="status">
+          {store.syncNotice}
         </div>
       )}
 

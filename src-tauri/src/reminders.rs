@@ -33,6 +33,8 @@ pub const OPEN_NOTE: &str = "open-note";
 /// Longest scheduler sleep; also bounds how late a wall-clock jump (sleep/hibernate,
 /// clock change) is noticed.
 pub const MAX_SLEEP: Duration = Duration::from_secs(30);
+/// Longest wait for the sync start-up pull before missed reminders fire.
+pub const START_PULL_WAIT: Duration = Duration::from_secs(8);
 /// Characters of note text in the notification body.
 pub const BODY_CHARS: usize = 100;
 /// Windows toast sound (`ms-winsoundevent:Notification.Reminder`). Without a sound
@@ -119,7 +121,21 @@ fn reminders_state(app: &AppHandle) -> Result<tauri::State<'_, RemindersState>, 
 /// IANA zone of this PC (`iana-time-zone` also maps Windows zone ids); UTC if it
 /// cannot be determined. Default zone for new reminders and data from before v3.
 pub fn device_zone() -> Tz {
-    match iana_time_zone::get_timezone() {
+    zone_from(
+        std::env::var("TZ").ok().as_deref(),
+        iana_time_zone::get_timezone().map_err(|e| e.to_string()),
+    )
+}
+
+/// The device zone from the `TZ` variable (an IANA name like `Europe/Berlin`; as
+/// `chrono::Local` used it before v3) or else the OS setting; UTC if neither is known.
+pub fn zone_from(tz_env: Option<&str>, system: Result<String, String>) -> Tz {
+    if let Some(tz) = tz_env.map(|s| s.trim_start_matches(':'))
+        && let Some(zone) = buddy_core::zoned::parse_zone(tz)
+    {
+        return zone;
+    }
+    match system {
         Ok(name) => buddy_core::zoned::parse_zone(&name).unwrap_or_else(|| {
             log::warn!("unknown system time zone {name:?}, using UTC");
             Tz::UTC
@@ -128,6 +144,21 @@ pub fn device_zone() -> Tz {
             log::warn!("could not determine the system time zone ({e}), using UTC");
             Tz::UTC
         }
+    }
+}
+
+/// Zone of a `set_reminder` call (D-61): the requested one (unknown name = error),
+/// else the zone of the existing reminder, else the device zone.
+pub fn pick_zone(
+    requested: Option<&str>,
+    existing: Option<&Reminder>,
+    device: Tz,
+) -> Result<Tz, String> {
+    match requested {
+        Some(name) => {
+            buddy_core::zoned::parse_zone(name).ok_or_else(|| format!("unknown time zone: {name}"))
+        }
+        None => Ok(existing.map_or(device, |r| schedule::reminder_zone(r, device))),
     }
 }
 
@@ -164,10 +195,27 @@ fn emit_changed(app: &AppHandle, list: &[Reminder]) {
     }
 }
 
-/// Applies `f` to the list, persists and emits if it changed. The emit happens under
-/// the reminders lock so events always reach the windows in modification order.
+/// Applies a user action `f` to the list, persists and emits if it changed, and
+/// records the change in the sync outbox. The emit happens under the reminders lock
+/// so events always reach the windows in modification order.
 fn modify<T>(
     app: &AppHandle,
+    f: impl FnOnce(&mut Vec<Reminder>) -> Result<T, String>,
+) -> Result<T, String> {
+    modify_inner(app, true, f)
+}
+
+/// Like [`modify`] for changes taken over from the sync: never an outbox entry.
+pub(crate) fn apply_from_sync<T>(
+    app: &AppHandle,
+    f: impl FnOnce(&mut Vec<Reminder>) -> T,
+) -> Result<T, String> {
+    modify_inner(app, false, |list| Ok(f(list)))
+}
+
+fn modify_inner<T>(
+    app: &AppHandle,
+    record: bool,
     f: impl FnOnce(&mut Vec<Reminder>) -> Result<T, String>,
 ) -> Result<T, String> {
     let state = reminders_state(app)?;
@@ -178,6 +226,10 @@ fn modify<T>(
         state.persist(&list);
         emit_changed(app, &list);
         state.notify();
+        if record {
+            // outbox lock is a leaf lock (see crate::sync)
+            crate::sync::reminders_edited(app, &before, &list);
+        }
     }
     Ok(result)
 }
@@ -187,6 +239,9 @@ fn modify<T>(
 /// Missed reminders (app was closed) are due at the first pass and fire once.
 fn scheduler(app: &AppHandle) {
     log::debug!("reminder scheduler started");
+    // v3 (§8): with sync on, the start-up pull runs first so reminders that were
+    // acknowledged elsewhere meanwhile do not fire again here.
+    crate::sync::wait_for_start_pull(START_PULL_WAIT);
     loop {
         if quitting(app) {
             break;
@@ -239,7 +294,7 @@ pub fn notification_title(note_title: &str) -> String {
 }
 
 /// Toast and/or sound for a due reminder, according to the settings.
-fn alert(app: &AppHandle, note_id: &str) {
+pub(crate) fn alert(app: &AppHandle, note_id: &str) {
     let settings = crate::state::current_settings(app);
     if settings.reminder_notification {
         let (title, body) = match load_note(app, note_id) {
@@ -315,13 +370,8 @@ pub fn set(
     time_zone: Option<&str>,
 ) -> Result<Option<Reminder>, String> {
     check_note_id(note_id)?;
-    let zone = match time_zone {
-        None => None,
-        Some(name) => Some(
-            buddy_core::zoned::parse_zone(name)
-                .ok_or_else(|| format!("unknown time zone: {name}"))?,
-        ),
-    };
+    // validate the name before anything else
+    pick_zone(time_zone, None, Tz::UTC)?;
     let at = match at {
         None => None,
         Some(s) => {
@@ -333,14 +383,13 @@ pub fn set(
         }
     };
     let now = corrected_now();
+    let device = device_zone();
     modify(app, |list| {
-        let zone = zone
-            .or_else(|| {
-                list.iter()
-                    .find(|r| r.note_id == note_id)
-                    .map(|r| schedule::reminder_zone(r, device_zone()))
-            })
-            .unwrap_or_else(device_zone);
+        let zone = pick_zone(
+            time_zone,
+            list.iter().find(|r| r.note_id == note_id),
+            device,
+        )?;
         Ok(schedule::set(
             list,
             note_id,
@@ -428,6 +477,114 @@ mod tests {
         std::fs::write(&path, "{ nope").unwrap();
         assert!(load_file(&path).is_empty());
         assert!(!path.exists(), "corrupt file is quarantined");
+    }
+
+    fn at(s: &str) -> chrono::DateTime<chrono::Utc> {
+        schedule::parse_time(s).unwrap()
+    }
+
+    const NOTE: &str = "123e4567-e89b-42d3-a456-426614174000";
+
+    #[test]
+    fn device_zone_prefers_tz_variable() {
+        assert_eq!(
+            zone_from(Some("Europe/Berlin"), Ok("Asia/Tokyo".into())),
+            chrono_tz::Europe::Berlin
+        );
+        assert_eq!(
+            zone_from(Some(":America/New_York"), Err("x".into())),
+            chrono_tz::America::New_York
+        );
+        // POSIX strings like "CET-1CEST" are not IANA names → OS setting
+        assert_eq!(
+            zone_from(Some("CET-1CEST,M3.5.0"), Ok("Asia/Tokyo".into())),
+            chrono_tz::Asia::Tokyo
+        );
+        assert_eq!(zone_from(None, Err("x".into())), Tz::UTC);
+        assert_eq!(zone_from(None, Ok("Mars/Base".into())), Tz::UTC);
+    }
+
+    #[test]
+    fn set_zone_rules() {
+        let berlin = chrono_tz::Europe::Berlin;
+        let ny = Reminder {
+            note_id: NOTE.into(),
+            at: "2026-11-06T14:00:00.000Z".into(),
+            repeat: ReminderRepeat::Daily,
+            state: ReminderState::Scheduled,
+            fired_at: None,
+            updated_at: None,
+            time_zone: Some("America/New_York".into()),
+        };
+        assert_eq!(pick_zone(None, None, berlin).unwrap(), berlin);
+        assert_eq!(
+            pick_zone(None, Some(&ny), berlin).unwrap(),
+            chrono_tz::America::New_York,
+            "null keeps the reminder's zone"
+        );
+        assert_eq!(
+            pick_zone(Some("Asia/Tokyo"), Some(&ny), berlin).unwrap(),
+            chrono_tz::Asia::Tokyo
+        );
+        assert!(pick_zone(Some("Mars/Base"), None, berlin).is_err());
+    }
+
+    /// PC in Berlin, reminder "daily 09:00 New York": acknowledging gives the next day
+    /// 09:00 New York – also in the week where the US already left DST and the EU did
+    /// not (2026-11-01 US, 2026-10-25 EU → both standard time here) and around the US
+    /// switch (2026-10-31 → 2026-11-01).
+    #[test]
+    fn ack_in_foreign_zone_from_berlin_pc() {
+        let berlin = chrono_tz::Europe::Berlin;
+        let mut list = vec![Reminder {
+            note_id: NOTE.into(),
+            // 2026-10-31 09:00 EDT (UTC−4)
+            at: "2026-10-31T13:00:00.000Z".into(),
+            repeat: ReminderRepeat::Daily,
+            state: ReminderState::Due,
+            fired_at: Some("2026-10-31T13:00:00.000Z".into()),
+            updated_at: None,
+            time_zone: Some("America/New_York".into()),
+        }];
+        let now = at("2026-10-31T13:01:00.000Z");
+        let r = schedule::ack(&mut list, NOTE, &now, berlin)
+            .unwrap()
+            .unwrap();
+        // 2026-11-01 09:00 EST (UTC−5) = 15:00 Berlin (CET)
+        assert_eq!(r.at, "2026-11-01T14:00:00.000Z");
+        assert_eq!(r.time_zone.as_deref(), Some("America/New_York"));
+        assert_eq!(r.updated_at.as_deref(), Some("2026-10-31T13:01:00.000Z"));
+    }
+
+    /// And the other way round: PC in New York, reminder "daily 09:00 Berlin" across
+    /// the EU switch (2026-10-25): stays 09:00 Berlin, i.e. 03:00 → 04:00 New York.
+    #[test]
+    fn ack_in_foreign_zone_from_new_york_pc() {
+        let ny = chrono_tz::America::New_York;
+        let mut list = vec![Reminder {
+            note_id: NOTE.into(),
+            // 2026-10-24 09:00 CEST (UTC+2)
+            at: "2026-10-24T07:00:00.000Z".into(),
+            repeat: ReminderRepeat::Daily,
+            state: ReminderState::Due,
+            fired_at: None,
+            updated_at: None,
+            time_zone: Some("Europe/Berlin".into()),
+        }];
+        let now = at("2026-10-24T07:00:30.000Z");
+        let r = schedule::ack(&mut list, NOTE, &now, ny).unwrap().unwrap();
+        assert_eq!(r.at, "2026-10-25T08:00:00.000Z"); // 09:00 CET
+        // a legacy reminder without zone falls back to the PC zone (New York)
+        list[0].time_zone = None;
+        list[0].at = "2026-10-24T13:00:00.000Z".into(); // 09:00 EDT
+        let r = schedule::ack(&mut list, NOTE, &now, ny).unwrap().unwrap();
+        assert_eq!(r.at, "2026-10-25T13:00:00.000Z");
+        assert_eq!(r.time_zone.as_deref(), Some("America/New_York"));
+        // sanitize fills missing zones with the PC zone
+        let mut legacy = list[0].clone();
+        legacy.time_zone = None;
+        let filled = schedule::sanitize(vec![legacy], ny);
+        assert_eq!(filled[0].time_zone.as_deref(), Some("America/New_York"));
     }
 
     #[test]

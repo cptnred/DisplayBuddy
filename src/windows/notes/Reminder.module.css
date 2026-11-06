@@ -215,3 +215,35 @@
     transition: none;
   }
 }
+
+/* v3: reminder time zone (PLAN_V3_SYNC §8) */
+.zone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  margin: 0;
+  color: #57606a;
+  overflow-wrap: anywhere;
+}
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #2563eb;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.link:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+.hint {
+  margin: 0;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+}

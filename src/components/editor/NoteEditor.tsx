@@ -9,8 +9,13 @@ import styles from "./editor.module.css";
 export const DEFAULT_PLACEHOLDER = "Notiz schreiben …";
 
 export interface NoteEditorProps {
-  /** Initial document. Read ONLY on mount – remount (`key={note.id}`) to load another note. */
+  /**
+   * Initial document. Read on mount – remount (`key={note.id}`) to load another note –
+   * and again whenever `revision` changes (v3: remote version merged by the sync).
+   */
   content: JSONContent | null;
+  /** v3: change it to load `content` into the open editor without an update event. */
+  revision?: number;
   /** Called with `editor.getJSON()` after every document change (not on selection changes). */
   onChange: (doc: JSONContent) => void;
   autoFocus?: boolean;
@@ -28,6 +33,7 @@ export function NoteEditor({
   autoFocus = false,
   placeholder = DEFAULT_PLACEHOLDER,
   onReady,
+  revision = 0,
 }: NoteEditorProps) {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -58,6 +64,17 @@ export function NoteEditor({
   useEffect(() => {
     if (editor) onReadyRef.current?.(editor);
   }, [editor]);
+
+  // Remote content (sync): replace the document without firing onUpdate, so the
+  // take-over is not saved back as a local edit (TipTap: setContent emitUpdate:false).
+  const contentRef = useRef(content);
+  contentRef.current = content;
+  const lastRevision = useRef(revision);
+  useEffect(() => {
+    if (!editor || revision === lastRevision.current) return;
+    lastRevision.current = revision;
+    editor.commands.setContent(contentRef.current ?? EMPTY_DOC, { emitUpdate: false });
+  }, [editor, revision]);
 
   return (
     <div className={styles.root}>

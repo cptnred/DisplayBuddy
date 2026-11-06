@@ -12,6 +12,7 @@ import {
 import { BuddyAvatar } from "../buddy/BuddyAvatar";
 import { BUILTIN_SKIN_INFO, skinFeatures } from "../buddy/skins";
 import { SkinPicker } from "./SkinPicker";
+import { SyncSection } from "./SyncSection";
 import styles from "./SettingsApp.module.css";
 
 const FACE_PRESETS: { label: string; value: string }[] = [
@@ -336,6 +337,8 @@ export function SettingsApp() {
           <span>Ton abspielen</span>
         </label>
       </section>
+
+      <SyncSection />
 
       <section className={styles.group} aria-labelledby="sec-system">
         <h2 id="sec-system">System</h2>

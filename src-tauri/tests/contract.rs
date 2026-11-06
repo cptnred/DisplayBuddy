@@ -80,6 +80,14 @@ fn plan_commands() -> BTreeMap<&'static str, Vec<&'static str>> {
         ("import_skin", vec![]),
         ("delete_skin", vec!["id"]),
         ("load_skin", vec!["id"]),
+        // v3 (PLAN_V3_SYNC §8)
+        ("sync_status", vec![]),
+        (
+            "sync_connect",
+            vec!["server_url", "username", "password", "device_name"],
+        ),
+        ("sync_disconnect", vec![]),
+        ("sync_now", vec![]),
     ])
 }
 

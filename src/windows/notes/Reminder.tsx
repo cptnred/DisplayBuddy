@@ -1,15 +1,81 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { formatReminder, fromRfc3339, nextFullHour, parseLocal, toDateInput, toRfc3339Local, toTimeInput } from "../../lib/datetime";
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { clock } from "../../lib/clock";
+import {
+  deviceZone as currentDeviceZone,
+  formatWallDate,
+  formatWallTime,
+  instantToWall,
+  isValidZone,
+  reminderWalls,
+  sameWallAt,
+  supportedZones,
+  utcAsWall,
+  wallAsUtc,
+  wallFromInputs,
+  wallToInstant,
+  type Wall,
+} from "../../lib/zoned";
 import { REMINDER_REPEAT_LABELS, type Reminder, type ReminderRepeat } from "../../types";
 import styles from "./Reminder.module.css";
 
 export const PAST_TEXT = "Zeitpunkt liegt in der Vergangenheit";
 
 const REPEATS = Object.keys(REMINDER_REPEAT_LABELS) as ReminderRepeat[];
+const WEEKDAYS_SHORT = ["So.", "Mo.", "Di.", "Mi.", "Do.", "Fr.", "Sa."];
+const HOUR = 3_600_000;
+const DAY = 86_400_000;
+
+const pad = (n: number) => String(n).padStart(2, "0");
+const correctedNow = () => new Date(clock.correctedNow());
 
 /** A reminder that still matters for the UI (done = acknowledged, shown like none). */
 export function activeReminder(r: Reminder | undefined | null): Reminder | null {
   return r && (r.state === "scheduled" || r.state === "due") ? r : null;
+}
+
+/** Calendar-day index of a wall date (zone free). */
+function dayIndex(w: Wall): number {
+  return Math.round(wallAsUtc({ ...w, hour: 0, minute: 0, second: 0, millisecond: 0 }) / DAY);
+}
+
+/**
+ * German short label of an instant in `zone`, relative to `nowMs` in the same zone:
+ * „Heute, 14:30“, „Morgen, 09:00“, „Gestern, 18:00“, „Fr., 07.11., 14:30“ (same year),
+ * „07.11.2027, 14:30“ (other year).
+ */
+export function formatInZone(atMs: number, nowMs: number, zone: string): string {
+  const w = instantToWall(atMs, zone);
+  const n = instantToWall(nowMs, zone);
+  const time = formatWallTime(w);
+  const diff = dayIndex(w) - dayIndex(n);
+  if (diff === 0) return `Heute, ${time}`;
+  if (diff === 1) return `Morgen, ${time}`;
+  if (diff === -1) return `Gestern, ${time}`;
+  const dm = `${pad(w.day)}.${pad(w.month)}.`;
+  if (w.year === n.year) {
+    const weekday = new Date(dayIndex(w) * DAY).getUTCDay();
+    return `${WEEKDAYS_SHORT[weekday]}, ${dm}, ${time}`;
+  }
+  return `${dm}${w.year}, ${time}`;
+}
+
+/**
+ * Label of a reminder time on this device (§5.5): local time of the device zone; if the
+ * reminder zone shows a different wall time, the original is added – „Heute, 03:00 (09:00 Berlin)“.
+ */
+export function reminderLabel(at: string, reminderZone: string | null, now: Date, device: string): string {
+  const ms = Date.parse(at);
+  if (Number.isNaN(ms)) return at;
+  const zone = reminderZone && isValidZone(reminderZone) ? reminderZone : device;
+  const base = formatInZone(ms, now.getTime(), device);
+  const { original } = reminderWalls(ms, zone, device);
+  return original ? `${base} (${formatWallTime(original.wall)} ${original.zone})` : base;
+}
+
+/** The next full hour after `nowMs`, as wall time in `zone`. */
+function nextFullHourWall(nowMs: number, zone: string): Wall {
+  const w = instantToWall(nowMs, zone);
+  return utcAsWall(wallAsUtc({ ...w, minute: 0, second: 0, millisecond: 0 }) + HOUR);
 }
 
 function BellIcon({ filled }: { filled?: boolean }) {
@@ -30,19 +96,32 @@ function BellIcon({ filled }: { filled?: boolean }) {
 
 export interface ReminderControlProps {
   reminder: Reminder | null;
-  /** Resolve true when stored (popover closes), false on error. */
-  onSave: (at: string, repeat: ReminderRepeat) => Promise<boolean>;
+  /**
+   * `at` = UTC instant (`…Z`), `timeZone` = IANA zone in which date/time were entered.
+   * Resolve true when stored (popover closes), false on error.
+   */
+  onSave: (at: string, repeat: ReminderRepeat, timeZone: string) => Promise<boolean>;
   onRemove: () => Promise<boolean>;
-  /** For tests: the current time. */
+  /** For tests: the current time (default: corrected device clock). */
   now?: () => Date;
+  /** For tests: the zone of this PC (default: `Intl`). */
+  deviceZone?: string;
 }
 
 /** Bell button in the active card header + popover editor. */
-export function ReminderControl({ reminder, onSave, onRemove, now = () => new Date() }: ReminderControlProps) {
+export function ReminderControl({
+  reminder,
+  onSave,
+  onRemove,
+  now = correctedNow,
+  deviceZone = currentDeviceZone(),
+}: ReminderControlProps) {
   const current = activeReminder(reminder);
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
+  const [zone, setZone] = useState(deviceZone);
+  const [zoneOpen, setZoneOpen] = useState(false);
   const [repeat, setRepeat] = useState<ReminderRepeat>("none");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -50,13 +129,18 @@ export function ReminderControl({ reminder, onSave, onRemove, now = () => new Da
   const popRef = useRef<HTMLDivElement>(null);
   const dateRef = useRef<HTMLInputElement>(null);
   const popId = useId();
+  const zoneId = useId();
   const state = current?.state ?? "none";
 
   const openPopover = () => {
-    const parts = current ? fromRfc3339(current.at) : null;
-    const fallback = nextFullHour(now());
-    setDate(parts?.date ?? toDateInput(fallback));
-    setTime(parts?.time ?? toTimeInput(fallback));
+    const z = current?.timeZone && isValidZone(current.timeZone) ? current.timeZone : deviceZone;
+    const atMs = current ? Date.parse(current.at) : NaN;
+    // date and time are shown and entered in the zone of the reminder
+    const wall = Number.isNaN(atMs) ? nextFullHourWall(now().getTime(), z) : instantToWall(atMs, z);
+    setZone(z);
+    setZoneOpen(false);
+    setDate(formatWallDate(wall));
+    setTime(formatWallTime(wall));
     setRepeat(current?.repeat ?? "none");
     setError(null);
     setOpen(true);
@@ -79,20 +163,38 @@ export function ReminderControl({ reminder, onSave, onRemove, now = () => new Da
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
   }, [open]);
 
+  const zones = useMemo(() => {
+    if (!open) return [];
+    const list = supportedZones();
+    return [...new Set([zone, deviceZone, ...list])].sort((a, b) => a.localeCompare(b));
+  }, [open, zone, deviceZone]);
+
+  /** Instant of the entered wall time in the reminder zone (DST gap → next valid minute). */
+  const enteredMs = (): number | null => {
+    const wall = wallFromInputs(date, time);
+    return wall ? wallToInstant(wall, zone) : null;
+  };
+
+  const entered = open ? enteredMs() : null;
+  const localHint =
+    entered !== null && !sameWallAt(entered, zone, deviceZone)
+      ? `Bei dir: ${formatInZone(entered, now().getTime(), deviceZone)}`
+      : null;
+
   const save = async (e: FormEvent) => {
     e.preventDefault();
-    const d = parseLocal(date, time);
-    if (!d) {
+    const ms = enteredMs();
+    if (ms === null) {
       setError("Bitte Datum und Uhrzeit angeben");
       return;
     }
-    if (repeat === "none" && d.getTime() <= now().getTime()) {
+    if (repeat === "none" && ms <= now().getTime()) {
       setError(PAST_TEXT);
       return;
     }
     setError(null);
     setBusy(true);
-    const ok = await onSave(toRfc3339Local(date, time), repeat);
+    const ok = await onSave(new Date(ms).toISOString(), repeat, zone);
     setBusy(false);
     if (ok) close();
   };
@@ -127,7 +229,7 @@ export function ReminderControl({ reminder, onSave, onRemove, now = () => new Da
     }
   };
 
-  const label = current ? formatReminder(current.at, now()) : null;
+  const label = current ? reminderLabel(current.at, current.timeZone, now(), deviceZone) : null;
 
   return (
     <div className={styles.control}>
@@ -169,6 +271,36 @@ export function ReminderControl({ reminder, onSave, onRemove, now = () => new Da
                 <input type="time" aria-label="Uhrzeit" value={time} onChange={(e) => setTime(e.target.value)} required />
               </label>
             </div>
+            <p className={styles.zone}>
+              <span>Zeitzone: {zone}</span>
+              <button
+                type="button"
+                className={styles.link}
+                aria-label="Zeitzone ändern"
+                aria-expanded={zoneOpen}
+                aria-controls={zoneOpen ? zoneId : undefined}
+                onClick={() => setZoneOpen((v) => !v)}
+              >
+                {zoneOpen ? "fertig" : "ändern"}
+              </button>
+            </p>
+            {zoneOpen && (
+              <label className={styles.field} id={zoneId}>
+                <span>Zeitzone der Erinnerung</span>
+                <select aria-label="Zeitzone" value={zone} onChange={(e) => setZone(e.target.value)}>
+                  {zones.map((z) => (
+                    <option key={z} value={z}>
+                      {z}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {localHint && (
+              <p className={styles.hint} aria-live="polite" data-local-hint="">
+                {localHint}
+              </p>
+            )}
             <label className={styles.field}>
               <span>Wiederholung</span>
               <select aria-label="Wiederholung" value={repeat} onChange={(e) => setRepeat(e.target.value as ReminderRepeat)}>
@@ -204,13 +336,15 @@ export interface DueBannerProps {
   onAck: () => void;
   onSnooze: (minutes: number) => void;
   now?: () => Date;
+  deviceZone?: string;
 }
 
 /** Shown at the top of the active card while its reminder is due. */
-export function DueBanner({ reminder, onAck, onSnooze, now = () => new Date() }: DueBannerProps) {
+export function DueBanner({ reminder, onAck, onSnooze, now = correctedNow, deviceZone = currentDeviceZone() }: DueBannerProps) {
+  const label = reminderLabel(reminder.at, reminder.timeZone, now(), deviceZone);
   return (
     <div className={styles.banner} role="status">
-      <span className={styles.bannerText}>🔔 Erinnerung fällig – {formatReminder(reminder.at, now())}</span>
+      <span className={styles.bannerText}>🔔 Erinnerung fällig – {label}</span>
       <span className={styles.bannerActions}>
         <button type="button" onClick={onAck}>
           Erledigt
@@ -227,8 +361,16 @@ export function DueBanner({ reminder, onAck, onSnooze, now = () => new Date() }:
 }
 
 /** Small bell + time on side (preview) cards. */
-export function ReminderBadge({ reminder, now = () => new Date() }: { reminder: Reminder; now?: () => Date }) {
-  const label = formatReminder(reminder.at, now());
+export function ReminderBadge({
+  reminder,
+  now = correctedNow,
+  deviceZone = currentDeviceZone(),
+}: {
+  reminder: Reminder;
+  now?: () => Date;
+  deviceZone?: string;
+}) {
+  const label = reminderLabel(reminder.at, reminder.timeZone, now(), deviceZone);
   return (
     <span
       className={`${styles.badge} ${reminder.state === "due" ? styles.badgeDue : ""}`}
