@@ -31,7 +31,8 @@ const TITLE = "CI-Erinnerung";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function adb(...args) {
-  return execFileSync("adb", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  // logcat dumps can be large (2 MB buffer): allow 64 MB of output
+  return execFileSync("adb", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
 }
 function log(msg) {
   console.log(`[e2e ${new Date().toISOString()}] ${msg}`);
@@ -343,6 +344,16 @@ main().then(
       console.error("[e2e] app pid: (not running)");
     }
     try {
+      const pid = adb("shell", "pidof", "de.displaybuddy.mobile").trim();
+      if (pid) {
+        console.error(`[e2e] --- logcat of the app process (${pid}) ---`);
+        console.error(adb("logcat", "-d", "-v", "brief", `--pid=${pid}`).split("\n").slice(-300).join("\n"));
+      }
+    } catch (err) {
+      console.error(`[e2e] app logcat failed: ${err.message}`);
+    }
+    try {
+      console.error("[e2e] --- relevant system logcat ---");
       const all = adb("logcat", "-d", "-v", "brief").split("\n");
       const relevant = all.filter((l) =>
         /buddy|tauri|Console|chromium|AndroidRuntime|FATAL|Firebase|Notification|AlarmManager|de\.displaybuddy/i.test(l),
