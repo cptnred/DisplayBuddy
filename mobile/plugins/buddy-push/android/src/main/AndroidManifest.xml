@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Merged into the app manifest (no edits of the generated gen/android needed).
+     Firebase docs „Set up a Firebase Cloud Messaging client app on Android“: a service
+     extending FirebaseMessagingService with the MESSAGING_EVENT intent filter, and the
+     default notification channel for messages without channel_id. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <service
+            android:name="de.displaybuddy.push.PushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <!-- the channel „Erinnerungen“ created by the web layer (CHANNEL_ID "reminders") -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="reminders" />
+    </application>
+</manifest>

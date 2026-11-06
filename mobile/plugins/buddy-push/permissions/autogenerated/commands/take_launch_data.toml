@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-take-launch-data"
+description = "Enables the take_launch_data command without any pre-configured scope."
+commands.allow = ["take_launch_data"]
+
+[[permission]]
+identifier = "deny-take-launch-data"
+description = "Denies the take_launch_data command without any pre-configured scope."
+commands.deny = ["take_launch_data"]

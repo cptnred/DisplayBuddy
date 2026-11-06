@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/mobile-schema.json",
   "identifier": "main",
-  "description": "The single window of the shell: local notifications, resume event, token storage, shell config. The HTTP scope (BUDDY_PUBLIC_URL/api/v1/*) is added at start-up from the build configuration (src/lib.rs).",
+  "description": "The single window of the shell: local notifications, native push (Android/FCM), resume event, token storage, shell config. The HTTP scope (BUDDY_PUBLIC_URL/api/v1/*) is added at start-up from the build configuration (src/lib.rs).",
   "windows": [
     "main"
   ],
@@ -9,6 +9,7 @@
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "notification:default",
+    "buddy-push:default",
     "allow-shell-config",
     "allow-token-get",
     "allow-token-set"

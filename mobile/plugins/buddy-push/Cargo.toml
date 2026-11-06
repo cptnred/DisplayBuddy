@@ -1,0 +1,16 @@
+[package]
+name = "tauri-plugin-buddy-push"
+version = "0.1.0"
+description = "Display Buddy: minimal Android-only FCM push plugin for the native shell (PLAN_V3_SYNC §10.5, D-55)"
+edition = "2024"
+publish = false
+# tauri-plugin's build step requires links = "tauri-plugin-<name>" (Tauri "Mobile Plugin Development")
+links = "tauri-plugin-buddy-push"
+
+[dependencies]
+# same versions as the shell (mobile/src-tauri/Cargo.toml)
+tauri = { version = "=2.12.5", default-features = false }
+
+[build-dependencies]
+# the version the official plugins of this Tauri line build with (Cargo.lock of the shell)
+tauri-plugin = { version = "=2.7.2", features = ["build"] }

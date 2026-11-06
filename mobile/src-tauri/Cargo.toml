@@ -20,6 +20,8 @@ tauri-utils = { version = "=2.10.2", features = ["build"] }
 tauri = { version = "=2.12.5", features = [] }
 tauri-plugin-notification = "=2.8.0"
 tauri-plugin-http = "=2.8.3"
+# Own minimal FCM plugin (Android only, PLAN §10.5, D-55): mobile/plugins/buddy-push
+tauri-plugin-buddy-push = { path = "../plugins/buddy-push" }
 keyring-core = "=1.0.1"
 serde = { version = "1", features = ["derive"] }
 log = "0.4"
