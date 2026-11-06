@@ -20,7 +20,8 @@ class NotificationStorage(private val context: Context, private val jsonMapper: 
     val storage = getStorage(NOTIFICATION_STORE_ID)
     val editor = storage.edit()
     for (request in localNotifications) {
-      if (request.schedule != null) {
+      // Display Buddy patch (D-76): never store the string "null"
+      if (request.schedule != null && request.sourceJson != null) {
         val key: String = request.id.toString()
         editor.putString(key, request.sourceJson.toString())
       }
@@ -44,8 +45,9 @@ class NotificationStorage(private val context: Context, private val jsonMapper: 
       for (key in all.keys) {
         val notificationString = all[key] as String?
         try {
-          val notification = jsonMapper.readValue(notificationString, Notification::class.java)
-          notifications.add(notification)
+          // Display Buddy patch (D-76): skip entries that do not parse to a notification
+          val notification: Notification? = jsonMapper.readValue(notificationString, Notification::class.java)
+          if (notification != null) notifications.add(notification)
         } catch (_: Exception) { }
       }
       return notifications

@@ -160,6 +160,9 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
   @Command
   fun show(invoke: Invoke) {
     val notification = invoke.parseArgs(Notification::class.java)
+    // Display Buddy patch (D-76): upstream never fills `sourceJson`, so storage held the
+    // string "null" and getPending()/the boot receiver failed. Keep the raw request.
+    notification.sourceJson = invoke.getRawArgs()
     val id = manager.schedule(notification)
     // Display Buddy patch (D-76): like `batch`, persist scheduled notifications. Upstream
     // `show` did not, so getPending() stayed empty and LocalNotificationRestoreReceiver
@@ -172,6 +175,9 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
   @Command
   fun batch(invoke: Invoke) {
     val args = invoke.parseArgs(BatchArgs::class.java)
+    // Display Buddy patch (D-76): keep each raw request (see `show`).
+    val raw = invoke.getArgs().getJSONArray("notifications")
+    args.notifications.forEachIndexed { i, n -> n.sourceJson = raw.optJSONObject(i)?.toString() }
 
     val ids = manager.schedule(args.notifications)
     notificationStorage.appendNotifications(args.notifications)

@@ -258,7 +258,7 @@ Caddy: HSTS ohne `preload`, Cache-Header des Servers unverändert.
 **D-76 Patch für `tauri-plugin-notification` 2.8.0 (N1).** Quellcode-Befund (§10.4, D-50) bestätigt und erweitert:
 (1) iOS-`DateFormatter` ohne Zeitzone → Erinnerung um den Zonenversatz verschoben; (2) iOS-Absturz bei
 Benachrichtigungen aus einem früheren App-Start (`notificationsMap[...]!`); (3) Rust sendet 9 Nachkommastellen, die
-Parser erwarten 3; (4) Android verliert Aktionen beim Kaltstart. (5) Android `show` speicherte geplante Benachrichtigungen nicht (nur `batch` tat das) → `getPending()` leer und nach einem Neustart des Geräts keine Wiederherstellung der Alarme; gefunden über die Emulator-Diagnose (Alarm gesetzt, Pending-Liste leer). Die unveränderte Kopie liegt in
+Parser erwarten 3; (4) Android verliert Aktionen beim Kaltstart. (5) Android `show` speicherte geplante Benachrichtigungen nicht (nur `batch` tat das) → `getPending()` leer und nach einem Neustart des Geräts keine Wiederherstellung der Alarme; gefunden über die Emulator-Diagnose (Alarm gesetzt, Pending-Liste leer). (6) `sourceJson` wurde nirgends gesetzt: gespeichert wurde der Text `"null"`, `getPending()` scheiterte daran (auch bei `batch`); jetzt die Roh-Argumente der Anfrage, unlesbare Einträge werden übersprungen. Die unveränderte Kopie liegt in
 `mobile/patches/tauri-plugin-notification` (erster Commit), der Fix im zweiten Commit, eingebunden per
 `[patch.crates-io]`. Entfernen, sobald upstream behoben. Ein Upstream-Issue ist noch nicht angelegt (GitHub-Zugriff
 auf plugins-workspace fehlte in der Sitzung).
