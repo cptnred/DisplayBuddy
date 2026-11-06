@@ -12,10 +12,13 @@
     "test:watch": "vitest",
     "test:tz": "TZ=America/New_York vitest run && TZ=Asia/Tokyo vitest run",
     "typecheck": "tsc --noEmit",
-    "build:web": "tsc && vite build --config vite.web.config.ts"
+    "build:web": "tsc && vite build --config vite.web.config.ts",
+    "build:mobile": "tsc && tsc -p mobile && vite build --config vite.mobile.config.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-http": "2.8.3",
+    "@tauri-apps/plugin-notification": "2.8.0",
     "@tiptap/core": "^3.32.3",
     "@tiptap/extension-list": "^3.32.3",
     "@tiptap/extension-text-style": "^3.32.3",

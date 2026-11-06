@@ -1,0 +1,228 @@
+# Native shell for Android (PLAN_V3_SYNC §10.6, D-54): the Android SDK/NDK cannot be
+# downloaded in the cloud sandbox, so Android is built here on ubuntu-latest.
+#
+# - checks:   Vitest (also TZ=New York/Tokyo), build:mobile, Rust fmt/clippy/test of the shell
+# - apk:      release APK (aarch64, armv7, x86_64); signed with apksigner when the
+#             keystore secrets exist, otherwise uploaded unsigned; manifest permissions checked
+# - emulator: scenarios 28/29 against a real buddy-server in an Android emulator (KVM)
+#
+# Secrets (Settings → Secrets and variables → Actions), never in the repo:
+#   ANDROID_KEYSTORE_BASE64   base64 of the .jks keystore (base64 -w0 release.jks)
+#   ANDROID_KEYSTORE_PASSWORD keystore password
+#   ANDROID_KEY_ALIAS         key alias
+#   ANDROID_KEY_PASSWORD      key password (often the same as the keystore password)
+# Variable (not secret): BUDDY_PUBLIC_URL, e.g. https://buddy.example.org (the server origin
+#   baked into the app; without it the build uses the placeholder https://buddy.example.org).
+#
+# Sources: tauri-docs start/prerequisites (Android: SDK platform, platform-tools, NDK,
+# build-tools, cmdline-tools; JAVA_HOME/ANDROID_HOME/NDK_HOME; rustup targets),
+# distribute/sign/android + developer.android.com "apksigner"/"zipalign",
+# ReactiveCircus/android-emulator-runner README (KVM on ubuntu runners).
+name: mobile-android
+
+on:
+  push:
+    paths:
+      - "mobile/**"
+      - "src/web/**"
+      - "src/lib/**"
+      - "src/types.ts"
+      - "vite.mobile.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/mobile-android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_TOOLCHAIN: "1.97.0"
+  NODE_VERSION: "22"
+  JAVA_VERSION: "17"
+  NDK_VERSION: "27.2.12479018"
+  ANDROID_PLATFORM: "platforms;android-36"
+  BUILD_TOOLS: "36.0.0"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Linux packages for the host build of the shell (tauri-docs prerequisites)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential file libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+      - name: Rust ${{ env.RUST_TOOLCHAIN }}
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy,rustfmt
+          rustup default "$RUST_TOOLCHAIN"
+      - run: npm ci
+      - run: npm test
+      - run: npm run test:tz
+      - run: npm run build:mobile
+      - name: Rust checks of the shell (host)
+        working-directory: mobile/src-tauri
+        env:
+          BUDDY_PUBLIC_URL: https://buddy.example.org
+        run: |
+          cargo fetch --locked
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      BUDDY_PUBLIC_URL: ${{ vars.BUDDY_PUBLIC_URL || 'https://buddy.example.org' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - name: Android SDK packages (pinned)
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+            "ndk;$NDK_VERSION" "$ANDROID_PLATFORM" "build-tools;$BUILD_TOOLS" "platform-tools"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+      - name: Rust ${{ env.RUST_TOOLCHAIN }} + Android targets
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+          rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+      - run: npm ci
+      - name: Lockfile is up to date
+        working-directory: mobile/src-tauri
+        run: cargo fetch --locked
+      - name: Generate the Android project (gen/ is not committed)
+        working-directory: mobile
+        run: |
+          npx tauri android init --ci
+          npx tauri icon ../public-web/icons/icon.svg
+      - name: Build release APK
+        working-directory: mobile
+        run: |
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          npx tauri android build --ci --apk --target aarch64 armv7 x86_64
+      - name: Locate APK and check manifest permissions
+        id: apk
+        run: |
+          APK="$(find mobile/src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' | head -n1)"
+          test -n "$APK"
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          BT="$ANDROID_HOME/build-tools/$BUILD_TOOLS"
+          "$BT/aapt2" dump permissions "$APK" | tee permissions.txt
+          for p in POST_NOTIFICATIONS USE_EXACT_ALARM SCHEDULE_EXACT_ALARM RECEIVE_BOOT_COMPLETED; do
+            grep -q "android.permission.$p" permissions.txt || { echo "missing permission $p"; exit 1; }
+          done
+          "$BT/aapt2" dump badging "$APK" | grep -E "^package:|sdkVersion|targetSdkVersion"
+      - name: Sign APK (only with keystore secrets)
+        id: sign
+        env:
+          KS_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          mkdir -p out
+          if [ -z "$KS_BASE64" ]; then
+            echo "::warning::No keystore secrets – uploading an UNSIGNED APK (cannot be installed)."
+            cp "${{ steps.apk.outputs.path }}" out/display-buddy-unsigned.apk
+            exit 0
+          fi
+          BT="$ANDROID_HOME/build-tools/$BUILD_TOOLS"
+          printf '%s' "$KS_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          "$BT/zipalign" -P 16 -f 4 "${{ steps.apk.outputs.path }}" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" sign --ks "$RUNNER_TEMP/release.jks" --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:KS_PASS --key-pass env:KEY_PASS \
+            --out out/display-buddy.apk "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" verify --print-certs out/display-buddy.apk | grep -v "^Signer #1 public key"
+          rm -f "$RUNNER_TEMP/release.jks"
+          sha256sum out/display-buddy.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: display-buddy-android
+          path: out/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      E2E_USER: ci
+      E2E_PASSWORD: emulator-test-password-2026
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - name: Android SDK packages (pinned)
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+            "ndk;$NDK_VERSION" "$ANDROID_PLATFORM" "build-tools;$BUILD_TOOLS" "platform-tools"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+      - name: Rust ${{ env.RUST_TOOLCHAIN }} + emulator target
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+          rustup target add x86_64-linux-android
+      - run: npm ci
+      - name: Start buddy-server on the runner (port 8080)
+        run: |
+          cargo build --locked --release --manifest-path server/Cargo.toml
+          BIN=server/target/release/buddy-server
+          export BUDDY_DB="$RUNNER_TEMP/buddy.db"
+          printf '%s\n' "$E2E_PASSWORD" | "$BIN" user add "$E2E_USER" --time-zone Europe/Berlin
+          BUDDY_PUBLIC_URL=http://localhost:8080 BUDDY_LISTEN=0.0.0.0:8080 nohup "$BIN" serve > "$RUNNER_TEMP/server.log" 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8080/api/v1/health && break; sleep 1; done
+      - name: Build debug APK for the emulator (server = host 10.0.2.2)
+        working-directory: mobile
+        env:
+          BUDDY_PUBLIC_URL: http://10.0.2.2:8080
+        run: |
+          npx tauri android init --ci
+          npx tauri android build --ci --debug --apk --target x86_64
+          realpath "$(find src-tauri/gen/android/app/build/outputs/apk -name '*debug*.apk' | head -n1)" > "$RUNNER_TEMP/apk-path"
+          cat "$RUNNER_TEMP/apk-path"
+      - name: Enable KVM (android-emulator-runner README)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Scenarios 28/29 in the emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: node mobile/e2e/emulator.mjs "$(cat "$RUNNER_TEMP/apk-path")"
+      - name: Server log (no secrets are logged by the server)
+        if: always()
+        run: tail -n 200 "$RUNNER_TEMP/server.log" || true
