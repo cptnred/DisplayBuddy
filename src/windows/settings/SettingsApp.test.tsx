@@ -32,6 +32,20 @@ vi.mock("../../lib/api", () => ({
       skinListeners.push(cb);
       return () => undefined;
     }),
+    syncStatus: vi.fn(async () => ({
+      enabled: false,
+      serverUrl: "",
+      deviceName: "",
+      state: "off",
+      lastSyncAt: null,
+      pending: 0,
+      message: null,
+      clockOffsetMs: 0,
+    })),
+    onSyncStatus: vi.fn(async () => () => undefined),
+    syncConnect: vi.fn(),
+    syncDisconnect: vi.fn(),
+    syncNow: vi.fn(),
   },
 }));
 import { api } from "../../lib/api";
