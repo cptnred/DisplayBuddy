@@ -84,6 +84,19 @@ Ehrlich getrennt: was im Code geprüft ist, was aus Quellen abgeleitet ist, was 
   es; für einen neuen Einlöse-Endpunkt muss dieselbe Regel gelten.
 - PWA: CSP `connect-src 'self'` (`server/src/web.rs`), App-CSP der Hülle `connect-src ipc: http://ipc.localhost`
   (HTTP läuft über das Plugin in Rust).
+- **Nachtrag 2026-11-07 – Android-Hintergrundabgleich (D-107)**, vom Benutzer parallel umgesetzt. Beim Lesen war er
+  **noch nicht committet**; geprüft wurde der Arbeitsstand im Arbeitsverzeichnis.
+  - Ein Kotlin-Dienst im Vordergrund (`mobile/plugins/buddy-push/…/SyncService.kt`, Typ `specialUse`, Neustart
+    nach Boot/Update) ruft alle **3 min** `GET /api/v1/sync/changes` mit dem Geräte-Token auf. Er plant
+    Erinnerungen über die Klassen des Notification-Plugins, auch bei geschlossener App.
+  - Er hat einen **eigenen Cursor** und eine **eigene Kopie von Server-Adresse und Token**
+    (`BackgroundSettings.kt`, AES-GCM mit Android-Keystore-Schlüssel).
+  - Er spricht über `HttpURLConnection`, also **am HTTP-Scope des Tauri-Plugins vorbei**.
+  - Bei 401/403 löscht er seine Kopie und hält an; bei 410 lädt er einmal neu.
+  - Übergabe aus der Web-Schicht: `src/web/notify/native-background.ts` per `start_background_sync(baseUrl,
+    token)` mit `baseUrl = shell_config.serverUrl`.
+  - Die Prüfung der Adresse in `PushPlugin.kt` ist nur `^https?://[^/?#\s]+$`, erlaubt also `http://` zu jedem
+    Host. → Folgen für v4: §6.5, §7.2, §8, §11.3, §13, §14.
 
 **Aus offiziellen Quellen abgeleitet (gelesen am 2026-11-07):**
 - `@mdn/browser-compat-data` 8.1.8: `BarcodeDetector` – Chrome Android 83 ✓, WebView Android 83 ✓,
@@ -430,7 +443,26 @@ Recover, Konto-Endpunkte), `src-tauri/src/sync/pairing.rs` (Start, Status, Cance
   (Manifest-Merger prüfen).
 - `mobile/src/main.tsx`: Scanner-Adapter (`QrScanner`) und Server-Wahl (`ServerSelector`) an die Oberfläche geben;
   nach `server_set` neu laden; ausstehenden Code nach dem Neustart einlösen.
-- `mobile/README.md`: Abschnitt „Server-Adresse“ neu (Standard + eigener Server), Kamera-Erlaubnis.
+- **Hintergrundabgleich (Android, D-107)** – v4 erweitert ihn:
+  - **Gleiche Adressregel wie überall:** `start_background_sync` prüft die Adresse wie
+    `server_url::normalize`: `https://`, `http://` nur für localhost/127.0.0.1/[::1]/10.0.2.2, keine Pfade. Damit
+    ersetzt es die Prüfung `^https?://…` in `PushPlugin.kt`. Weil der Dienst am Tauri-Scope vorbeigeht, ist dieser
+    Check der einzige Schutz. `native-background.ts` übergibt ausschließlich die wirksame Origin aus `shell_config`.
+  - **Server wechseln:** `server_set` ist nur abgemeldet erlaubt. Beim Abmelden ruft die Web-Schicht
+    `stop_background_sync` auf (vorhanden), der Dienst hält also nie eine alte Origin. Nach `loginWithCode` übergibt
+    die Web-Schicht das neue Token genauso wie nach dem Passwort-Login. Das Konto-Ereignis des Stores löst
+    `ensure()` aus.
+  - **Widerruf:** „Das war ich nicht – abmelden“, Konto löschen, Wiederherstellung, Passwortwechsel mit
+    `signOutOthers` und Sperre (`403 account_disabled`) landen beim Dienst als 401/403 → er löscht seine Kopie.
+    Bei 403 löscht die Web-Schicht beim nächsten Öffnen das App-Token **nicht** (Sperre ist umkehrbar): Sie zeigt
+    „Das Konto ist gesperrt.“ und übergibt nach dem Entsperren erneut.
+  - **Unbekanntes Datenformat (D-101):** Meldet `GET /me/account` ein unbekanntes `contentFormat`, ruft die
+    Web-Schicht `stop_background_sync` auf, bevor sie den eigenen Sync stoppt. Unabhängig davon überspringt der
+    Dienst Datensätze, die er nicht parsen kann, statt Alarme falsch zu setzen, und meldet dann `ERROR`. So kann ein
+    künftiges verschlüsseltes Format keine falschen Erinnerungen erzeugen.
+  - **Kein Schreiben:** Der Dienst liest nur. Kontingente und `/sync/push` betreffen ihn nicht.
+- `mobile/README.md`: Abschnitt „Server-Adresse“ neu (Standard + eigener Server), Kamera-Erlaubnis; der Abschnitt
+  „Hintergrundabgleich“ des Benutzers bleibt und nennt den eigenen Server.
 
 ### 7.3 PWA und gemeinsame Oberfläche (`src/web/`)
 
@@ -440,7 +472,8 @@ Recover, Konto-Endpunkte), `src-tauri/src/sync/pairing.rs` (Start, Status, Cance
 - `src/web/sync/`: `loginWithCode` → web: `POST /session/pairing`, nativ: `POST /devices/pairing` (HTTP-Adapter
   speichert das Token auch hier) → danach `GET /me` wie beim Passwort-Login; `account_mismatch`-Regel (D-71) gilt.
   Neuer Fehler `content_format_unsupported`, wenn `GET /me/account` ein unbekanntes `contentFormat` meldet → Sync
-  stoppt, Hinweis „Bitte Display Buddy aktualisieren“.
+  stoppt, Hinweis „Bitte Display Buddy aktualisieren“. In der nativen Android-App wird vorher der
+  Hintergrundabgleich gestoppt (§7.2).
 - `src/web/pairing/`: `parse.ts` (nutzt `src/lib/pairing.ts`), `web-scanner.ts` (getUserMedia, Rückkamera,
   BarcodeDetector oder jsQR, Kamera beim Verlassen sicher stoppen).
 - `src/web/ui/`: `LoginPage` mit drei Wegen (QR / Code / Passwort), `PairPage` (`/pair`), Konto-Bereich in
@@ -487,6 +520,7 @@ Recover, Konto-Endpunkte), `src-tauri/src/sync/pairing.rs` (Start, Status, Cance
 | Registrierungen | global | 200 pro Tag (`BUDDY_REGISTRATION_DAILY_LIMIT`) |
 | Pairing einlösen (Fehlversuche) | IP | 10 pro 10 min → 15 min Sperre |
 | Pairing erzeugen | Konto | 20 pro Stunde, max. 3 offen |
+| `/sync/changes`, `/sync/push` | – | **keine** neue Bremse. Der Android-Hintergrundabgleich (D-107) ruft `/sync/changes` je Gerät alle 3 min auf (≈ 480/Tag); Limits dürfen diese Endpunkte nicht treffen, sonst bricht die Offline-Erinnerung |
 | Export | Konto | 1 pro Minute |
 
 Alle Sperren antworten `429` mit `Retry-After`; die IP kommt wie bisher nur über `BUDDY_TRUSTED_PROXIES` aus
@@ -516,6 +550,8 @@ Alle Sperren antworten `429` mit `Retry-After`; die IP kommt wie bisher nur übe
 | S18 | Push-Dienste lesen Inhalte | Web Push ist Ende-zu-Ende zum Browser verschlüsselt (RFC 8291); FCM nicht → auf pev-point `BUDDY_FCM_PAYLOAD=minimal` |
 | S19 | Gesperrtes Konto benutzt alte Tokens | Extraktor prüft `users.disabled_at` bei jeder Anfrage → 403 |
 | S20 | Gelöschtes Konto, Daten in Backups | Backups rotieren nach 14 Tagen (v3); steht in der Datenschutzerklärung; kein Wiederherstellen einzelner gelöschter Konten aus Backups (CLI-Hinweis) |
+| S21 | Android-Hintergrunddienst schickt das Token an einen falschen oder unverschlüsselten Host (er umgeht den Tauri-Scope) | dieselbe Adressprüfung wie `server_url::normalize` in `start_background_sync` (§7.2); keine Weiterleitungen (im Dienst schon so); Adresse nur aus `shell_config` |
+| S22 | Zweite Token-Kopie bleibt nach einem Widerruf liegen | Dienst löscht sie bei 401/403, Web-Schicht ruft beim Abmelden `stop_background_sync`; Kopie mit nicht exportierbarem Keystore-Schlüssel verschlüsselt (D-107) |
 
 ## 9. Kompatibilität und Migration
 
@@ -643,9 +679,15 @@ gehört ins Repo.
 - **Verfügbarkeit:** ohne Zusage („best effort“), in den Nutzungshinweisen so formuliert; Updates mit Ankündigung.
 - **Kosten:** VPS (vorhanden), Domain (vorhanden), FCM kostenlos, kein Apple-Programm nötig (iOS nur PWA bzw.
   Selbstbau, D-54).
-- **Firebase für die öffentliche App:** Das Firebase-Projekt der offiziellen APK und das Dienstkonto des Servers
-  müssen zusammengehören. Selbst-Hoster, die die offizielle APK mit ihrem Server nutzen, bekommen **keinen**
-  FCM-Weckruf (lokale Planung funktioniert trotzdem, D-105).
+- **Firebase ist für pev-point optional.** Unter Android holt der Hintergrundabgleich (D-107) neue Erinnerungen
+  spätestens nach etwa 3 min, auch ohne FCM. FCM bringt nur noch schnellere Weckrufe. Wer es nutzt: Das
+  Firebase-Projekt der offiziellen APK und das Dienstkonto des Servers müssen zusammengehören. Selbst-Hoster mit der
+  offiziellen APK bekommen keinen FCM-Weckruf, aber den Hintergrundabgleich (D-105). iOS: weiter nur lokale Planung
+  beim Öffnen/Sync.
+- **Last durch den Hintergrundabgleich:** pro Android-Gerät etwa 480 Abfragen am Tag. Meist sind es leere Antworten,
+  ein Index-Lookup auf `notes(user_id, seq)`/`reminders(user_id, seq)`. Bei 1 000 Geräten sind das rund
+  6 Anfragen/s im Mittel. In der Überwachung Anfragen/s und Antwortzeit von `/sync/changes` beobachten; NPM-Logs
+  werden entsprechend größer (Rotation).
 
 ## 12. Phasen und Arbeitspakete
 
@@ -656,12 +698,13 @@ gehört ins Repo.
 | **B Desktop** | Konto- und Pairing-Client in Rust, 14 Commands, `open_settings(section)`, Abschnitt „Konto & Handy“, QR-Anzeige, Wiederherstellungs-Dialog, Hinweiskarte | `src-tauri/src/sync/`, `src-tauri/src/commands/{account,pairing,sync,windows}.rs`, `lib.rs`/`build.rs`/`capabilities/*.json`/`tests/contract.rs`/`Cargo.toml` (nur Einträge), `src/windows/settings/`, `src/windows/notes/AccountHint*` (+ Einbindung in `NotesApp`), `src/lib/api*` | 0 (gegen Mock-Server; echter Server ab A/P) | L |
 | **C Web** | `loginWithCode`, Adapter-Tokenregel, `serverInfo`, `deleteAccount`, Format-Sperre; Web-Scanner; `LoginPage`, `PairPage`, Konto in Settings, Rechtslinks, Server-Zeile über `ServerSelector` | `src/web/sync/`, `src/web/pairing/`, `src/web/ui/`, `src/web/main.tsx`, `package.json` (jsqr) | 0 | M |
 | **P Server-Pairing** | `/pairing*`, `/devices/pairing`, `/session/pairing`, Limits, Geräte-Limit, Tests | `server/src/pairing/`, `server/tests/pairing.rs` (+ eine Zeile Router in `lib.rs`, mit A abgestimmt) | A | M |
-| **N Native App** | Scanner-Plugin, `server_get/set`, Laufzeit-Scope, Standard-Origin, Info.plist/Kamera, Migration der Origin, `main.tsx`-Verdrahtung, README, CI-Variable | `mobile/` (ohne `mobile/patches/`), `.github/workflows/mobile-*.yml` | C, 0 | M |
+| **N Native App** | Scanner-Plugin, `server_get/set`, Laufzeit-Scope, Standard-Origin, Info.plist/Kamera, Migration der Origin, `main.tsx`-Verdrahtung, Hintergrundabgleich anpassen (Adressregel, Formatstopp, Sperre, §7.2), README, CI-Variable | `mobile/` (ohne `mobile/patches/`), `src/web/notify/native*`, `.github/workflows/mobile-*.yml` | C, 0; **Vorbedingung: Hintergrundabgleich (D-107) ist committet** | M |
 | **E Betrieb** | Compose-Variablen, `.env.example`, `deploy/README.md` (Upgrade v3→v4, Registrierung, Admin-Befehle), `docs/OPERATIONS.md` (§11), Docker-Log-Rotation | `deploy/`, `docs/OPERATIONS.md` | A | S |
 | **F Integration** (Orchestrator) | Zusammenführen, Abnahme §13, Doku (HANDOFF, MANUAL_TESTS §32 ff., README), Version 0.4.0, Installer, APK | alle | alle | M |
 
 Reihenfolge: **0 → (A ∥ B ∥ C) → (P ∥ N ∥ E) → F.** B und C arbeiten gegen Mocks der neuen Endpunkte, bis A/P fertig
-sind. Aufwand: S ≈ ein kurzer Agentenlauf, M ≈ ein voller, L ≈ ein voller Lauf mit Nacharbeit.
+sind. Vor Phase 0 muss der Android-Hintergrundabgleich (D-107) committet sein. Er ändert dieselben Dateien wie
+Phase N (`mobile/src/main.tsx`, `mobile/plugins/buddy-push/`, `src/web/notify/native*`). Aufwand: S ≈ ein kurzer Agentenlauf, M ≈ ein voller, L ≈ ein voller Lauf mit Nacharbeit.
 
 ## 13. Tests und Abnahme
 
@@ -706,6 +749,10 @@ Android-Emulator in CI):
 | 26 | Logs | kein Code, Passwort, Token, Wiederherstellungscode in Server- und Desktop-Logs (grep im Testlauf) |
 | 27 | `content_format` = 2 (manuell gesetzt) | v4-Clients stoppen den Sync mit Hinweis, keine Schreibvorgänge |
 | 28 | Hinweiskarte | erscheint nicht verbunden; „Nicht mehr zeigen“ wirkt dauerhaft; verbunden nie |
+| 29 | Android-Hintergrundabgleich nach QR-Anmeldung (Emulator) | Dienst bekommt Origin + Token; eine am PC angelegte Erinnerung ist bei geschlossener App nach ≤ 3 min geplant |
+| 30 | Hintergrundabgleich nach „Das war ich nicht – abmelden“ bzw. Konto löschen | nächster Lauf 401 → Kopie gelöscht, Dienst gestoppt, keine weiteren Anfragen |
+| 31 | `start_background_sync` mit `http://beispiel.de`, mit Pfad, mit `https://…` | erste zwei abgelehnt, drittes angenommen (Kotlin-Unit-Test + Vitest) |
+| 32 | `contentFormat` = 2 in der nativen Android-App | Hintergrundabgleich gestoppt, App-Sync gestoppt, Hinweis |
 
 **Nur durch den Benutzer testbar** (`MANUAL_TESTS.md` v4): echtes Android-Handy (Kamera-Scan in der App und mit der
 Kamera-App → PWA), iPhone (Kamera-App → Safari → `/pair`, installierte PWA mit „Code eingeben“ bzw. In-App-Scanner,
@@ -733,6 +780,18 @@ Rechtslinks.
   Domainwechsel: alte Adresse eine Zeit lang parallel betreiben (zweiter Proxy-Host, aber `BUDDY_PUBLIC_URL` kann nur
   eine Origin – CSRF und Cookies hängen daran), Geräte neu verbinden, PWA neu installieren.
 - **Rechtliches:** Inhalte von Impressum/Datenschutz und ggf. Nutzungsbedingungen liefert der Betreiber.
+- **Hintergrundabgleich (D-107):**
+  - Der Dienst zeigt eine dauerhafte Benachrichtigung (Vordergrunddienst) und braucht die Ausnahme von der
+    Akku-Optimierung.
+  - Er erzeugt Last auf dem öffentlichen Server (§11.3).
+  - Er ist ein zweiter HTTP-Weg neben dem Tauri-Scope; die Adressprüfung muss deshalb dort mitgepflegt werden.
+  - Die Datenschutzerklärung von pev-point sollte erwähnen, dass die Android-App regelmäßig im Hintergrund
+    abfragt (IP-Adressen in den Logs).
+  - **Server-Befund:** Die Abfragen des Dienstes setzen `devices.synced_seq` und `last_seen_at` des Geräts, obwohl
+    die App selbst weiter zurückliegen kann. `synced_seq` wird im Server nur geschrieben (`sync.rs`) und in
+    `device list` angezeigt, von keiner Logik gelesen (geprüft) → unkritisch. `last_seen_at` in der Geräteliste
+    (§5.2) heißt damit „zuletzt erreichbar“, nicht „zuletzt geöffnet“. Die Oberfläche schreibt deshalb „zuletzt
+    aktiv“.
 
 ## 15. Nicht-Ziele in v4
 
@@ -743,7 +802,9 @@ Rechtslinks.
 - Bestätigung des Pairings am PC (Benutzerentscheidung)
 - Pairing PC → PC (zweiter PC meldet sich mit Passwort an)
 - Android App Links / iOS Universal Links (Kamera öffnet direkt die native App)
-- App-Store-/Play-Store-Veröffentlichung
+- App-Store-/Play-Store-Veröffentlichung. Für Google Play wären zusätzlich die Berechtigungen des
+  Hintergrundabgleichs (`FOREGROUND_SERVICE_SPECIAL_USE`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) und
+  `USE_EXACT_ALARM` (D-77) Richtlinienfragen.
 - Teilen von Notizen zwischen Konten
 - Zwei-Faktor-Authentifizierung, Passkeys (später möglich: `PublicKeyCredential` ist laut browser-compat-data
   in Chrome Android 70 / Safari iOS 13 vorhanden)

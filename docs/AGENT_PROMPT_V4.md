@@ -36,6 +36,8 @@ Deine Rolle: Orchestrator.
   B und C arbeiten bis zum Ende von A/P gegen Mock-Server bzw. Fakes der neuen Endpunkte.
 
 Vor Phase 0:
+0. Prüfen, dass der Android-Hintergrundabgleich (D-107) committet ist. Er ändert dieselben Dateien wie Phase N.
+   Sonst den Benutzer fragen und nicht starten.
 1. Bau-Umgebung wie in HANDOFF §4 einrichten, npm install, alle bestehenden Checks einmal grün sehen
    (Frontend, src-tauri, server, crates/buddy-core, mobile/src-tauri). Rote Checks zuerst melden.
 2. Versionen prüfen und als D-Eintrag festhalten (cargo info / npm view, stabile Linien, keine Alphas):
@@ -202,6 +204,8 @@ NIST SP 800-63B (Abschnitt Memorized Secrets), axum-Beispiele (testing), sqlx-Do
     password_required; Passwort über die Bremse), PUT /me/password (Regeln D-89, ohne currentPassword nur
     desktop/mobile ≥ 24 h), POST /me/recovery-code, GET /me/export (Format §5.4, Content-Disposition,
     1/min), POST /me/delete (Passwort + confirmUsername, Cascade, Cookie löschen bei Web).
+  - KEINE neue Bremse auf /sync/changes und /sync/push: Der Android-Hintergrundabgleich (D-107) fragt je Gerät
+    alle 3 min ab. Ein Test stellt sicher, dass 100 schnelle GET /sync/changes eines Geräts nie 429 ergeben.
   - Geräte-Limit in POST /devices und POST /session (Hilfsfunktion, die Phase P mitbenutzt: öffentlich in
     accounts::quota exportieren und im Bericht nennen).
 - sync.rs: Kontingent-Prüfung in der Push-Transaktion (Netto-Regel D-94, 413 quota_exceeded, nichts angewendet).
@@ -324,8 +328,10 @@ Checks: cd server && cargo test && cargo clippy --all-targets -- -D warnings && 
 
 ```text
 Auftrag: native App gemäß PLAN_V4 §6.2 (native), §6.5 (native), §7.2, §9.2.
-Ordner (exklusiv): mobile/ (ohne mobile/patches/), .github/workflows/mobile-*.yml.
-Abhängig von Phase C (Oberfläche, contract-Schnittstellen QrScanner/ServerSelector).
+Ordner (exklusiv): mobile/ (ohne mobile/patches/), src/web/notify/native*, .github/workflows/mobile-*.yml.
+Abhängig von Phase C (Oberfläche, contract-Schnittstellen QrScanner/ServerSelector) und vom committeten
+Android-Hintergrundabgleich (D-107: mobile/plugins/buddy-push SyncService/BackgroundSync/BackgroundSettings,
+src/web/notify/native-background.ts). Lies D-107 und seinen Nachtrag „Folgen für v4“ zuerst.
 Quellen: tauri-docs (plugin/barcode-scanner, Capabilities zur Laufzeit, iOS-Konfiguration/Info.plist),
 Quellcode plugins-workspace/plugins/barcode-scanner (Android-Manifest, iOS NSCameraUsageDescription),
 Android-Doku <uses-feature>, Apple-Doku NSCameraUsageDescription.
@@ -346,10 +352,21 @@ Android-Doku <uses-feature>, Apple-Doku NSCameraUsageDescription.
   ServerSelector über server_get/set; nach server_set neu laden; ausstehenden Code (sessionStorage) nach dem
   Start einlösen (nur wenn < 3 min alt); Origin-Prüfung PLAN_V4 §9.2 (meta.account.serverUrl ≠ wirksame Origin
   bei vorhandenem Token → kein Sync, Hinweis).
+- Hintergrundabgleich (D-107, PLAN_V4 §7.2):
+  - start_background_sync (PushPlugin.kt) prüft die Adresse wie server_url::normalize (https; http nur
+    localhost/127.0.0.1/[::1]/10.0.2.2; kein Pfad, keine Query, kein Fragment, kein Userinfo) und ersetzt das
+    bisherige ^https?://…; Kotlin-Unit-Test mit denselben Fällen wie die Rust-Tests von server_url.rs.
+  - native-background.ts: Übergabe auch nach loginWithCode (Konto-Ereignis des Stores); stop_background_sync
+    vor server_set und beim Abmelden/Konto löschen; bei content_format_unsupported stoppen; bei 403
+    account_disabled App-Token behalten, Hinweis zeigen, nach Entsperren erneut übergeben.
+  - BackgroundSync.kt: Datensätze, die nicht parsen, überspringen (kein Alarm), Ergebnis ERROR.
+  - Abnahme PLAN_V4 §13 Nr. 29–32.
 - CI: BUDDY_PUBLIC_URL weiter aus der GitHub-Variable; ohne Variable baut CI mit dem Standard pev-point (Hinweis
   im Log); Emulator-Szenario „Code eingeben“ (Scanner gemockt) ergänzen, falls im Runner möglich.
 - mobile/README.md: Server-Adresse (Standard + eigener Server zur Laufzeit), Kamera-Erlaubnis, QR-Anmeldung,
-  Hinweis D-105 (FCM nur mit dem Firebase-Projekt des Server-Betreibers).
+  Hinweis D-105 (FCM nur mit dem Firebase-Projekt des Server-Betreibers; ohne FCM übernimmt unter Android der
+  Hintergrundabgleich). Den Abschnitt „Hintergrundabgleich“ des Benutzers erhalten und um den eigenen Server
+  ergänzen.
 Tests: Rust (normalize/server.json/Fehler bei Token), Vitest (Scanner-Adapter mit gemocktem Plugin, Neustart-Fluss
 mit ausstehendem Code, Origin-Abweichung); Builds in CI; ehrlich berichten, was nur in CI oder gar nicht lief.
 Checks: npm test, npm run build:mobile, cd mobile/src-tauri && cargo test/clippy/fmt; Android-/iOS-Build (CI).
@@ -372,7 +389,9 @@ Abhängig von Phase A (Variablennamen).
   Datenschutzerklärung Art. 13 mit den Punkten aus PLAN_V4 §11.3, AV-Vertrag, Verzeichnis, TOMs – ausdrücklich
   „kein Rechtsrat“), Backups außerhalb des VPS (z. B. restic, inkl. vapid.pem und FCM-Dienstkonto,
   Rücksicherungstest), Überwachung (/api/v1/health, Platte, Zertifikat), Log-Aufbewahrung 7 Tage (Docker, NPM),
-  Kosten, Firebase/VAPID-Zuständigkeit, Vorgehen bei Missbrauch (disable, invite-Modus), Update-Ablauf.
+  Kosten, Last durch den Android-Hintergrundabgleich (≈ 480 Abfragen/Gerät/Tag, Anfragen/s und Antwortzeit von
+  /sync/changes beobachten; Hinweis für die Datenschutzerklärung: regelmäßige Abfragen mit IP-Adresse),
+  Firebase (für pev-point optional, D-105)/VAPID-Zuständigkeit, Vorgehen bei Missbrauch (disable, invite-Modus), Update-Ablauf.
 Prüfen: docker compose config für beide Compose-Dateien (wenn Docker verfügbar), Server-Start mit
 Beispielvariablen; ehrlich berichten.
 ```
@@ -384,7 +403,7 @@ Beispielvariablen; ehrlich berichten.
 2. Lokaler End-to-End-Aufbau wie v3 (HANDOFF §4): buddy-server mit Temp-DB und BUDDY_REGISTRATION=open,
    kleinen PoW-Bits und Kontingenten für Tests; Desktop unter Xvfb; PWA mit Playwright/Chromium
    (/pair#c=…, Code-Eingabe, Cross-Site-Versuch); native App im Android-Emulator in CI (Code-Eingabe).
-3. Alle Abnahmeszenarien aus PLAN_V4 §13 (1–28) durchspielen und dokumentieren (Befehle, Screenshots, DB-Prüfungen).
+3. Alle Abnahmeszenarien aus PLAN_V4 §13 (1–32) durchspielen und dokumentieren (Befehle, Screenshots, DB-Prüfungen).
    Nicht Automatisierbares (echte Kameras, iPhone, Windows-Skalierung, echter Server hinter NPM) als Handtest in
    docs/MANUAL_TESTS.md (§32 ff.).
 4. Doku: HANDOFF (Stand v4, Lektionen), README, deploy/README, mobile/README, OPERATIONS.md gegenlesen.
@@ -400,7 +419,7 @@ Beispielvariablen; ehrlich berichten.
 ```text
 ## v4 – Ergebnis
 **Was neu ist** (5–8 Punkte, verständlich)
-**Getestet** (Befehl → Ergebnis; Abnahmeszenarien 1–28 mit Status)
+**Getestet** (Befehl → Ergebnis; Abnahmeszenarien 1–32 mit Status)
 **Nur kompiliert / statisch geprüft** (z. B. iOS-Build ohne Gerät, Kamera-Scan ohne echte Kamera)
 **Nicht prüfbar – bitte selbst testen** (Verweis auf MANUAL_TESTS v4: Android-Kamera, iPhone Kamera-App → /pair
 und installierte PWA, native App per Xcode, Windows-Installer gegen buddy.pev-point.de)

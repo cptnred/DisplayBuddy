@@ -396,6 +396,8 @@ umgeschrieben.
   höchstens bis zum nächsten App-Start im Scope.
 - Ein Update geht nur über eine gleich signierte APK, also vom selben Ersteller. Weicht `meta.account.serverUrl`
   von der wirksamen Origin ab, stoppt der Sync mit einem Hinweis, statt still umzuschalten.
+- Der Android-Hintergrundabgleich (D-107) geht am Tauri-Scope vorbei. Deshalb prüft `start_background_sync` die
+  Adresse nach denselben Regeln wie `server_url::normalize`. Die Adresse kommt nur aus `shell_config`.
 
 **D-98 Die PWA bleibt an ihre Origin gebunden.** `connect-src 'self'` und das `__Host-`-Cookie bleiben. Die PWA auf
 pev-point spricht nie mit fremden Servern. Selbst-Hoster nutzen die PWA ihres eigenen Servers.
@@ -417,7 +419,9 @@ v3-Server an `404` und bieten dann nur den Passwort-Login an. Die API bleibt `/a
 
 **D-101 E2E später, in v4 vorbereitet.**
 - `users.content_format` (1 = Klartext) wird über `GET /me/account` gemeldet. Bei einem unbekannten Format stoppen
-  v4-Clients den Sync (`content_format_unsupported`), statt Daten zu überschreiben.
+  v4-Clients den Sync (`content_format_unsupported`), statt Daten zu überschreiben. In der Android-App gehört der
+  Hintergrundabgleich (D-107) dazu: Die Web-Schicht stoppt ihn; der Dienst überspringt außerdem Datensätze, die er
+  nicht parsen kann, statt falsche Alarme zu setzen.
 - Das QR-Fragment kann später einen Schlüssel tragen, ohne dass der Server ihn sieht. Das Exportformat ist
   versioniert.
 - Ehrliche Folgen für später: Push nur „Erinnerung fällig“ ohne Text; ohne Code oder Schlüssel ist ein vergessenes
@@ -434,15 +438,33 @@ v3-Server an `404` und bieten dann nur den Passwort-Login an. Die API bleibt `/a
 Server-Prozess). Neu sind ein IP-weites Limit für Fehlversuche (30/h über alle Benutzernamen), Limits für Challenges,
 Registrierung, Pairing-Einlösen (10 Fehlversuche/10 min) und Export. Die Bremse (IP, Benutzer) gilt auch für
 `recover` und für Passwort-Bestätigungen. Die IP wird weiter nur über `BUDDY_TRUSTED_PROXIES` bestimmt.
+`/sync/changes` und `/sync/push` bekommen **keine** neue Bremse: Der Android-Hintergrundabgleich (D-107) fragt je
+Gerät alle 3 min ab.
 
 **D-104 CSRF-Regel per Pfad-Präfix** (erweitert D-66): Die Prüfung greift für alles, was mit `/api/v1/session`
 beginnt (`/session`, `/session/pairing`), und wie bisher für jede Cookie-Anfrage. Bisher galt „Pfad endet auf
 `/session`“; damit wäre `/session/pairing` ohne Login-CSRF-Schutz geblieben (im Code geprüft).
 
-**D-105 Nativer Push nur mit passendem Firebase-Projekt.** FCM-Token und Dienstkonto gehören zu einem
-Firebase-Projekt. Die offizielle APK (Projekt des Betreibers) bekommt nur von pev-point Weckrufe. Selbst-Hoster mit
-der offiziellen APK haben keinen FCM-Weckruf; die lokale Planung (D-47) funktioniert trotzdem. Wer FCM selbst will,
-baut die App mit dem eigenen Firebase-Projekt.
+**D-105 Nativer Push nur mit passendem Firebase-Projekt, und nur noch als Ergänzung.** FCM-Token und Dienstkonto
+gehören zu einem Firebase-Projekt. Die offizielle APK (Projekt des Betreibers) bekommt nur von pev-point Weckrufe.
+Selbst-Hoster mit der offiziellen APK haben keinen FCM-Weckruf. Unter Android holt der Hintergrundabgleich (D-107)
+neue Erinnerungen trotzdem nach höchstens etwa 3 min; unter iOS bleibt die lokale Planung beim Öffnen/Sync (D-47).
+Für pev-point ist Firebase damit optional. Wer FCM selbst will, baut die App mit dem eigenen Firebase-Projekt.
 
 **D-106 Version 0.4.0.** Server, Desktop und App bekommen 0.4.0; API weiter `/api/v1` (additiv), `apiLevel: 2`.
 v3-Clients bleiben gegen einen v4-Server lauffähig (Matrix PLAN_V4 §9.1).
+
+**D-107 – Folgen für v4** (Nachtrag zur Planung, PLAN_V4_ACCOUNTS §2, §7.2, §8, §11.3):
+- Adressprüfung: Der Dienst geht am HTTP-Scope von Tauri vorbei (`HttpURLConnection`). `start_background_sync`
+  prüft deshalb nach denselben Regeln wie `server_url::normalize` (`https`, `http` nur für
+  localhost/127.0.0.1/[::1]/10.0.2.2, keine Pfade). Heute erlaubt `PushPlugin.kt` mit `^https?://…` auch
+  `http://` zu jedem Host. Die Adresse kommt nur aus `shell_config` (wirksame Origin, D-97).
+- Server wechseln: `server_set` nur abgemeldet; beim Abmelden `stop_background_sync`. Nach `loginWithCode`
+  bekommt der Dienst das Token wie nach dem Passwort-Login.
+- Widerruf, Löschen, Wiederherstellung → 401 beim Dienst → er löscht seine Kopie. Bei `403 account_disabled`
+  löscht die Web-Schicht das App-Token nicht (Sperre ist umkehrbar) und übergibt nach dem Entsperren erneut.
+- Unbekanntes `contentFormat` (D-101): Die Web-Schicht stoppt den Dienst. Der Dienst überspringt Datensätze, die
+  er nicht parsen kann, statt Alarme falsch zu setzen.
+- Server: `/sync/changes` bekommt keine Bremse (D-103). `synced_seq`/`last_seen_at` werden auch von den
+  Abfragen des Dienstes gesetzt; `synced_seq` liest keine Server-Logik (geprüft), also unkritisch.
+- Betrieb pev-point: etwa 480 Abfragen pro Gerät und Tag; Firebase wird dort optional (D-105).
