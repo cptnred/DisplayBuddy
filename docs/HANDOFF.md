@@ -155,6 +155,9 @@ Umgesetzt nach `docs/PLAN_V3_SYNC.md`, Entscheidungen D-28…D-80:
 - [x] **v3: Notiz-Sync, installierbare Offline-Web-App mit eigenem Web Push, native Android/iOS-Hülle
   (Erinnerungen auch ohne Internet), Erinnerungen mit eigener Zeitzone** – Plan `docs/PLAN_V3_SYNC.md`,
   Agenten-Prompts `docs/AGENT_PROMPT_V3.md`, Entscheidungen D-28…D-50. ntfy entfällt.
+- [ ] **v4: Konten mit Registrierung am Desktop, Handy-Anmeldung per QR-Code, Standard-Server
+  buddy.pev-point.de** – geplant: Plan `docs/PLAN_V4_ACCOUNTS.md`, Agenten-Prompts `docs/AGENT_PROMPT_V4.md`,
+  Entscheidungs-Vorschläge D-85…D-106 (Benutzerantworten vom 2026-11-07).
 - [ ] **Windows-CI-Build mit GitHub Actions** (`windows-latest`, MSVC-Toolchain, `npm run tauri build`):
   Installer als Release-Artefakt, optional mit Code-Signing. Ersetzt den MinGW-Cross-Build aus der
   Linux-Cloud (D-17) und macht die zusätzliche `WebView2Loader.dll` im Installer überflüssig.
