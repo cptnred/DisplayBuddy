@@ -9,6 +9,11 @@
 //!    "Exact alarm permissions"): apps whose core function is alarms/reminders declare
 //!    `USE_EXACT_ALARM` (granted automatically, API 33+) and `SCHEDULE_EXACT_ALARM` with
 //!    `maxSdkVersion="32"` for Android 12/12L.
+//! 4. Android: the native library is linked with 16 KB ELF alignment (see
+//!    <https://developer.android.com/guide/practices/page-sizes>). NDK r27 and older link
+//!    with 4 KB, so Android 15+ shows a "not 16 KB compatible" warning. Set here rather than in
+//!    `.cargo/config.toml`, because the Tauri CLI and Gradle start cargo from different
+//!    directories and not every one of them would read that file. NDK r28+ does this by default.
 
 #[path = "src/server_url.rs"]
 #[allow(dead_code)]
@@ -38,6 +43,10 @@ fn main() {
             ANDROID_PERMISSIONS.to_string(),
         )
         .expect("failed to update the Android manifest");
+
+        for flag in ["max-page-size=16384", "common-page-size=16384"] {
+            println!("cargo:rustc-cdylib-link-arg=-Wl,-z,{flag}");
+        }
     }
 
     tauri_build::try_build(
