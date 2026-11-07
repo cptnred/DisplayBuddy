@@ -467,6 +467,15 @@ ersetzt beim Öffnen Texte (Diff) statt doppelt zu planen. Token: AES-GCM mit Ke
 Server. Start nach Login, Boot und App-Update; `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` wird einmal nach der
 Benachrichtigungs-Erlaubnis erfragt, weil Doze sonst das Netz sperrt. Grenze: Latenz = Intervall (FCM bleibt der Weg
 für „sofort“). Web-Teil: `src/web/notify/native-background.ts`.
+Abgleich mit der Android-Doku (Alarme, Doze/App Standby, Broadcasts): Doze sperrt das Netz für Apps ohne Ausnahme und
+verschiebt normale Alarme, `setExactAndAllowWhileIdle` feuert trotzdem, und nur Apps auf der Ausnahmeliste dürfen im
+Ruhezustand das Netz nutzen (daher die einmalige Frage nach `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`).
+WorkManager wäre der Standard für periodische Arbeit, hat aber mindestens 15 Min. Intervall; exakte Alarme sind laut
+Doku nur für nutzersichtbare, zeitgenaue Funktionen gedacht und `USE_EXACT_ALARM` sowie die Akku-Ausnahme sind
+Google-Play-Richtlinienfragen (Sideload, wie D-77). Ein Receiver mit `goAsync()` hat nur wenige Sekunden: der Abgleich
+hat eine Gesamtfrist von 8 s (der Cursor wird je Seite gespeichert, der Rest folgt mit dem nächsten Tick). Konto-
+wechsel/Abmelden zählen eine Generation hoch, ein laufender Lauf schreibt danach weder Cursor noch Titel und löscht
+keine neuen Zugangsdaten.
 
 **D-107 – Folgen für v4** (Nachtrag zur Planung, PLAN_V4_ACCOUNTS §2, §7.2, §8, §11.3):
 - Adressprüfung: Der Dienst geht am HTTP-Scope von Tauri vorbei (`HttpURLConnection`). `start_background_sync`

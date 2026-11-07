@@ -18,7 +18,7 @@ import android.os.PowerManager
  */
 internal object BackgroundScheduler {
     const val INTERVAL_MS = 3 * 60 * 1000L
-    private const val WAKE_LOCK_MS = 2 * 60 * 1000L
+    private const val WAKE_LOCK_MS = 30 * 1000L
     private const val TICK_REQUEST = 7_001
 
     /** After the account was stored: first sync now, then every [INTERVAL_MS]. */
@@ -43,9 +43,8 @@ internal object BackgroundScheduler {
             lock.acquire(WAKE_LOCK_MS)
             try {
                 if (BackgroundSync.syncOnce(context) == SyncResult.UNAUTHORIZED) {
-                    // token revoked: the user has to log in again in the app
-                    BackgroundSettings(context).clear()
-                    cancelTick(context)
+                    // token revoked (the credentials are gone): the user has to log in again in the app
+                    if (!BackgroundSettings(context).isConfigured()) cancelTick(context)
                 }
             } catch (_: Exception) {
                 // the next tick retries

@@ -34,29 +34,56 @@ internal class BackgroundSettings(context: Context) {
 
     fun isConfigured(): Boolean = baseUrl != null && token() != null
 
+    /**
+     * Changes with every new or removed account. A sync that started under an older generation
+     * must not write its cursor/titles or clear credentials any more ([commit], [clearIf]).
+     */
+    fun generation(): Long = generation
+
     /** Stores the account; a different server or token starts with an empty state. */
-    fun configure(baseUrl: String, token: String) {
+    fun configure(baseUrl: String, token: String) = synchronized(lock) {
         val same = this.baseUrl == baseUrl && token() == token
         val editor = prefs.edit().putString(KEY_URL, baseUrl).putString(KEY_TOKEN, encrypt(token))
-        if (!same) editor.remove(KEY_CURSOR).remove(KEY_TITLES)
+        if (!same) {
+            editor.remove(KEY_CURSOR).remove(KEY_TITLES)
+            generation++
+        }
         editor.apply()
     }
 
-    fun clear() {
+    fun clear() = synchronized(lock) {
         prefs.edit().clear().apply()
+        generation++
     }
 
-    var cursor: Long
-        get() = prefs.getLong(KEY_CURSOR, 0L)
-        set(value) = prefs.edit().putLong(KEY_CURSOR, value).apply()
+    /** Clears the account only if it is still the one generation [gen] belongs to. */
+    fun clearIf(gen: Long) = synchronized(lock) {
+        if (gen == generation) {
+            prefs.edit().clear().apply()
+            generation++
+        }
+    }
+
+    val cursor: Long get() = prefs.getLong(KEY_CURSOR, 0L)
 
     /** noteId → title of the notification. */
     fun titles(): JSONObject = readObject(KEY_TITLES)
 
-    fun saveTitles(value: JSONObject) = prefs.edit().putString(KEY_TITLES, value.toString()).apply()
+    /** Stores the progress of a sync run; false (and nothing written) if the account changed meanwhile. */
+    fun commit(gen: Long, cursor: Long?, titles: JSONObject?): Boolean = synchronized(lock) {
+        if (gen != generation) return false
+        val editor = prefs.edit()
+        if (cursor != null) editor.putLong(KEY_CURSOR, cursor)
+        if (titles != null) editor.putString(KEY_TITLES, titles.toString())
+        editor.apply()
+        true
+    }
 
-    fun resetState() {
+    /** Forgets cursor and titles (cursor too old for the server); false if the account changed meanwhile. */
+    fun resetState(gen: Long): Boolean = synchronized(lock) {
+        if (gen != generation) return false
         prefs.edit().remove(KEY_CURSOR).remove(KEY_TITLES).apply()
+        true
     }
 
     private fun readObject(key: String): JSONObject =
@@ -95,6 +122,11 @@ internal class BackgroundSettings(context: Context) {
     }
 
     private companion object {
+        val lock = Any()
+
+        @Volatile
+        var generation = 0L
+
         const val FILE = "buddy_background_sync"
         const val KEY_URL = "baseUrl"
         const val KEY_TOKEN = "token"

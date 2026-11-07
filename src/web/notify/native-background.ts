@@ -90,6 +90,8 @@ export function createBackgroundSync(deps: BackgroundSyncDeps): BackgroundSync {
     const token = await tokens.getToken();
     if (!token) return;
     const key = `${account.deviceId}|${deps.baseUrl}`;
+    // the native side forgets the account on 401/403 or if its Keystore entry is unreadable
+    if (handedOver === key && (await plugin.state().catch(() => null))?.configured === false) handedOver = null;
     if (handedOver !== key) {
       try {
         await plugin.start({ baseUrl: deps.baseUrl, token });

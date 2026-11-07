@@ -126,6 +126,18 @@ describe("createBackgroundSync", () => {
     expect(t.plugin.calls).not.toContain("battery");
   });
 
+  it("hands the token over again after the native side forgot the account", async () => {
+    const t = setup();
+    await t.bg.start();
+    expect(t.plugin.started).toHaveLength(1);
+    t.plugin.battery = { configured: false, batteryUnrestricted: true };
+    await t.bg.ensure();
+    expect(t.plugin.started).toHaveLength(2);
+    t.plugin.battery = { configured: true, batteryUnrestricted: true };
+    await t.bg.ensure();
+    expect(t.plugin.started).toHaveLength(2);
+  });
+
   it("never logs the token", async () => {
     const t = setup();
     await t.bg.start();

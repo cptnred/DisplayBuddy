@@ -33,28 +33,39 @@ internal object BackgroundSync {
     private const val ACTION_TYPE_ID = "buddy-reminder"
     private const val PAGE_LIMIT = 500
     private const val TITLE_MAX = 60
-    private const val TIMEOUT_MS = 10_000
+    private const val TIMEOUT_MS = 6_000
+
+    /** The receiver that runs this has only a few seconds; the rest follows with the next tick. */
+    private const val DEADLINE_MS = 8_000L
 
     @Synchronized
     fun syncOnce(context: Context): SyncResult {
         val settings = BackgroundSettings(context)
         val base = settings.baseUrl ?: return SyncResult.UNCONFIGURED
         val token = settings.token() ?: return SyncResult.UNCONFIGURED
+        // state of a run belongs to the account it started with
+        val generation = settings.generation()
+        val deadline = System.currentTimeMillis() + DEADLINE_MS
         var resynced = false
         while (true) {
+            if (System.currentTimeMillis() >= deadline) return SyncResult.ERROR
             val response = try {
-                get("$base/api/v1/sync/changes?since=${settings.cursor}&limit=$PAGE_LIMIT", token)
+                get("$base/api/v1/sync/changes?since=${settings.cursor}&limit=$PAGE_LIMIT", token, deadline)
             } catch (_: IOException) {
                 return SyncResult.OFFLINE
             }
+            if (settings.generation() != generation) return SyncResult.OK
             when (response.first) {
                 200 -> Unit
-                401, 403 -> return SyncResult.UNAUTHORIZED
+                401, 403 -> {
+                    settings.clearIf(generation)
+                    return SyncResult.UNAUTHORIZED
+                }
                 410 -> {
                     // cursor older than the server's change log: start over once
                     if (resynced) return SyncResult.ERROR
                     resynced = true
-                    settings.resetState()
+                    if (!settings.resetState(generation)) return SyncResult.OK
                     continue
                 }
                 else -> return SyncResult.ERROR
@@ -64,22 +75,23 @@ internal object BackgroundSync {
             } catch (_: Exception) {
                 return SyncResult.ERROR
             }
-            try {
+            val titles = try {
                 apply(context, settings, page)
             } catch (_: Exception) {
                 return SyncResult.ERROR
             }
-            settings.cursor = page.getLong("cursor")
+            if (!settings.commit(generation, page.getLong("cursor"), titles)) return SyncResult.OK
             if (!page.optBoolean("hasMore")) return SyncResult.OK
         }
     }
 
-    private fun get(url: String, token: String): Pair<Int, String> {
+    private fun get(url: String, token: String, deadline: Long): Pair<Int, String> {
         val connection = URL(url).openConnection() as HttpURLConnection
         try {
+            val remaining = (deadline - System.currentTimeMillis()).toInt().coerceIn(1_000, TIMEOUT_MS)
             connection.requestMethod = "GET"
-            connection.connectTimeout = TIMEOUT_MS
-            connection.readTimeout = TIMEOUT_MS
+            connection.connectTimeout = remaining
+            connection.readTimeout = remaining
             connection.useCaches = false
             // the token must never follow a redirect to another host
             connection.instanceFollowRedirects = false
@@ -95,7 +107,8 @@ internal object BackgroundSync {
         }
     }
 
-    private fun apply(context: Context, settings: BackgroundSettings, page: JSONObject) {
+    /** Applies one page and returns the updated note titles (stored by the caller together with the cursor). */
+    private fun apply(context: Context, settings: BackgroundSettings, page: JSONObject): JSONObject {
         val storage = NotificationStorage(context, notificationMapper())
         val manager = TauriNotificationManager(storage, null, context, null)
         val enabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
@@ -116,7 +129,14 @@ internal object BackgroundSync {
                 titles.put(id, title)
             }
         }
-        settings.saveTitles(titles)
+
+        // stored alarms per note, read once (every read parses all of them)
+        val saved = HashMap<String, MutableList<Pair<Int, String>>>()
+        for (n in storage.getSavedNotifications()) {
+            val extra = n.extra ?: continue
+            val noteId = extra.optString("noteId")
+            if (noteId.isNotEmpty()) saved.getOrPut(noteId) { mutableListOf() }.add(n.id to extra.optString("at"))
+        }
 
         val reminders: JSONArray = page.optJSONArray("reminders") ?: JSONArray()
         val touched = HashSet<String>()
@@ -128,36 +148,33 @@ internal object BackgroundSync {
             val state = if (record.optBoolean("deleted")) null else reminder?.optString("state")
             val at = reminder?.optString("at") ?: ""
             val wantedId = if (state == "scheduled") ReminderMath.notificationId(noteId, at) else null
-            val saved = savedFor(storage, noteId)
+            val mine = saved.getOrPut(noteId) { mutableListOf() }
 
             // fired and waiting for the user: leave the visible notification alone
             if (state == "due") continue
-            for ((id, _) in saved) if (id != wantedId) manager.cancel(listOf(id))
+            val stale = mine.filter { it.first != wantedId }
+            for ((id, _) in stale) manager.cancel(listOf(id))
+            mine.removeAll(stale.toSet())
             if (state == "done") ReminderMath.notificationId(noteId, at)?.let { manager.cancel(listOf(it)) }
 
             val atMs = ReminderMath.parseInstant(at)
-            if (wantedId != null && atMs != null && atMs > now && enabled && saved.none { it.first == wantedId }) {
+            if (wantedId != null && atMs != null && atMs > now && enabled && mine.none { it.first == wantedId }) {
                 schedule(manager, storage, wantedId, noteId, at, atMs, titles.optString(noteId, ""))
+                mine.add(wantedId to at)
             }
         }
 
         // a title that arrived after its reminder (or changed): re-plan with the new text
         if (enabled) {
             for (noteId in renamed - touched) {
-                for ((id, at) in savedFor(storage, noteId)) {
+                for ((id, at) in saved[noteId].orEmpty()) {
                     val atMs = ReminderMath.parseInstant(at) ?: continue
                     if (atMs > now) schedule(manager, storage, id, noteId, at, atMs, titles.optString(noteId, ""))
                 }
             }
         }
+        return titles
     }
-
-    /** (notification id, reminder `at`) of the alarms stored for a note. */
-    private fun savedFor(storage: NotificationStorage, noteId: String): List<Pair<Int, String>> =
-        storage.getSavedNotifications().mapNotNull { n ->
-            val extra = n.extra ?: return@mapNotNull null
-            if (extra.optString("noteId") != noteId) null else n.id to extra.optString("at")
-        }
 
     private fun schedule(
         manager: TauriNotificationManager,
