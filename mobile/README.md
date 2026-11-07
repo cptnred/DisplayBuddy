@@ -242,11 +242,32 @@ nötig, wenn sich `tauri.conf.json` oder die Plugins geändert haben (dann `gen`
   node scripts\android-firebase.mjs src-tauri\gen\android de.displaybuddy.mobile
   ```
 
+## Hintergrundabgleich (Android, ohne Firebase)
+
+Ein kleiner Dienst der App („Erinnerungen werden im Hintergrund abgeglichen“, dauerhafte
+Benachrichtigung) holt alle 3 Minuten und bei neuer Netzverbindung die Änderungen vom Server und
+plant neue oder verschobene Erinnerungen als lokale Alarme – auch wenn die App geschlossen oder
+weggewischt ist. Er braucht keine Firebase-Einrichtung, nur den normalen Login:
+
+- Start automatisch nach dem Anmelden, nach einem Neustart des Handys und nach einem App-Update;
+  nach dem Abmelden stoppt er.
+- Beim ersten Mal nach der Benachrichtigungs-Erlaubnis fragt die App einmal nach der
+  **Akku-Ausnahme** („Im Hintergrund ausführen“ erlauben). Ohne sie sperrt Android im Ruhezustand
+  (Doze) das Netz und der Abgleich kommt nur verzögert. Später änderbar unter _Einstellungen →
+  Apps → Display Buddy → Akku → Nicht eingeschränkt_.
+- Die dauerhafte Benachrichtigung ist Pflicht für Hintergrunddienste; sie lässt sich unter
+  _Einstellungen → Apps → Display Buddy → Benachrichtigungen → Hintergrundabgleich_ stumm/klein stellen.
+- Der Dienst liest nur (`GET /sync/changes`), speichert das Token verschlüsselt (Android Keystore)
+  und plant mit denselben Ids und Tasten („Erledigt“, „10 Min. später“) wie die App – nichts klingelt doppelt.
+  Der Text ist dort noch knapp („Erinnerung um 14:30“); beim nächsten Öffnen ersetzt die App ihn durch den vollen.
+- Grenze: Minimale Verzögerung = Abgleichintervall. Eine Erinnerung „in 1 Minute“ vom PC kann zu spät
+  ankommen; sofort ginge nur mit [Firebase-Push](#push-über-firebase-android-optional).
+
 ## Push über Firebase (Android, optional)
 
-Ohne Push klingeln alle Erinnerungen, die das Handy schon kennt – auch offline. Eine Erinnerung,
-die du **am PC anlegst oder verschiebst, während die App geschlossen ist**, kennt das Handy aber
-erst nach dem nächsten Öffnen. Mit Push weckt der Server die App in diesem Fall über Firebase
+Ohne Push klingeln alle Erinnerungen, die das Handy schon kennt – auch offline. Der
+[Hintergrundabgleich](#hintergrundabgleich-android-ohne-firebase) holt neue Erinnerungen vom PC
+alle paar Minuten. Wer sie **sofort** will, nutzt Push: Der Server weckt die App in diesem Fall über Firebase
 Cloud Messaging (FCM): Es erscheint eine Benachrichtigung „Erinnerung: …“, ein Tipp darauf öffnet
 die Notiz, die App gleicht ab und plant neu.
 
@@ -396,8 +417,8 @@ dem Handy und wird beim nächsten Online-Sein übertragen.
 - Geplant werden immer die **60 nächsten** Erinnerungen (iOS erlaubt 64). Weitere werden beim
   nächsten Öffnen bzw. Sync nachgeplant.
 - Eine **neue** Erinnerung, die am PC angelegt wird, während die App lange geschlossen ist, kennt
-  das Handy erst nach dem nächsten Öffnen (Sync). Abhilfe: [Push über Firebase](#push-über-firebase-android-optional)
-  (nur Android).
+  das Handy erst nach dem nächsten Öffnen (Sync). Abhilfe: [Hintergrundabgleich](#hintergrundabgleich-android-ohne-firebase)
+  (Android, automatisch) oder [Push über Firebase](#push-über-firebase-android-optional).
 - iOS: Tippst du „Erledigt“/„10 Min. später“, während die App ganz beendet war, kann die Aktion
   verloren gehen. Die Erinnerung steht dann oben in der App mit denselben Knöpfen.
 - Die Anzeige rechnet in der Zeitzone des Handys, die Erinnerung selbst in ihrer eigenen Zone
