@@ -294,3 +294,10 @@ hörenden UI-Zähler und zeigte deshalb dauerhaft „1 Änderung wartet“ (PWA 
 **D-83 Android-Build (Beitrag des Benutzers):** Build-Tools 36.1.0 und API 37 (Tauri erzeugt `compileSdk`/`targetSdk`
 37), gesetzt per `mobile/scripts/android-build-tools.mjs` nach `tauri android init`; Rust-Bibliothek mit 16-KB-Seiten
 gelinkt (`build.rs`, für Android 15+; NDK r28+ macht das von selbst).
+
+**D-84 Android-Empfänger des Notification-Plugins lesen `extra` selbst (Fix an D-76).** Seit D-76 speichert das Plugin
+geplante Benachrichtigungen; `TimedNotificationPublisher` las sie mit einem nackten `ObjectMapper()` zurück, der das
+`JSObject`-Feld `extra` nicht füllen kann (`UnrecognizedPropertyException: "at"`). Der Empfänger stürzte ab, bevor
+`notify()` lief – **keine Erinnerung kam an** (gefunden per `adb logcat`, „Unable to start receiver“). Neu:
+`NotificationMapper.kt` (Deserializer für `JSObject`, unbekannte Felder ignoriert) in allen Empfängern und im Plugin;
+`getSavedNotification` fängt jeden Lesefehler ab, die Benachrichtigung selbst kommt mit dem Alarm und wird immer gezeigt.
