@@ -7,7 +7,6 @@ package app.tauri.notification
 import android.content.Context
 import android.content.SharedPreferences
 import com.fasterxml.jackson.databind.ObjectMapper
-import org.json.JSONException
 import java.lang.Exception
 
 // Key for private preferences
@@ -63,9 +62,11 @@ class NotificationStorage(private val context: Context, private val jsonMapper: 
       return null
     } ?: return null
 
+    // Display Buddy patch (D-84): an unreadable entry must not crash the receiver
+    // (the notification itself arrives with the alarm and is shown either way)
     return try {
       jsonMapper.readValue(notificationString, Notification::class.java)
-    } catch (ex: JSONException) {
+    } catch (ex: Exception) {
       null
     }
   }
