@@ -111,9 +111,9 @@ Für schnelle Tests ohne GitHub Actions. Die Versionen entsprechen dem CI-Workfl
 4. **Node.js 22 LTS** von <https://nodejs.org> und **Git** von <https://git-scm.com>.
 5. **Android Studio** installieren und einmal starten (Standard-Einrichtung). Dann
    *More Actions → SDK Manager*:
-   - Reiter **SDK Platforms**: „Android 16 (API 36)“ (bzw. `android-36`) anhaken.
+   - Reiter **SDK Platforms**: Android API 37 (`android-37.0`) anhaken.
    - Reiter **SDK Tools**, unten „Show Package Details“ anhaken:
-     - **Android SDK Build-Tools** → `36.0.0`
+     - **Android SDK Build-Tools** → `36.1.0`
      - **NDK (Side by side)** → `27.2.12479018`
      - **Android SDK Command-line Tools (latest)**
      - **Android SDK Platform-Tools**
@@ -163,8 +163,15 @@ cd mobile
 npx tauri android init
 ```
 
-`init` legt `mobile\src-tauri\gen\android` an (wird nicht eingecheckt). Nach einem `git pull`, der
-`tauri.conf.json` oder Plugins ändert, `gen` löschen und `init` erneut ausführen.
+`init` legt `mobile\src-tauri\gen\android` an (wird nicht eingecheckt). Danach die Build-Tools-Version
+auf `36.1.0` setzen:
+
+```powershell
+node scripts\android-build-tools.mjs src-tauri\gen\android
+```
+
+Nach einem `git pull`, der `tauri.conf.json` oder Plugins ändert, `gen` löschen, `init` erneut
+ausführen und den Build-Tools-Schritt wiederholen.
 
 ### Bauen und aufs Handy
 

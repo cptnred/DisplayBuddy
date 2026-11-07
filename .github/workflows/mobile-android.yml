@@ -47,8 +47,8 @@ env:
   NODE_VERSION: "22"
   JAVA_VERSION: "17"
   NDK_VERSION: "27.2.12479018"
-  ANDROID_PLATFORM: "platforms;android-36"
-  BUILD_TOOLS: "36.0.0"
+  ANDROID_PLATFORM: "platforms;android-37.0"
+  BUILD_TOOLS: "36.1.0"
   CARGO_TERM_COLOR: always
 
 jobs:
@@ -74,8 +74,8 @@ jobs:
       - run: npm test
       - run: npm run test:tz
       - run: npm run build:mobile
-      - name: Firebase setup script (node:test)
-        run: node --test mobile/scripts/android-firebase.test.mjs
+      - name: Android setup scripts (node:test)
+        run: node --test mobile/scripts/android-firebase.test.mjs mobile/scripts/android-build-tools.test.mjs
       - name: Rust checks of the shell (host)
         working-directory: mobile/src-tauri
         env:
@@ -122,6 +122,7 @@ jobs:
         run: |
           npx tauri android init --ci
           npx tauri icon ../public-web/icons/icon.svg
+          node scripts/android-build-tools.mjs src-tauri/gen/android "$BUILD_TOOLS"
       - name: Firebase for native push (only with the secret GOOGLE_SERVICES_JSON_BASE64)
         env:
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
