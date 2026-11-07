@@ -89,6 +89,123 @@ _Artifacts_ **display-buddy-android** mit `display-buddy.apk`. Ohne die Secrets 
   Herstellerspezifische Anleitungen: [dontkillmyapp.com](https://dontkillmyapp.com).
 - Nach einem Neustart des Handys werden die geplanten Erinnerungen automatisch wiederhergestellt.
 
+## Android lokal unter Windows bauen und per USB installieren
+
+Für schnelle Tests ohne GitHub Actions. Die Versionen entsprechen dem CI-Workflow
+(`.github/workflows/mobile-android.yml`). Alle Befehle in **PowerShell**.
+
+### Einmalig einrichten
+
+1. **Windows-Entwicklermodus** einschalten: Einstellungen → System → Für Entwickler → „Entwicklermodus“.
+   Tauri legt beim Android-Build symbolische Links an; ohne Entwicklermodus bricht der Build mit
+   „symbolic link“-Fehlern ab.
+2. **Visual Studio Build Tools** (C++): <https://visualstudio.microsoft.com/visual-cpp-build-tools/> →
+   Arbeitslast „Desktopentwicklung mit C++“. Rust braucht sie für Build-Skripte, auch beim Android-Build.
+3. **Rust** über <https://rustup.rs> (Standardauswahl, `stable-x86_64-pc-windows-msvc`), danach in einer
+   neuen PowerShell:
+
+   ```powershell
+   rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+   ```
+
+4. **Node.js 22 LTS** von <https://nodejs.org> und **Git** von <https://git-scm.com>.
+5. **Android Studio** installieren und einmal starten (Standard-Einrichtung). Dann
+   *More Actions → SDK Manager*:
+   - Reiter **SDK Platforms**: „Android 16 (API 36)“ (bzw. `android-36`) anhaken.
+   - Reiter **SDK Tools**, unten „Show Package Details“ anhaken:
+     - **Android SDK Build-Tools** → `36.0.0`
+     - **NDK (Side by side)** → `27.2.12479018`
+     - **Android SDK Command-line Tools (latest)**
+     - **Android SDK Platform-Tools**
+   - **Apply**.
+6. **Umgebungsvariablen** setzen (einmalig, danach PowerShell neu öffnen):
+
+   ```powershell
+   [Environment]::SetEnvironmentVariable("JAVA_HOME", "C:\Program Files\Android\Android Studio\jbr", "User")
+   ```
+
+   ```powershell
+   [Environment]::SetEnvironmentVariable("ANDROID_HOME", "$env:LOCALAPPDATA\Android\Sdk", "User")
+   ```
+
+   ```powershell
+   [Environment]::SetEnvironmentVariable("NDK_HOME", "$env:LOCALAPPDATA\Android\Sdk\ndk\27.2.12479018", "User")
+   ```
+
+   ```powershell
+   [Environment]::SetEnvironmentVariable("Path", "$([Environment]::GetEnvironmentVariable('Path','User'));$env:LOCALAPPDATA\Android\Sdk\platform-tools", "User")
+   ```
+
+   Prüfen (neue PowerShell): `java -version`, `adb version`, `cargo --version`, `node --version`.
+7. **Handy vorbereiten:** Einstellungen → Über das Telefon → 7× auf „Build-Nummer“ tippen →
+   Entwickleroptionen → **USB-Debugging** an. Per USB anschließen, die Abfrage „USB-Debugging zulassen?“
+   bestätigen. `adb devices` muss das Gerät als `device` zeigen (nicht `unauthorized`).
+
+### Code holen und Android-Projekt erzeugen (einmalig)
+
+```powershell
+git clone --branch claude/display-buddy-v3-c9w0c8 https://github.com/cptnred/DisplayBuddy.git
+```
+
+```powershell
+cd DisplayBuddy
+```
+
+```powershell
+npm ci
+```
+
+```powershell
+cd mobile
+```
+
+```powershell
+npx tauri android init
+```
+
+`init` legt `mobile\src-tauri\gen\android` an (wird nicht eingecheckt). Nach einem `git pull`, der
+`tauri.conf.json` oder Plugins ändert, `gen` löschen und `init` erneut ausführen.
+
+### Bauen und aufs Handy
+
+Die Server-Adresse wird beim Bauen fest in die App eingetragen (eigene Domain, mit `https://`):
+
+```powershell
+$env:BUDDY_PUBLIC_URL = "https://buddy.example.org"
+```
+
+Debug-APK nur für 64-Bit-ARM-Handys (fast alle aktuellen) bauen, im Ordner `mobile`:
+
+```powershell
+npx tauri android build --debug --apk --target aarch64
+```
+
+Der erste Build dauert lange (Rust für Android + Gradle-Downloads). Installieren:
+
+```powershell
+adb install -r (Get-ChildItem -Recurse -Filter *.apk src-tauri\gen\android\app\build\outputs\apk | Select-Object -First 1).FullName
+```
+
+App auf dem Handy öffnen, anmelden, Erlaubnisse wie oben unter „Erlaubnisse“ geben.
+
+**Wichtig:**
+- War vorher eine APK aus GitHub Actions installiert, ist sie anders signiert: `adb install` meldet
+  `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Dann zuerst in der alten App einmal synchronisieren
+  (nichts darf „warten“), danach `adb uninstall de.displaybuddy.mobile` und erneut installieren. Das löscht die
+  lokalen Daten der App; nach dem Anmelden kommen sie vom Server zurück.
+- Live-Entwicklung mit automatischem Neuladen: `npx tauri android dev` (Handy und Laptop im selben WLAN).
+- App-Log ansehen: `adb logcat -s Tauri/Console` (zeigt keine Tokens oder Notizinhalte).
+- Firebase-Push lokal (optional): `google-services.json` (siehe unten, nie einchecken) nach `init` einmal
+  einbauen, im Ordner `mobile`:
+
+  ```powershell
+  $env:GOOGLE_SERVICES_JSON_BASE64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\Pfad\zu\google-services.json"))
+  ```
+
+  ```powershell
+  node scripts\android-firebase.mjs src-tauri\gen\android de.displaybuddy.mobile
+  ```
+
 ## Push über Firebase (Android, optional)
 
 Ohne Push klingeln alle Erinnerungen, die das Handy schon kennt – auch offline. Eine Erinnerung,
