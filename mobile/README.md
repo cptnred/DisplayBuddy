@@ -102,14 +102,21 @@ Für schnelle Tests ohne GitHub Actions. Die Versionen entsprechen dem CI-Workfl
    „symbolic link“-Fehlern ab.
 2. **Visual Studio Build Tools** (C++): <https://visualstudio.microsoft.com/visual-cpp-build-tools/> →
    Arbeitslast „Desktopentwicklung mit C++“. Rust braucht sie für Build-Skripte, auch beim Android-Build.
-3. **Rust** über <https://rustup.rs> (Standardauswahl, `stable-x86_64-pc-windows-msvc`), danach in einer
-   neuen PowerShell:
+3. **Rust** über <https://rustup.rs> (`rustup-init.exe`, Standardauswahl), danach in einer neuen
+   PowerShell die Version des CI-Workflows und die Android-Ziele installieren:
 
    ```powershell
-   rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+   rustup toolchain install 1.97.0 --profile minimal --component rustfmt --component clippy
    ```
 
-4. **Node.js 22 LTS** von <https://nodejs.org> und **Git** von <https://git-scm.com>.
+   ```powershell
+   rustup target add --toolchain 1.97.0 aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+   ```
+
+   Im geklonten Projektordner (siehe unten) einmal `rustup override set 1.97.0` ausführen, damit genau diese
+   Version benutzt wird.
+
+4. **Node.js 22 LTS** (neuer geht auch) von <https://nodejs.org> und **Git** von <https://git-scm.com>.
 5. **Android Studio** installieren und einmal starten (Standard-Einrichtung). Dann
    *More Actions → SDK Manager*:
    - Reiter **SDK Platforms**: Android API 37 (`android-37.0`) anhaken.
@@ -119,10 +126,13 @@ Für schnelle Tests ohne GitHub Actions. Die Versionen entsprechen dem CI-Workfl
      - **Android SDK Command-line Tools (latest)**
      - **Android SDK Platform-Tools**
    - **Apply**.
-6. **Umgebungsvariablen** setzen (einmalig, danach PowerShell neu öffnen):
+6. **JDK 17** (z. B. Eclipse Temurin 17, <https://adoptium.net>); der CI-Workflow baut ebenfalls mit 17.
+   Eine ältere Java-Version (z. B. 11) darf nicht vor JDK 17 im `Path` stehen.
+7. **Umgebungsvariablen** setzen (einmalig, danach PowerShell neu öffnen; den JDK-Pfad ggf. an deine
+   Installation anpassen):
 
    ```powershell
-   [Environment]::SetEnvironmentVariable("JAVA_HOME", "C:\Program Files\Android\Android Studio\jbr", "User")
+   [Environment]::SetEnvironmentVariable("JAVA_HOME", "C:\Program Files\Eclipse Adoptium\jdk-17.0.16.8-hotspot", "User")
    ```
 
    ```powershell
@@ -137,8 +147,9 @@ Für schnelle Tests ohne GitHub Actions. Die Versionen entsprechen dem CI-Workfl
    [Environment]::SetEnvironmentVariable("Path", "$([Environment]::GetEnvironmentVariable('Path','User'));$env:LOCALAPPDATA\Android\Sdk\platform-tools", "User")
    ```
 
-   Prüfen (neue PowerShell): `java -version`, `adb version`, `cargo --version`, `node --version`.
-7. **Handy vorbereiten:** Einstellungen → Über das Telefon → 7× auf „Build-Nummer“ tippen →
+   Prüfen (neue PowerShell): `java -version` (muss 17 zeigen), `adb version`, `cargo --version`
+   (1.97.0), `node --version`, `echo $env:JAVA_HOME $env:ANDROID_HOME $env:NDK_HOME`.
+8. **Handy vorbereiten:** Einstellungen → Über das Telefon → 7× auf „Build-Nummer“ tippen →
    Entwickleroptionen → **USB-Debugging** an. Per USB anschließen, die Abfrage „USB-Debugging zulassen?“
    bestätigen. `adb devices` muss das Gerät als `device` zeigen (nicht `unauthorized`).
 
@@ -150,6 +161,10 @@ git clone --branch claude/display-buddy-v3-c9w0c8 https://github.com/cptnred/Dis
 
 ```powershell
 cd DisplayBuddy
+```
+
+```powershell
+rustup override set 1.97.0
 ```
 
 ```powershell
@@ -196,7 +211,20 @@ adb install -r (Get-ChildItem -Recurse -Filter *.apk src-tauri\gen\android\app\b
 
 App auf dem Handy öffnen, anmelden, Erlaubnisse wie oben unter „Erlaubnisse“ geben.
 
+**Später erneut bauen** (neuer Stand oder andere Server-Adresse): `git pull`, bei geänderter
+`package-lock.json` `npm ci`, im Ordner `mobile` `$env:BUDDY_PUBLIC_URL` setzen (siehe oben), dann
+`npx tauri android build --debug --apk --target aarch64` und `adb install -r …` wie oben. `init` ist nur
+nötig, wenn sich `tauri.conf.json` oder die Plugins geändert haben (dann `gen` löschen, `init`, Build-Tools-Schritt).
+
 **Wichtig:**
+- **Alte APK trotz neuem Build?** Prüfe den Zeitstempel der APK. Gradle übernimmt eine neu gebaute
+  Rust-Bibliothek manchmal nicht (sie wird als Symlink eingebunden). Dann
+  `Remove-Item -Recurse -Force src-tauri\gen\android\app\build` (im Ordner `mobile`) und neu bauen.
+- **16 KB Speicherseiten:** Android 15+ warnt bei Apps, deren native Bibliotheken nicht für 16-KB-Seiten
+  gebaut sind. `build.rs` linkt die Rust-Bibliothek deshalb mit 16-KB-Ausrichtung (NDK 27 tut das nicht von
+  allein). Prüfen:
+  `& "$env:ANDROID_HOME\ndk\27.2.12479018\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-readelf.exe" -lW src-tauri\target\aarch64-linux-android\debug\libdisplay_buddy_mobile_lib.so`
+  muss bei `LOAD` die Ausrichtung `0x4000` zeigen (nicht `0x1000`).
 - War vorher eine APK aus GitHub Actions installiert, ist sie anders signiert: `adb install` meldet
   `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Dann zuerst in der alten App einmal synchronisieren
   (nichts darf „warten“), danach `adb uninstall de.displaybuddy.mobile` und erneut installieren. Das löscht die
