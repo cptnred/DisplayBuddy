@@ -1,10 +1,15 @@
 package de.displaybuddy.push
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.webkit.WebView
 import app.tauri.annotation.Command
+import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
@@ -12,10 +17,17 @@ import app.tauri.plugin.Plugin
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 
+@InvokeArg
+class BackgroundArgs {
+    lateinit var baseUrl: String
+    lateinit var token: String
+}
+
 /**
  * Minimal FCM plugin (Tauri „Mobile Plugin Development“, Android part).
  *
- * Commands: getToken, takeLaunchData. Events: "token", "message", "opened".
+ * Commands: getToken, takeLaunchData, startBackgroundSync, stopBackgroundSync,
+ * backgroundSyncState, requestBatteryExemption. Events: "token", "message", "opened".
  * Never logs the token or message contents.
  */
 @TauriPlugin
@@ -88,6 +100,60 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
         val result = JSObject()
         result.put("data", data)
         invoke.resolve(result)
+    }
+
+    /** Server address + device token for the background sync (see [SyncService]); starts it. */
+    @Command
+    fun startBackgroundSync(invoke: Invoke) {
+        val args = invoke.parseArgs(BackgroundArgs::class.java)
+        if (!Regex("^https?://[^/?#\\s]+$").matches(args.baseUrl) || args.token.isBlank()) {
+            invoke.reject("invalid background sync configuration", "INVALID")
+            return
+        }
+        try {
+            BackgroundSettings(activity).configure(args.baseUrl, args.token)
+            SyncService.start(activity)
+            invoke.resolve()
+        } catch (e: Exception) {
+            invoke.reject("background sync could not be started", "UNAVAILABLE", e)
+        }
+    }
+
+    /** Signed out: forget the account and stop the service. */
+    @Command
+    fun stopBackgroundSync(invoke: Invoke) {
+        BackgroundSettings(activity).clear()
+        SyncService.stop(activity)
+        invoke.resolve()
+    }
+
+    @Command
+    fun backgroundSyncState(invoke: Invoke) {
+        val result = JSObject()
+        result.put("configured", BackgroundSettings(activity).isConfigured())
+        result.put("batteryUnrestricted", batteryUnrestricted())
+        invoke.resolve(result)
+    }
+
+    /** Shows the system dialog „Akku-Optimierung ignorieren“ (network access in Doze). */
+    @Command
+    fun requestBatteryExemption(invoke: Invoke) {
+        if (!batteryUnrestricted()) {
+            try {
+                activity.startActivity(
+                    Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${activity.packageName}")),
+                )
+            } catch (e: Exception) {
+                invoke.reject("battery settings unavailable", "UNAVAILABLE", e)
+                return
+            }
+        }
+        invoke.resolve()
+    }
+
+    private fun batteryUnrestricted(): Boolean {
+        val power = activity.getSystemService(Context.POWER_SERVICE) as PowerManager
+        return power.isIgnoringBatteryOptimizations(activity.packageName)
     }
 
     fun emitToken(token: String) {

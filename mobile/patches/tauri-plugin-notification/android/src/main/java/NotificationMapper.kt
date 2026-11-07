@@ -15,7 +15,7 @@ import com.fasterxml.jackson.databind.module.SimpleModule
  * `extra` – the receiver crashed before the notification was shown. Unknown fields of the
  * stored request (e.g. `silent`) are ignored.
  */
-internal fun notificationMapper(): ObjectMapper {
+fun notificationMapper(): ObjectMapper {
   val module = SimpleModule().addDeserializer(JSObject::class.java, object : JsonDeserializer<JSObject>() {
     override fun deserialize(p: JsonParser, ctxt: DeserializationContext): JSObject =
       JSObject(ctxt.readTree(p).toString())

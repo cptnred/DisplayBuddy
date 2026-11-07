@@ -1,6 +1,6 @@
 ## Default Permission
 
-Token, launch data and the push events (token, message, opened).
+Token, launch data, the push events (token, message, opened) and the background sync (no Firebase).
 
 #### This default permission set includes the following:
 
@@ -8,6 +8,10 @@ Token, launch data and the push events (token, message, opened).
 - `allow-take-launch-data`
 - `allow-register-listener`
 - `allow-remove-listener`
+- `allow-start-background-sync`
+- `allow-stop-background-sync`
+- `allow-background-sync-state`
+- `allow-request-battery-exemption`
 
 ## Permission Table
 
@@ -17,6 +21,32 @@ Token, launch data and the push events (token, message, opened).
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`buddy-push:allow-background-sync-state`
+
+</td>
+<td>
+
+Enables the background_sync_state command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`buddy-push:deny-background-sync-state`
+
+</td>
+<td>
+
+Denies the background_sync_state command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>
@@ -92,6 +122,84 @@ Enables the remove_listener command without any pre-configured scope.
 <td>
 
 Denies the remove_listener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`buddy-push:allow-request-battery-exemption`
+
+</td>
+<td>
+
+Enables the request_battery_exemption command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`buddy-push:deny-request-battery-exemption`
+
+</td>
+<td>
+
+Denies the request_battery_exemption command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`buddy-push:allow-start-background-sync`
+
+</td>
+<td>
+
+Enables the start_background_sync command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`buddy-push:deny-start-background-sync`
+
+</td>
+<td>
+
+Denies the start_background_sync command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`buddy-push:allow-stop-background-sync`
+
+</td>
+<td>
+
+Enables the stop_background_sync command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`buddy-push:deny-stop-background-sync`
+
+</td>
+<td>
+
+Denies the stop_background_sync command without any pre-configured scope.
 
 </td>
 </tr>

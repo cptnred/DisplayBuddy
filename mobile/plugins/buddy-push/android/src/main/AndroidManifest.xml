@@ -2,8 +2,17 @@
 <!-- Merged into the app manifest (no edits of the generated gen/android needed).
      Firebase docs „Set up a Firebase Cloud Messaging client app on Android“: a service
      extending FirebaseMessagingService with the MESSAGING_EVENT intent filter, and the
-     default notification channel for messages without channel_id. -->
+     default notification channel for messages without channel_id.
+     Background sync without Firebase (D-107): a foreground service of type specialUse
+     (Android docs „Foreground service types“), restarted after boot and app update. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application>
         <service
             android:name="de.displaybuddy.push.PushService"
@@ -12,6 +21,25 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+        <service
+            android:name="de.displaybuddy.push.SyncService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Periodic sync of reminders from the user's own server without Firebase" />
+        </service>
+        <receiver
+            android:name="de.displaybuddy.push.BackgroundTickReceiver"
+            android:exported="false" />
+        <receiver
+            android:name="de.displaybuddy.push.BackgroundBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
         <!-- the channel „Erinnerungen“ created by the web layer (CHANNEL_ID "reminders") -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"

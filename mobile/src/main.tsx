@@ -19,10 +19,11 @@ import "../../src/styles/base.css";
 import { openDataStore, syncAccess } from "../../src/web/data";
 import { createStorageController } from "../../src/web/notify/install";
 import { createNativeNotifier, followSync } from "../../src/web/notify/native";
+import { createBackgroundSync } from "../../src/web/notify/native-background";
 import { notificationId } from "../../src/web/notify/native-plan";
 import { createTauriNotificationPlugin } from "../../src/web/notify/native-plugin";
 import { createNativePush } from "../../src/web/notify/native-push";
-import { createTauriPushPlugin } from "../../src/web/notify/native-push-plugin";
+import { createTauriBackgroundPlugin, createTauriPushPlugin } from "../../src/web/notify/native-push-plugin";
 import {
   createLocalPrefs,
   createShellTokens,
@@ -80,9 +81,10 @@ async function boot() {
     return;
   }
 
+  const tokens = createShellTokens(call);
   const http = createNativeHttp({
     baseUrl: config.serverUrl,
-    tokens: createShellTokens(call),
+    tokens,
     fetch: tauriFetch as typeof fetch,
   });
   let navigate: ((path: string) => void) | null = null;
@@ -111,6 +113,7 @@ async function boot() {
   // resume: Rust event (Android onResume / iOS willEnterForeground) + visibilitychange
   const onResume = () => {
     void notifier.replan("resume");
+    void background?.ensure();
     sync?.requestSync("visible");
   };
   void listen(RESUMED_EVENT, onResume).catch(() => undefined);
@@ -119,6 +122,21 @@ async function boot() {
   });
   void notifier.start();
 
+  // Background sync without Firebase (D-107): Android only; the Kotlin service plans new and
+  // changed reminders by itself while the app is closed.
+  const background =
+    config.platform === "android"
+      ? createBackgroundSync({
+          plugin: createTauriBackgroundPlugin(),
+          tokens,
+          store,
+          notifier,
+          baseUrl: config.serverUrl,
+          storage: localStore(),
+          log: (m) => console.info(`[buddy-native] ${m}`),
+        })
+      : null;
+  void background?.start();
   // Native push (PLAN §10.5, D-55): Android only; iOS relies on the local planning.
   if (config.platform === "android") {
     const push = createNativePush({

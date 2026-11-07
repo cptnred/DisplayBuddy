@@ -35,4 +35,10 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:35.1.0"))
     implementation("com.google.firebase:firebase-messaging")
     implementation(project(":tauri-android"))
+    // the background sync schedules through the notification plugin's own classes, so the
+    // alarms, storage and ids are the ones the web layer plans with (see BackgroundSync)
+    implementation(project(":tauri-plugin-notification"))
+    implementation("androidx.core:core-ktx:1.9.0")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.15.3")
+    testImplementation("junit:junit:4.13.2")
 }

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-stop-background-sync"
+description = "Enables the stop_background_sync command without any pre-configured scope."
+commands.allow = ["stop_background_sync"]
+
+[[permission]]
+identifier = "deny-stop-background-sync"
+description = "Denies the stop_background_sync command without any pre-configured scope."
+commands.deny = ["stop_background_sync"]

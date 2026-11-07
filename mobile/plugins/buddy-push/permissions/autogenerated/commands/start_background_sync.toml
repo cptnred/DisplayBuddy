@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-start-background-sync"
+description = "Enables the start_background_sync command without any pre-configured scope."
+commands.allow = ["start_background_sync"]
+
+[[permission]]
+identifier = "deny-start-background-sync"
+description = "Denies the start_background_sync command without any pre-configured scope."
+commands.deny = ["start_background_sync"]

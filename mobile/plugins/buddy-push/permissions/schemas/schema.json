@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the background_sync_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-background-sync-state",
+          "markdownDescription": "Enables the background_sync_state command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the background_sync_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-background-sync-state",
+          "markdownDescription": "Denies the background_sync_state command without any pre-configured scope."
+        },
+        {
           "description": "Enables the get_token command without any pre-configured scope.",
           "type": "string",
           "const": "allow-get-token",
@@ -331,6 +343,42 @@
           "markdownDescription": "Denies the remove_listener command without any pre-configured scope."
         },
         {
+          "description": "Enables the request_battery_exemption command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-request-battery-exemption",
+          "markdownDescription": "Enables the request_battery_exemption command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the request_battery_exemption command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-request-battery-exemption",
+          "markdownDescription": "Denies the request_battery_exemption command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the start_background_sync command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-start-background-sync",
+          "markdownDescription": "Enables the start_background_sync command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the start_background_sync command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-start-background-sync",
+          "markdownDescription": "Denies the start_background_sync command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the stop_background_sync command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stop-background-sync",
+          "markdownDescription": "Enables the stop_background_sync command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stop_background_sync command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stop-background-sync",
+          "markdownDescription": "Denies the stop_background_sync command without any pre-configured scope."
+        },
+        {
           "description": "Enables the take_launch_data command without any pre-configured scope.",
           "type": "string",
           "const": "allow-take-launch-data",
@@ -343,10 +391,10 @@
           "markdownDescription": "Denies the take_launch_data command without any pre-configured scope."
         },
         {
-          "description": "Token, launch data and the push events (token, message, opened).\n#### This default permission set includes:\n\n- `allow-get-token`\n- `allow-take-launch-data`\n- `allow-register-listener`\n- `allow-remove-listener`",
+          "description": "Token, launch data, the push events (token, message, opened) and the background sync (no Firebase).\n#### This default permission set includes:\n\n- `allow-get-token`\n- `allow-take-launch-data`\n- `allow-register-listener`\n- `allow-remove-listener`\n- `allow-start-background-sync`\n- `allow-stop-background-sync`\n- `allow-background-sync-state`\n- `allow-request-battery-exemption`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Token, launch data and the push events (token, message, opened).\n#### This default permission set includes:\n\n- `allow-get-token`\n- `allow-take-launch-data`\n- `allow-register-listener`\n- `allow-remove-listener`"
+          "markdownDescription": "Token, launch data, the push events (token, message, opened) and the background sync (no Firebase).\n#### This default permission set includes:\n\n- `allow-get-token`\n- `allow-take-launch-data`\n- `allow-register-listener`\n- `allow-remove-listener`\n- `allow-start-background-sync`\n- `allow-stop-background-sync`\n- `allow-background-sync-state`\n- `allow-request-battery-exemption`"
         }
       ]
     }

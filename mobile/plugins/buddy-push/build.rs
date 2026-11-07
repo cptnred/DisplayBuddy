@@ -6,6 +6,10 @@ const COMMANDS: &[&str] = &[
     "take_launch_data",
     "register_listener",
     "remove_listener",
+    "start_background_sync",
+    "stop_background_sync",
+    "background_sync_state",
+    "request_battery_exemption",
 ];
 
 fn main() {

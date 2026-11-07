@@ -8,6 +8,7 @@
  * opened). A Kotlin `invoke.reject(message, code)` arrives as an object with `code`.
  */
 import { addPluginListener, invoke } from "@tauri-apps/api/core";
+import type { BackgroundPlugin } from "./native-background";
 import {
   parsePushData,
   parsePushMessage,
@@ -63,6 +64,25 @@ export function createTauriPushPlugin(): PushPlugin {
         if (d) cb(d);
       });
       return () => void l.unregister();
+    },
+  };
+}
+
+/** Background sync commands of the same plugin (Kotlin `SyncService`, D-107). */
+export function createTauriBackgroundPlugin(): BackgroundPlugin {
+  return {
+    async start(config) {
+      await invoke(`plugin:${PLUGIN}|start_background_sync`, { baseUrl: config.baseUrl, token: config.token });
+    },
+    async stop() {
+      await invoke(`plugin:${PLUGIN}|stop_background_sync`);
+    },
+    async state() {
+      const res = await invoke<{ configured?: unknown; batteryUnrestricted?: unknown }>(`plugin:${PLUGIN}|background_sync_state`);
+      return { configured: res?.configured === true, batteryUnrestricted: res?.batteryUnrestricted === true };
+    },
+    async requestBatteryExemption() {
+      await invoke(`plugin:${PLUGIN}|request_battery_exemption`);
     },
   };
 }
