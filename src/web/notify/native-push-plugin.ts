@@ -68,7 +68,7 @@ export function createTauriPushPlugin(): PushPlugin {
   };
 }
 
-/** Background sync commands of the same plugin (Kotlin `SyncService`, D-107). */
+/** Background sync commands of the same plugin (Kotlin `BackgroundScheduler`, D-107). */
 export function createTauriBackgroundPlugin(): BackgroundPlugin {
   return {
     async start(config) {

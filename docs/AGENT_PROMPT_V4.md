@@ -330,7 +330,7 @@ Checks: cd server && cargo test && cargo clippy --all-targets -- -D warnings && 
 Auftrag: native App gemäß PLAN_V4 §6.2 (native), §6.5 (native), §7.2, §9.2.
 Ordner (exklusiv): mobile/ (ohne mobile/patches/), src/web/notify/native*, .github/workflows/mobile-*.yml.
 Abhängig von Phase C (Oberfläche, contract-Schnittstellen QrScanner/ServerSelector) und vom committeten
-Android-Hintergrundabgleich (D-107: mobile/plugins/buddy-push SyncService/BackgroundSync/BackgroundSettings,
+Android-Hintergrundabgleich (D-107: mobile/plugins/buddy-push BackgroundScheduler/BackgroundSync/BackgroundSettings,
 src/web/notify/native-background.ts). Lies D-107 und seinen Nachtrag „Folgen für v4“ zuerst.
 Quellen: tauri-docs (plugin/barcode-scanner, Capabilities zur Laufzeit, iOS-Konfiguration/Info.plist),
 Quellcode plugins-workspace/plugins/barcode-scanner (Android-Manifest, iOS NSCameraUsageDescription),

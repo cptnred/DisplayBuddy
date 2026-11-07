@@ -454,13 +454,15 @@ Für pev-point ist Firebase damit optional. Wer FCM selbst will, baut die App mi
 **D-106 Version 0.4.0.** Server, Desktop und App bekommen 0.4.0; API weiter `/api/v1` (additiv), `apiLevel: 2`.
 v3-Clients bleiben gegen einen v4-Server lauffähig (Matrix PLAN_V4 §9.1).
 
-**D-107 Android: Hintergrundabgleich ohne Firebase (Foreground-Service).** Erinnerungen, die am PC neu angelegt oder
+**D-107 Android: Hintergrundabgleich ohne Firebase (Alarm + Receiver, kein Vordergrunddienst).** Erinnerungen, die am PC neu angelegt oder
 verschoben werden, erreichten ein Handy ohne FCM erst nach dem Öffnen der App (der Web-Sync läuft nur bei sichtbarer
-App, die WebView ist im Hintergrund eingefroren). Neu in `mobile/plugins/buddy-push`: `SyncService` (Foreground-Service
-`specialUse`, kein Zeitlimit wie bei `dataSync` ab Android 15; Sideload) holt per exaktem Alarm alle 3 Min. und bei
-neuem Netz `GET /sync/changes` mit dem Geräte-Token und plant die Erinnerungen über dieselben Klassen/Ids/Speicher
-wie die App (`TauriNotificationManager`, FNV-1a-Id wie `native-plan.ts`, Kotlin-Test mit JS-Referenzwerten). Die
-App und der Dienst führen je einen eigenen Cursor; geplante Alarme stehen im gemeinsamen `NOTIFICATION_STORE`, die App
+App, die WebView ist im Hintergrund eingefroren). Neu in `mobile/plugins/buddy-push`: `BackgroundScheduler` löst per
+exaktem Alarm (`setExactAndAllowWhileIdle`, `USE_EXACT_ALARM`) alle 3 Min. `BackgroundTickReceiver` aus, der
+`GET /sync/changes` mit dem Geräte-Token abruft und die Erinnerungen über dieselben Klassen/Ids/Speicher
+wie die App plant (`TauriNotificationManager`, FNV-1a-Id wie `native-plan.ts`, Kotlin-Test mit JS-Referenzwerten).
+Bewusst **kein Foreground-Service**: Android verlangt dafür eine dauerhafte Benachrichtigung (erst als Dienst gebaut,
+auf Benutzerwunsch wieder entfernt). Der Receiver arbeitet mit `goAsync()` und Wake-Lock, HTTP-Timeouts 10 s. Die
+App und der Abgleich führen je einen eigenen Cursor; geplante Alarme stehen im gemeinsamen `NOTIFICATION_STORE`, die App
 ersetzt beim Öffnen Texte (Diff) statt doppelt zu planen. Token: AES-GCM mit Keystore-Schlüssel, nur Lesezugriff auf den
 Server. Start nach Login, Boot und App-Update; `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` wird einmal nach der
 Benachrichtigungs-Erlaubnis erfragt, weil Doze sonst das Netz sperrt. Grenze: Latenz = Intervall (FCM bleibt der Weg

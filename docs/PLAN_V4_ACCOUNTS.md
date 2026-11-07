@@ -86,8 +86,8 @@ Ehrlich getrennt: was im Code geprüft ist, was aus Quellen abgeleitet ist, was 
   (HTTP läuft über das Plugin in Rust).
 - **Nachtrag 2026-11-07 – Android-Hintergrundabgleich (D-107)**, vom Benutzer parallel umgesetzt. Beim Lesen war er
   **noch nicht committet**; geprüft wurde der Arbeitsstand im Arbeitsverzeichnis.
-  - Ein Kotlin-Dienst im Vordergrund (`mobile/plugins/buddy-push/…/SyncService.kt`, Typ `specialUse`, Neustart
-    nach Boot/Update) ruft alle **3 min** `GET /api/v1/sync/changes` mit dem Geräte-Token auf. Er plant
+  - Ein Kotlin-Abgleich ohne Dienst (`mobile/plugins/buddy-push/…/BackgroundScheduler.kt`: exakter Alarm → Receiver,
+    Neustart nach Boot/Update; **keine dauerhafte Benachrichtigung**) ruft alle **3 min** `GET /api/v1/sync/changes` mit dem Geräte-Token auf. Er plant
     Erinnerungen über die Klassen des Notification-Plugins, auch bei geschlossener App.
   - Er hat einen **eigenen Cursor** und eine **eigene Kopie von Server-Adresse und Token**
     (`BackgroundSettings.kt`, AES-GCM mit Android-Keystore-Schlüssel).
@@ -781,7 +781,7 @@ Rechtslinks.
   eine Origin – CSRF und Cookies hängen daran), Geräte neu verbinden, PWA neu installieren.
 - **Rechtliches:** Inhalte von Impressum/Datenschutz und ggf. Nutzungsbedingungen liefert der Betreiber.
 - **Hintergrundabgleich (D-107):**
-  - Der Dienst zeigt eine dauerhafte Benachrichtigung (Vordergrunddienst) und braucht die Ausnahme von der
+  - Der Abgleich zeigt keine dauerhafte Benachrichtigung (kein Vordergrunddienst) und braucht die Ausnahme von der
     Akku-Optimierung.
   - Er erzeugt Last auf dem öffentlichen Server (§11.3).
   - Er ist ein zweiter HTTP-Weg neben dem Tauri-Scope; die Adressprüfung muss deshalb dort mitgepflegt werden.
@@ -803,7 +803,7 @@ Rechtslinks.
 - Pairing PC → PC (zweiter PC meldet sich mit Passwort an)
 - Android App Links / iOS Universal Links (Kamera öffnet direkt die native App)
 - App-Store-/Play-Store-Veröffentlichung. Für Google Play wären zusätzlich die Berechtigungen des
-  Hintergrundabgleichs (`FOREGROUND_SERVICE_SPECIAL_USE`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) und
+  Hintergrundabgleichs (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) und
   `USE_EXACT_ALARM` (D-77) Richtlinienfragen.
 - Teilen von Notizen zwischen Konten
 - Zwei-Faktor-Authentifizierung, Passkeys (später möglich: `PublicKeyCredential` ist laut browser-compat-data

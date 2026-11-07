@@ -1,9 +1,11 @@
 package de.displaybuddy.push
 
 import android.app.Activity
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
@@ -58,6 +60,11 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
         super.load(webView)
         instance = this
         launchData = tapData(activity.intent?.extras)
+        // channel of the former foreground service (no longer used): remove it from the settings
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            (activity.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .deleteNotificationChannel("background-sync")
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -102,7 +109,7 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
         invoke.resolve(result)
     }
 
-    /** Server address + device token for the background sync (see [SyncService]); starts it. */
+    /** Server address + device token for the background sync (see [BackgroundScheduler]); starts it. */
     @Command
     fun startBackgroundSync(invoke: Invoke) {
         val args = invoke.parseArgs(BackgroundArgs::class.java)
@@ -112,18 +119,18 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
         }
         try {
             BackgroundSettings(activity).configure(args.baseUrl, args.token)
-            SyncService.start(activity)
+            BackgroundScheduler.start(activity)
             invoke.resolve()
         } catch (e: Exception) {
             invoke.reject("background sync could not be started", "UNAVAILABLE", e)
         }
     }
 
-    /** Signed out: forget the account and stop the service. */
+    /** Signed out: forget the account and stop the sync. */
     @Command
     fun stopBackgroundSync(invoke: Invoke) {
         BackgroundSettings(activity).clear()
-        SyncService.stop(activity)
+        BackgroundScheduler.stop(activity)
         invoke.resolve()
     }
 

@@ -1,11 +1,11 @@
 /**
- * Background sync of the Android shell without Firebase (D-107). The Kotlin foreground
- * service (mobile/plugins/buddy-push, `SyncService`) needs the server address and the device
+ * Background sync of the Android shell without Firebase (D-107). A native alarm-driven sync
+ * (mobile/plugins/buddy-push, `BackgroundScheduler`) needs the server address and the device
  * token once; from then on it fetches new and changed reminders by itself and plans them as
  * local alarms, even if the app is closed or in the background.
  *
  * - signed in → hand over address and token (every app start, after a login);
- * - signed out → the service forgets the account and stops;
+ * - signed out → the sync forgets the account and stops;
  * - once, after the notification permission was granted: the system dialog „Akku-Optimierung
  *   ignorieren“, because Doze blocks the network of every other app.
  *

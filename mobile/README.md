@@ -244,20 +244,17 @@ nötig, wenn sich `tauri.conf.json` oder die Plugins geändert haben (dann `gen`
 
 ## Hintergrundabgleich (Android, ohne Firebase)
 
-Ein kleiner Dienst der App („Erinnerungen werden im Hintergrund abgeglichen“, dauerhafte
-Benachrichtigung) holt alle 3 Minuten und bei neuer Netzverbindung die Änderungen vom Server und
-plant neue oder verschobene Erinnerungen als lokale Alarme – auch wenn die App geschlossen oder
-weggewischt ist. Er braucht keine Firebase-Einrichtung, nur den normalen Login:
+Im Hintergrund holt die App alle 3 Minuten (per exaktem Alarm, ohne Dauer-Benachrichtigung) die
+Änderungen vom Server und plant neue oder verschobene Erinnerungen als lokale Alarme – auch wenn die
+App geschlossen oder weggewischt ist. Das braucht keine Firebase-Einrichtung, nur den normalen Login:
 
 - Start automatisch nach dem Anmelden, nach einem Neustart des Handys und nach einem App-Update;
-  nach dem Abmelden stoppt er.
+  nach dem Abmelden stoppt der Abgleich.
 - Beim ersten Mal nach der Benachrichtigungs-Erlaubnis fragt die App einmal nach der
   **Akku-Ausnahme** („Im Hintergrund ausführen“ erlauben). Ohne sie sperrt Android im Ruhezustand
   (Doze) das Netz und der Abgleich kommt nur verzögert. Später änderbar unter _Einstellungen →
   Apps → Display Buddy → Akku → Nicht eingeschränkt_.
-- Die dauerhafte Benachrichtigung ist Pflicht für Hintergrunddienste; sie lässt sich unter
-  _Einstellungen → Apps → Display Buddy → Benachrichtigungen → Hintergrundabgleich_ stumm/klein stellen.
-- Der Dienst liest nur (`GET /sync/changes`), speichert das Token verschlüsselt (Android Keystore)
+- Der Abgleich liest nur (`GET /sync/changes`), speichert das Token verschlüsselt (Android Keystore)
   und plant mit denselben Ids und Tasten („Erledigt“, „10 Min. später“) wie die App – nichts klingelt doppelt.
   Der Text ist dort noch knapp („Erinnerung um 14:30“); beim nächsten Öffnen ersetzt die App ihn durch den vollen.
 - Grenze: Minimale Verzögerung = Abgleichintervall. Eine Erinnerung „in 1 Minute“ vom PC kann zu spät

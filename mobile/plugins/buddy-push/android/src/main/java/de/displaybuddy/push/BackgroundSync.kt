@@ -33,7 +33,7 @@ internal object BackgroundSync {
     private const val ACTION_TYPE_ID = "buddy-reminder"
     private const val PAGE_LIMIT = 500
     private const val TITLE_MAX = 60
-    private const val TIMEOUT_MS = 20_000
+    private const val TIMEOUT_MS = 10_000
 
     @Synchronized
     fun syncOnce(context: Context): SyncResult {
