@@ -73,8 +73,9 @@ _Artifacts_ **display-buddy-android** mit `display-buddy.apk`. Ohne die Secrets 
 
 ### 4. Erlaubnisse
 
-- **Benachrichtigungen** (Android 13 und neuer): Nach dem Anmelden auf _Benachrichtigungen
-  aktivieren_ tippen und im Dialog _Zulassen_ wählen. Später änderbar unter
+- **Benachrichtigungen** (Android 13 und neuer): Direkt nach dem Anmelden fragt die App selbst
+  nach der Erlaubnis → _Zulassen_ wählen. Ohne diese Erlaubnis plant die App **keine** Erinnerungen.
+  Wurde der Dialog weggeklickt: in der App _Einstellungen → Benachrichtigungen aktivieren_. Später änderbar unter
   _Einstellungen → Apps → Display Buddy → Benachrichtigungen_. Dort gibt es den Kanal
   **„Erinnerungen“** (hohe Wichtigkeit, mit Ton) – nicht stummschalten.
 - **Exakte Alarme** („Alarme & Erinnerungen“):

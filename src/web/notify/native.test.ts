@@ -283,21 +283,55 @@ describe("planning", () => {
 });
 
 describe("permissions", () => {
-  it("not asked yet: nothing planned, reported as denied; enable() asks and plans", async () => {
+  it("not asked yet: asks once by itself after the login and plans (Android 13+ / iOS)", async () => {
     const plugin = new FakePlugin();
     plugin.perm = "prompt";
     const { store, notifier } = await phone({ plugin });
     await store.saveNote(note("a", "A"));
     await store.setReminder("a", "2026-11-07", "09:00", "Europe/Berlin", "none");
     await notifier.start();
-    expect(plugin.pendingMap.size).toBe(0);
-    expect(notifier.deviceState()?.localNotifications).toBe("denied");
-    expect(await notifier.status()).toEqual({ state: "available" });
-    const s = await notifier.enable();
-    expect(plugin.calls[0]).toBe("request");
-    expect(s).toEqual({ state: "enabled" });
+    expect(plugin.calls.filter((c) => c === "request")).toHaveLength(1);
     expect(plugin.pendingMap.size).toBe(1);
     expect(notifier.deviceState()?.localNotifications).toBe("granted");
+    expect(await notifier.status()).toEqual({ state: "enabled" });
+  });
+
+  it("asks at most once per app run; a refusal is respected until enable()", async () => {
+    const plugin = new FakePlugin();
+    plugin.perm = "prompt";
+    plugin.askAnswer = "prompt"; // dialog dismissed without a choice
+    const { store, notifier } = await phone({ plugin });
+    await store.saveNote(note("a", "A"));
+    await store.setReminder("a", "2026-11-07", "09:00", "Europe/Berlin", "none");
+    await notifier.start();
+    await notifier.replan("sync");
+    expect(plugin.calls.filter((c) => c === "request")).toHaveLength(1);
+    expect(plugin.pendingMap.size).toBe(0);
+    expect(notifier.deviceState()?.localNotifications).toBe("denied");
+    plugin.askAnswer = "granted";
+    expect(await notifier.enable()).toEqual({ state: "enabled" });
+    expect(plugin.pendingMap.size).toBe(1);
+  });
+
+  it("switched off by the user: never asks by itself", async () => {
+    const plugin = new FakePlugin();
+    plugin.perm = "prompt";
+    const { store, notifier } = await phone({ plugin });
+    await notifier.disable();
+    await store.saveNote(note("a", "A"));
+    await store.setReminder("a", "2026-11-07", "09:00", "Europe/Berlin", "none");
+    await notifier.start();
+    expect(plugin.calls).not.toContain("request");
+    expect(plugin.pendingMap.size).toBe(0);
+  });
+
+  it("signed out: does not ask", async () => {
+    const plugin = new FakePlugin();
+    plugin.perm = "prompt";
+    const { store, notifier } = await phone({ plugin });
+    await store.signOut();
+    await notifier.start();
+    expect(plugin.calls).not.toContain("request");
   });
 
   it("denied by the user: status denied, nothing planned", async () => {

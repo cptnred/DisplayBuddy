@@ -279,3 +279,18 @@ Benachrichtigungen (iOS-Grenze 64), weitere beim nächsten Sync/Öffnen.
 
 **D-80 Bekannter wackeliger Test:** ein bestehender Buddy-Skin-Test („falls back to the smiley … for an unknown id“)
 schlug einmal unter hoher Last (vier parallele Agenten) fehl und war in drei Wiederholungen grün. Unter Beobachtung.
+
+**D-81 Native App fragt die Benachrichtigungs-Erlaubnis selbst an.** Unter Android 13+ (`POST_NOTIFICATIONS`)
+und iOS startet die App ohne Erlaubnis; bisher fragte sie nur beim Tipp auf „Benachrichtigungen aktivieren“, und
+ohne Erlaubnis plant sie nichts – Erinnerungen blieben auf echten Geräten still (der Emulator-Test hatte die Erlaubnis
+per `adb pm grant` vorab erteilt). Jetzt fragt die App nach dem Anmelden einmal pro App-Start von selbst (bei nativen
+Apps ohne Nutzergeste erlaubt; die Web-Push-Regel D-46 gilt nur für die PWA), außer der Benutzer hat
+Benachrichtigungen in der App ausgeschaltet.
+
+**D-82 Zähler „Änderungen warten“ liest nach jedem Sync neu.** Ein erfolgreicher Push leert die Outbox ohne
+Datenänderungs-Ereignis; die Statuszeile nahm das Maximum aus Engine-Zähler und einem nur auf Datenänderungen
+hörenden UI-Zähler und zeigte deshalb dauerhaft „1 Änderung wartet“ (PWA und native App).
+
+**D-83 Android-Build (Beitrag des Benutzers):** Build-Tools 36.1.0 und API 37 (Tauri erzeugt `compileSdk`/`targetSdk`
+37), gesetzt per `mobile/scripts/android-build-tools.mjs` nach `tauri android init`; Rust-Bibliothek mit 16-KB-Seiten
+gelinkt (`build.rs`, für Android 15+; NDK r28+ macht das von selbst).

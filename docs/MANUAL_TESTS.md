@@ -690,7 +690,8 @@ In der Cloud automatisch geprüft ist, was in §31 steht; alles hier braucht ech
 
 ## 28. v3 – Native Android-App (APK)
 1. APK aus GitHub Actions (`mobile-android` → Artefakt) installieren (Sideload erlauben), anmelden.
-2. Erlaubnisse: Benachrichtigungen; Einstellungen → Apps → Display Buddy → „Alarme & Erinnerungen“ erlauben;
+2. Erlaubnisse: direkt nach dem Anmelden erscheint der Android-Dialog „Benachrichtigungen zulassen“ (ab Android 13) → zulassen;
+   Einstellungen → Apps → Display Buddy → „Alarme & Erinnerungen“ erlauben (nur Android 12/12L nötig);
    Akku → „Nicht optimieren“.
 3. **Offline-Klingeln:** Erinnerung am PC in 5 min setzen, Handy-App öffnen (Sync), App schließen, Flugmodus an →
    Benachrichtigung kommt pünktlich. „Erledigt“ im Flugmodus → nach Flugmodus aus ist die Erinnerung am PC erledigt.

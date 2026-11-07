@@ -123,6 +123,8 @@ export function createNativeNotifier(deps: NativeNotifierDeps): NativeNotifier {
   let again = false;
   let started = false;
   let setupDone = false;
+  /** Permission asked automatically in this app run (at most once, see planOnce). */
+  let askedThisRun = false;
   const cleanups: (() => void)[] = [];
 
   async function permission(): Promise<NativePermission> {
@@ -153,7 +155,15 @@ export function createNativeNotifier(deps: NativeNotifierDeps): NativeNotifier {
     const seq = await deps.getCursor();
     const [reminders, notes] = await Promise.all([store.listReminders(), store.listNotes()]);
     const pref = deps.prefs.enabled();
-    const perm = await permission();
+    let perm = await permission();
+    // Android 13+ (POST_NOTIFICATIONS) and iOS start without permission. A native app may ask
+    // without a user gesture (unlike Web Push), so ask once per app start after the login
+    // unless the user switched notifications off; otherwise nothing would ever ring.
+    if (perm === "prompt" && pref !== false && !askedThisRun) {
+      askedThisRun = true;
+      perm = await plugin.requestPermission().catch(() => "denied" as NativePermission);
+      log(`notification permission requested: ${perm}`);
+    }
     const pendingList = await plugin.pending();
 
     if (pref === false || perm !== "granted") {
