@@ -259,6 +259,26 @@ describe("settings, notifications, status", () => {
     expect(await screen.findByText("Testbenachrichtigung gesendet.")).toBeInTheDocument();
   });
 
+  it("settings follow a status change the notifier reports by itself (permission answered)", async () => {
+    const base = createFakeNotifier("available");
+    let listener: (() => void) | null = null;
+    const notifier = {
+      ...base,
+      subscribe: (l: () => void) => {
+        listener = l;
+        return () => {
+          listener = null;
+        };
+      },
+    };
+    renderApp({ path: "/settings", notifier });
+    expect(await screen.findByRole("button", { name: "Benachrichtigungen aktivieren" })).toBeInTheDocument();
+    base.status.mockResolvedValue({ state: "enabled" });
+    act(() => listener?.());
+    expect(await screen.findByText("Benachrichtigungen sind aktiv.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Benachrichtigungen aktivieren" })).not.toBeInTheDocument();
+  });
+
   it("reconciles the push subscription at start", async () => {
     const notifier = createFakeNotifier("enabled");
     renderApp({ notifier });

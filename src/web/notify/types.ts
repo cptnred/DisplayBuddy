@@ -41,6 +41,11 @@ export interface Notifier {
   enable(): Promise<NotifierStatus>;
   /** Turns them off (unsubscribe + server registration removed). */
   disable(): Promise<NotifierStatus>;
+  /**
+   * The state may have changed without a click (native shell: permission answered after the
+   * automatic request, planning finished). The UI re-reads {@link status}. Optional.
+   */
+  subscribe?(listener: () => void): () => void;
   /** Sends a test notification to this device (PWA: POST /push/test). */
   test(): Promise<void>;
   /**

@@ -296,6 +296,20 @@ describe("permissions", () => {
     expect(await notifier.status()).toEqual({ state: "enabled" });
   });
 
+  it("tells subscribers when the automatic request changed the status", async () => {
+    const plugin = new FakePlugin();
+    plugin.perm = "prompt";
+    const { notifier } = await phone({ plugin });
+    const seen: string[] = [];
+    const off = notifier.subscribe?.(() => void notifier.status().then((s) => seen.push(s.state)));
+    await notifier.start();
+    await vi.waitFor(() => expect(seen.at(-1)).toBe("enabled"));
+    off?.();
+    const before = seen.length;
+    await notifier.replan("sync");
+    expect(seen).toHaveLength(before);
+  });
+
   it("asks at most once per app run; a refusal is respected until enable()", async () => {
     const plugin = new FakePlugin();
     plugin.perm = "prompt";

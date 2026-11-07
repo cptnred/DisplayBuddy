@@ -123,6 +123,10 @@ export function createNativeNotifier(deps: NativeNotifierDeps): NativeNotifier {
   let again = false;
   let started = false;
   let setupDone = false;
+  const changeListeners = new Set<() => void>();
+  function emitChange(): void {
+    for (const l of [...changeListeners]) l();
+  }
   /** Permission asked automatically in this app run (at most once, see planOnce). */
   let askedThisRun = false;
   const cleanups: (() => void)[] = [];
@@ -233,6 +237,7 @@ export function createNativeNotifier(deps: NativeNotifierDeps): NativeNotifier {
       } while (again);
     })().finally(() => {
       running = null;
+      emitChange();
     });
     running = run;
     return run;
@@ -340,6 +345,11 @@ export function createNativeNotifier(deps: NativeNotifierDeps): NativeNotifier {
     deviceState: () => (state ? { ...state } : null),
 
     status,
+
+    subscribe(listener) {
+      changeListeners.add(listener);
+      return () => void changeListeners.delete(listener);
+    },
 
     enable(): Promise<NotifierStatus> {
       // request first (before any await), as the Notifier contract asks for

@@ -127,12 +127,18 @@ export function NotificationSettings() {
 
   useEffect(() => {
     let alive = true;
-    notifier
-      ?.status()
-      .then((s) => alive && setStatus(s))
-      .catch(() => alive && setStatus({ state: "error" }));
+    const refresh = () => {
+      notifier
+        ?.status()
+        .then((s) => alive && setStatus(s))
+        .catch(() => alive && setStatus({ state: "error" }));
+    };
+    refresh();
+    // native shell: the permission is requested by the app itself after the login
+    const unsubscribe = notifier?.subscribe?.(refresh);
     return () => {
       alive = false;
+      unsubscribe?.();
     };
   }, [notifier]);
 
