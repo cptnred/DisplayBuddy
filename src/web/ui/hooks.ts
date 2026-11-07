@@ -58,9 +58,38 @@ export function useAccount(): [Account | null, boolean] {
   return useStoreValue(() => store.getAccount(), ["account"], null);
 }
 
+/**
+ * Records waiting in the outbox. Re-read on data changes AND on every sync status change:
+ * a successful push empties the outbox without any data change event, so a counter that
+ * listened only to the store kept showing „1 Änderung wartet“ after the sync.
+ */
 export function usePendingCount(): number {
-  const { store } = useServices();
-  return useStoreValue(() => store.pendingCount(), ["notes", "reminders", "order"], 0)[0];
+  const { store, sync } = useServices();
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    let seq = 0;
+    const refresh = () => {
+      const mine = ++seq;
+      store.pendingCount().then(
+        (n) => {
+          if (alive && mine === seq) setCount(n);
+        },
+        () => {},
+      );
+    };
+    refresh();
+    const offStore = store.subscribe((c) => {
+      if (c.kind !== "account") refresh();
+    });
+    const offSync = sync.onStatus(() => refresh());
+    return () => {
+      alive = false;
+      offStore();
+      offSync();
+    };
+  }, [store, sync]);
+  return count;
 }
 
 export function useSyncStatus(): WebSyncStatus {

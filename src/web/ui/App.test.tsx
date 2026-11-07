@@ -276,6 +276,19 @@ describe("settings, notifications, status", () => {
     expect(sync.calls).toContain("syncNow");
   });
 
+  it("status bar: „Änderung wartet“ disappears after a sync that emptied the outbox (no data event)", async () => {
+    const { sync, store } = renderApp({ notes: [makeNote("a", "x")] });
+    await store.saveNote(makeNote("a", "y"));
+    act(() => sync.setStatus({ state: "idle" }));
+    const status = await screen.findByRole("contentinfo", { name: "Synchronisationsstatus" });
+    await waitFor(() => expect(status).toHaveTextContent("1 Änderung wartet"));
+    // the sync engine pushed: outbox empty, engine reports pending 0, the store emits nothing
+    store.clearOutbox();
+    act(() => sync.setStatus({ state: "idle", pending: 0, lastSyncAt: new Date().toISOString() }));
+    await waitFor(() => expect(status).toHaveTextContent("Synchronisiert"));
+    expect(status).not.toHaveTextContent("wartet");
+  });
+
   it("asks before signing out with pending changes and clears local data", async () => {
     const notifier = createFakeNotifier("enabled");
     const { store, history, sync } = renderApp({ path: "/settings", notes: [makeNote("a", "x")], notifier });
