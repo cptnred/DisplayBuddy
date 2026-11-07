@@ -301,3 +301,148 @@ geplante Benachrichtigungen; `TimedNotificationPublisher` las sie mit einem nack
 `notify()` lief – **keine Erinnerung kam an** (gefunden per `adb logcat`, „Unable to start receiver“). Neu:
 `NotificationMapper.kt` (Deserializer für `JSObject`, unbekannte Felder ignoriert) in allen Empfängern und im Plugin;
 `getSavedNotification` fängt jeden Lesefehler ab, die Benachrichtigung selbst kommt mit dem Alarm und wird immer gezeigt.
+
+## v4 (geplant, siehe `docs/PLAN_V4_ACCOUNTS.md`) – Vorschläge
+
+Benutzerentscheidungen vom 2026-11-07 (Multiple-Choice): Registrierung auf dem öffentlichen Server **offen mit
+Schutz**; **keine E-Mail**; Passwort vergessen über **Wiederherstellungscode + angemeldetes Gerät**; **E2E später,
+v4 bereitet vor**; **keine Bestätigung am PC** beim QR-Anmelden; **Passwort-Login am Handy bleibt** als Alternative;
+Konto **sofort** löschen (mit Passwort); **moderate Kontingente** (50 MB, 5 000 Notizen, 10 Geräte); Admin **nur
+CLI**; Registrierung **nur am Desktop**; am Desktop ein **einmaliger Hinweis** statt Assistent.
+
+**D-85 Kurswechsel: mehrere Konten und ein öffentlicher Standard-Server.** Die v3-Annahme „ein Benutzerkonto,
+private Verteilung“ und das Nicht-Ziel „mehrere Benutzerkonten“ (PLAN_V3_SYNC §1, §15) entfallen. Die Datenbank ist
+schon mandantenfähig (`user_id` + `ON DELETE CASCADE`, `foreign_keys` an – im Code geprüft), deshalb nur eine
+additive Migration `0003_accounts.sql`. D-28 bleibt: Der Desktop ist ohne Konto voll nutzbar, Sync ist optional.
+App-Store-Vertrieb bleibt Nicht-Ziel.
+
+**D-86 Registrierung nur am Desktop, Modus per Server-Schalter.** `BUDDY_REGISTRATION=open|invite|closed`, Standard
+**`closed`**: Ein Selbst-Hoster, der v3 → v4 aktualisiert, öffnet seinen Server damit nicht versehentlich. Die
+pev-point-Konfiguration setzt `open`. `POST /accounts` legt Konto und Desktop-Gerät in einer Transaktion an. Die CLI
+`user add` bleibt.
+
+**D-87 Missbrauchsschutz ohne Drittanbieter.** Proof-of-Work: SHA-256 über 16 Zufallsbytes + u32-Nonce, Standard
+22 führende Null-Bits (≈ 4 Mio. Hashes, am PC ≈ 0,3 s). Lösen und Prüfen stehen einmal in `buddy-core::pow`;
+gelöst wird im Desktop-Rust. Dazu Limits pro IP (10 Challenges/h, 3 Registrierungen/h, 10/Tag), global 200/Tag,
+Kontingente. Kein Captcha: Captchas brauchen Drittanbieter (Datenschutz) und sind schlecht barrierefrei. PoW ist
+eine Bremse, keine Mauer; die eigentliche Absicherung sind Kontingente, Tageslimit und der Schalter
+`invite`/`closed`.
+
+**D-88 Benutzername statt E-Mail; Regeln nach OWASP/NIST SP 800-63B.** Neue Namen `^[a-z0-9][a-z0-9._-]{2,31}$`,
+eindeutig ohne Groß/Klein (Spalte `NOCASE`), Liste reservierter Namen, kein `@`. Passwort 12–1024 Zeichen bzw.
+Bytes ohne Kompositionsregeln. Abgelehnt werden Passwörter, die gleich dem Benutzernamen sind oder in einer
+mitgelieferten Liste häufiger Passwörter stehen (offline, kein Online-Abgleich). Alte CLI-Namen bleiben gültig.
+
+**D-89 Passwort vergessen: Wiederherstellungscode als Vertrauensanker, dazu angemeldete Geräte.**
+- Der Code hat 120 Bit (24 Zeichen Crockford-Base32) und wird nur als SHA-256 gespeichert (hohe Entropie wie
+  Tokens). Er wird nur einmal angezeigt. Nach `POST /accounts/recover` ist er verbraucht, und ein neuer wird
+  ausgegeben; `recover` meldet alle Geräte und Sitzungen ab.
+- Ohne das alte Passwort darf nur ein `desktop`- oder `mobile`-Gerät, das mindestens 24 h alt ist, ein neues
+  Passwort setzen. Alle anderen Geräte werden dabei abgemeldet.
+- Den Wiederherstellungscode lässt ein Gerät allein nicht neu erzeugen; dafür ist das Passwort nötig. So kann der
+  Besitzer ein Konto, das über ein gestohlenes Gerät übernommen wurde, mit dem Code zurückholen.
+- v3-Konten haben keinen Code und bekommen am Desktop einen Hinweis.
+
+**D-90 QR-Pairing ohne Bestätigung am PC.**
+- Code: 12 Zeichen Crockford-Base32 (60 Bit), 3 min gültig, einmal einlösbar; gespeichert wird nur der Hash.
+- QR-Inhalt `https://<origin>/pair#c=<code>`. Das Fragment taucht nie in Logs auf (der `TraceLayer` des Servers
+  protokolliert Pfad + Query) und ist für einen späteren E2E-Schlüssel frei.
+- Getrennte Einlöse-Endpunkte: `POST /devices/pairing` (Token, wie `POST /devices`) und `POST /session/pairing`
+  (Cookie, wie `POST /session`). So bleiben Token- und Cookie-Welt sauber getrennt.
+- Weil der Benutzer auf die Bestätigung am PC verzichtet, gibt es diesen Ausgleich:
+  - der QR erscheint erst auf Klick;
+  - der PC zeigt sofort, welches Gerät angemeldet wurde, mit „Das war ich nicht – abmelden“;
+  - es gilt die Regel „jüngeres Gerät“ (D-91).
+- Gemeinsame Normalisierung in Rust und TypeScript mit `pairing_vectors.json`.
+
+**D-91 Geräte abmelden: eigenes oder jüngeres Gerät ohne Passwort, älteres nur mit Passwort.** Der PC, der einen
+Code erzeugt, ist immer älter als das damit gekoppelte Gerät und kann es deshalb sofort abmelden. Ein Angreifer mit
+einem abfotografierten Code kann die älteren Geräte des Besitzers nicht abmelden. Widerrufene Geräte werden nach
+30 Tagen gelöscht (bisher blieben sie für immer stehen – im Code geprüft).
+
+**D-92 Konto löschen sofort** (DSGVO Art. 17, Benutzerentscheidung): `POST /me/delete` mit Passwort und
+Benutzername; `DELETE FROM users` löscht per Cascade alles. Möglich in allen Clients. Am PC bleiben die lokalen
+Notizen. Die Backups rotieren nach 14 Tagen; das steht so in der Datenschutzerklärung. `POST` statt `DELETE` mit
+Body, weil manche Proxys Bodys von DELETE-Anfragen verwerfen.
+
+**D-93 Datenexport** (Art. 20): `GET /me/export` liefert JSON `display-buddy-export/1` (Konto, Geräte, lebende
+Notizen/Erinnerungen, Reihenfolge, Revisionen; keine Hashes, Tokens oder Push-Endpunkte). Der Desktop speichert die
+Datei über den Rust-seitigen Speichern-Dialog.
+
+**D-94 Kontingente mit Netto-Regel.**
+- Ein Push-Paket, das die Belegung erhöht und danach über dem Kontingent liegt, wird ganz abgelehnt:
+  `413 quota_exceeded`, Transaktion zurück. Pakete, die die Belegung nicht erhöhen, gehen immer durch.
+- Kein Teil-Anwenden und kein `invalid` pro Datensatz. Bei `invalid` würden Clients die Änderung verwerfen; bei
+  einem HTTP-Fehler behalten v3- und v4-Clients ihre Outbox.
+- Geräte-Limit: `409 device_limit`.
+- Gemessen wird per `SUM(length(payload))` in der Transaktion.
+- Die Standardwerte kommen aus der Umgebung (leer = unbegrenzt) und lassen sich pro Konto per CLI ändern.
+
+**D-95 Admin-Werkzeuge nur über die CLI** (Benutzerentscheidung): `user list|show|disable|enable|delete|quota|recovery`,
+`invite create|list|revoke`. Keine Admin-API. Gesperrte Konten bekommen bei jeder Anfrage `403 account_disabled`.
+
+**D-96 Standard-Server am Desktop.** `DEFAULT_SYNC_SERVER_URL = "https://buddy.pev-point.de"` steht in `types.ts`
+und `model.rs`; der Vertragstest prüft, dass beide gleich sind. `syncServerUrl = ""` heißt „Standard“. Installationen
+mit eingetragenem Server (das ging nur über ein früheres Verbinden, D-62) behalten ihn. `settings.json` wird nicht
+umgeschrieben.
+
+**D-97 Native App: Server zur Laufzeit wählbar** (ändert D-79 „HTTP-Scope nur `BUDDY_PUBLIC_URL`“).
+- `BUDDY_PUBLIC_URL` wird zum Standard; ohne Variable gilt `https://buddy.pev-point.de`.
+- `server_set` funktioniert nur abgemeldet und nur mit `https` (bzw. localhost/10.0.2.2 wie bisher). Die Origin
+  liegt in `server.json`; der Scope bleibt auf `<origin>/api/v1/*` beschränkt (`Manager::add_capability`, Tauri
+  2.12.5, Feature `dynamic-acl`).
+- Eine fremde Origin aus einem QR-Code gilt erst nach einem Bestätigungsdialog.
+- Tauri kann Capabilities nicht entfernen. Deshalb lädt die App nach einem Wechsel neu, und eine alte Origin bleibt
+  höchstens bis zum nächsten App-Start im Scope.
+- Ein Update geht nur über eine gleich signierte APK, also vom selben Ersteller. Weicht `meta.account.serverUrl`
+  von der wirksamen Origin ab, stoppt der Sync mit einem Hinweis, statt still umzuschalten.
+
+**D-98 Die PWA bleibt an ihre Origin gebunden.** `connect-src 'self'` und das `__Host-`-Cookie bleiben. Die PWA auf
+pev-point spricht nie mit fremden Servern. Selbst-Hoster nutzen die PWA ihres eigenen Servers.
+
+**D-99 QR scannen und anzeigen.**
+- Native App: `tauri-plugin-barcode-scanner` 2.5.3. Android-Berechtigung `CAMERA` kommt aus dem Plugin; iOS braucht
+  `NSCameraUsageDescription`, sonst bricht der Scan ab (Quellcode geprüft).
+- PWA, drei Wege:
+  - System-Kamera → `/pair`; die Seite löst nie automatisch ein;
+  - In-App-Scanner mit `getUserMedia`, dekodiert mit `BarcodeDetector`, wenn vorhanden, sonst mit `jsqr` 1.4.0
+    (reines JS, CSP-tauglich, eigener Chunk);
+  - Code-Eingabe.
+- `BarcodeDetector` ist kein Muss: Safari iOS hat es laut browser-compat-data 8.1.8 nur hinter einem Flag.
+- Desktop: QR als SVG mit dem Crate `qrcode` 0.14.1 in Rust, angezeigt als Data-URL (Desktop-CSP `img-src data:`).
+
+**D-100 Öffentlicher Endpunkt `GET /info`.** Er liefert Fähigkeiten (`apiLevel: 2`, `features`), den
+Registrierungsmodus, die Mindestlänge für Passwörter und die Rechtslinks (nur `https`). Clients erkennen einen
+v3-Server an `404` und bieten dann nur den Passwort-Login an. Die API bleibt `/api/v1` und wächst nur additiv.
+
+**D-101 E2E später, in v4 vorbereitet.**
+- `users.content_format` (1 = Klartext) wird über `GET /me/account` gemeldet. Bei einem unbekannten Format stoppen
+  v4-Clients den Sync (`content_format_unsupported`), statt Daten zu überschreiben.
+- Das QR-Fragment kann später einen Schlüssel tragen, ohne dass der Server ihn sieht. Das Exportformat ist
+  versioniert.
+- Ehrliche Folgen für später: Push nur „Erinnerung fällig“ ohne Text; ohne Code oder Schlüssel ist ein vergessenes
+  Passwort gleichbedeutend mit Datenverlust; die Krypto muss in allen drei Clients stehen.
+
+**D-102 Datenschutz beim öffentlichen Dienst.**
+- Web Push bleibt mit Text, weil der Inhalt nach RFC 8291 Ende-zu-Ende zum Browser verschlüsselt ist.
+- FCM-Benachrichtigungen sind für Google lesbar (im Code geprüft: sichtbare Nachricht mit Titel und Text). Deshalb
+  gibt es `BUDDY_FCM_PAYLOAD=minimal|full`: Standard `full` (Verhalten wie v3), pev-point setzt `minimal`.
+- Logs enthalten weiter keine Inhalte. Logs mit IP-Adressen werden 7 Tage aufbewahrt.
+- Die Rechtslinks kommen aus der Konfiguration, die Texte liefert der Betreiber.
+
+**D-103 Bremsen verallgemeinert** (erweitert D-67): Es bleibt eine Implementierung im Speicher (ein
+Server-Prozess). Neu sind ein IP-weites Limit für Fehlversuche (30/h über alle Benutzernamen), Limits für Challenges,
+Registrierung, Pairing-Einlösen (10 Fehlversuche/10 min) und Export. Die Bremse (IP, Benutzer) gilt auch für
+`recover` und für Passwort-Bestätigungen. Die IP wird weiter nur über `BUDDY_TRUSTED_PROXIES` bestimmt.
+
+**D-104 CSRF-Regel per Pfad-Präfix** (erweitert D-66): Die Prüfung greift für alles, was mit `/api/v1/session`
+beginnt (`/session`, `/session/pairing`), und wie bisher für jede Cookie-Anfrage. Bisher galt „Pfad endet auf
+`/session`“; damit wäre `/session/pairing` ohne Login-CSRF-Schutz geblieben (im Code geprüft).
+
+**D-105 Nativer Push nur mit passendem Firebase-Projekt.** FCM-Token und Dienstkonto gehören zu einem
+Firebase-Projekt. Die offizielle APK (Projekt des Betreibers) bekommt nur von pev-point Weckrufe. Selbst-Hoster mit
+der offiziellen APK haben keinen FCM-Weckruf; die lokale Planung (D-47) funktioniert trotzdem. Wer FCM selbst will,
+baut die App mit dem eigenen Firebase-Projekt.
+
+**D-106 Version 0.4.0.** Server, Desktop und App bekommen 0.4.0; API weiter `/api/v1` (additiv), `apiLevel: 2`.
+v3-Clients bleiben gegen einen v4-Server lauffähig (Matrix PLAN_V4 §9.1).
