@@ -276,6 +276,22 @@ pub mod error_codes {
     /// HTTP 410 on `/sync/changes`: cursor older than `min_cursor` → full re-sync.
     pub const FULL_RESYNC_REQUIRED: &str = "full_resync_required";
     pub const INTERNAL: &str = "internal";
+    // v4 (PLAN_V4 §5.3)
+    pub const USERNAME_TAKEN: &str = "username_taken"; // 409
+    pub const USERNAME_INVALID: &str = "username_invalid"; // 400
+    pub const PASSWORD_WEAK: &str = "password_weak"; // 400
+    pub const REGISTRATION_CLOSED: &str = "registration_closed"; // 403
+    pub const INVITE_REQUIRED: &str = "invite_required"; // 403
+    pub const INVITE_INVALID: &str = "invite_invalid"; // 403
+    pub const CHALLENGE_INVALID: &str = "challenge_invalid"; // 400
+    /// 400 – unknown, expired, cancelled or already used: deliberately ONE code.
+    pub const PAIRING_INVALID: &str = "pairing_invalid";
+    pub const PASSWORD_REQUIRED: &str = "password_required"; // 403
+    pub const ACCOUNT_DISABLED: &str = "account_disabled"; // 403
+    pub const QUOTA_EXCEEDED: &str = "quota_exceeded"; // 413
+    pub const DEVICE_LIMIT: &str = "device_limit"; // 409
+    /// 409 – the client does not know the account's content format (D-101).
+    pub const CONTENT_FORMAT_UNSUPPORTED: &str = "content_format_unsupported";
 }
 
 #[cfg(test)]
@@ -308,6 +324,27 @@ mod tests {
         round_trip::<VapidPublicKey>(ex["vapidPublicKey"].clone());
         round_trip::<ReminderPushPayload>(ex["reminderPushPayload"].clone());
         round_trip::<ApiError>(ex["apiError"].clone());
+
+        use crate::accounts as a;
+        use crate::pairing as p;
+        round_trip::<a::ServerInfo>(ex["serverInfo"].clone());
+        round_trip::<a::RegistrationChallenge>(ex["registrationChallenge"].clone());
+        round_trip::<a::AccountCreate>(ex["accountCreate"].clone());
+        round_trip::<a::AccountAccess>(ex["accountAccess"].clone());
+        round_trip::<a::AccountRecover>(ex["accountRecover"].clone());
+        round_trip::<a::AccountInfo>(ex["accountInfo"].clone());
+        round_trip::<a::DeviceList>(ex["deviceList"].clone());
+        round_trip::<a::DeviceRevoke>(ex["deviceRevoke"].clone());
+        round_trip::<a::PasswordChange>(ex["passwordChange"].clone());
+        round_trip::<a::RecoveryCodeRequest>(ex["recoveryCodeRequest"].clone());
+        round_trip::<a::RecoveryCodeResponse>(ex["recoveryCodeResponse"].clone());
+        round_trip::<a::AccountDelete>(ex["accountDelete"].clone());
+        round_trip::<a::AccountExport>(ex["accountExport"].clone());
+        round_trip::<p::PairingStart>(ex["pairingStart"].clone());
+        round_trip::<p::PairingStatus>(ex["pairingStatus"].clone());
+        round_trip::<p::PairingRedeem>(ex["pairingRedeem"].clone());
+        round_trip::<p::PairingAccess>(ex["pairingAccess"].clone());
+        round_trip::<p::SessionPairing>(ex["sessionPairing"].clone());
     }
 
     #[test]

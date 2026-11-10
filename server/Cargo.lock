@@ -333,11 +333,13 @@ dependencies = [
 name = "buddy-core"
 version = "0.3.0"
 dependencies = [
+ "base64 0.23.1",
  "chrono",
  "chrono-tz",
  "log",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "uuid",
 ]
 
