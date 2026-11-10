@@ -302,7 +302,9 @@ geplante Benachrichtigungen; `TimedNotificationPublisher` las sie mit einem nack
 `NotificationMapper.kt` (Deserializer für `JSObject`, unbekannte Felder ignoriert) in allen Empfängern und im Plugin;
 `getSavedNotification` fängt jeden Lesefehler ab, die Benachrichtigung selbst kommt mit dem Alarm und wird immer gezeigt.
 
-## v4 (geplant, siehe `docs/PLAN_V4_ACCOUNTS.md`) – Vorschläge
+## v4 (siehe `docs/PLAN_V4_ACCOUNTS.md`) – Entscheidungen
+
+D-85…D-108 sind mit Phase 0 (2026-11-10) verbindlich; Ergänzungen ab D-109.
 
 Benutzerentscheidungen vom 2026-11-07 (Multiple-Choice): Registrierung auf dem öffentlichen Server **offen mit
 Schutz**; **keine E-Mail**; Passwort vergessen über **Wiederherstellungscode + angemeldetes Gerät**; **E2E später,
@@ -502,3 +504,65 @@ keine neuen Zugangsdaten.
 - **Login-Flut:** höchstens 4 Argon2-Prüfungen gleichzeitig (`AppState::password_checks`, je 19 MiB); weitere
   Logins warten. Sonst ließ sich der Server mit parallelen Logins unter zufälligen Namen aus dem Speicher drängen.
 - `devices.last_seen_at` wird höchstens alle 5 Minuten geschrieben (vorher bei jeder Anfrage eine Schreibsperre).
+
+## v4 – Umsetzung (Phase 0, 2026-11-10)
+
+Benutzerantworten vor Phase 0 (Multiple-Choice, 2026-11-10): buddy.pev-point.de ist **die heutige Adresse des
+bestehenden v3-Servers** (Upgrade an Ort und Stelle); Impressum/Datenschutz-URLs **liegen noch nicht vor**;
+Firebase für die öffentliche Android-App **später entscheiden**.
+
+**D-109 Versionen v4** (geprüft am 2026-11-10 mit `cargo info` / `npm view`; stabile Linien, keine Alphas):
+
+| Paket | Version | Lizenz | Bemerkung |
+|---|---|---|---|
+| tauri-plugin-barcode-scanner (Rust) | =2.5.3 | MIT OR Apache-2.0 | `cargo info` meldet 3.0.0-alpha.3 als neueste – Alpha, nicht genommen |
+| @tauri-apps/plugin-barcode-scanner (npm) | 2.5.3 | MIT OR Apache-2.0 | `latest`-Tag, veröffentlicht 2026-10-14; `next` = 3.0.0-alpha.3 |
+| qrcode (Rust, Desktop) | 0.14.1 | MIT OR Apache-2.0 | SVG-Ausgabe |
+| jsqr (npm, PWA) | 1.4.0 | Apache-2.0 | reines JS, eigener Chunk |
+| sha2 / base64 in `buddy-core` | =0.11.1 / =0.23.1 | MIT OR Apache-2.0 | dieselben Pins wie im Server |
+
+Liste häufiger Passwörter (D-88): SecLists `Passwords/Common-Credentials/10k-most-common.txt`, **MIT**
+(„Copyright (c) 2018 Daniel Miessler“), festgelegt auf Commit `913b327317496d062bcc7cace524aaad8a693be2`
+(letzte Änderung der Datei 2026-09-08), 10 001 Zeilen. Phase A bindet sie per `include_str!` ein und legt Quelle,
+Commit und Lizenztext neben die Datei.
+
+**D-110 Feinheiten des v4-Vertrags (Phase 0).** Verbindlich in `buddy-core` (`accounts.rs`, `pairing.rs`, `pow.rs`)
+und `src/lib/sync/types.ts` / `src/lib/pairing.ts`, Beispiele in `api_examples.json`:
+- **Zufall kommt vom Aufrufer:** `pairing::code_from_bytes(&[u8; 8])` (erste 60 Bit) und
+  `accounts::recovery_code_from_bytes(&[u8; 15])`. `buddy-core` bleibt ohne `rand`; Server und Desktop füllen die
+  Bytes aus ihrem CSPRNG (`rand::rng`).
+- **`pow::solve(challenge, bits, nonces: Range<u32>)`** statt `max_iter`: Der Desktop löst in Stücken und prüft
+  zwischen den Stücken seine 60-s-Frist.
+- **Jede Antwort trägt `serverTime`** (wie in v3, für die Uhr-Korrektur), also auch `RegistrationChallenge`,
+  `RecoveryCodeResponse` und `PairingStatus`.
+- Optionale Felder werden als `null` gesendet (Schlüssel immer vorhanden). `DeviceInfo.push` = das Gerät hat einen
+  Push-Kanal (Web-Push-Abo oder nativer Token). `PairingStart.code` und das QR-Fragment tragen die normalisierte
+  Form; die Clients formatieren zur Anzeige.
+- **QR-URL streng:** genau `https://host[:port]/pair#c=<code>`; `http` nur für localhost/127.0.0.1/[::1]/10.0.2.2;
+  keine Query, kein Userinfo, kein weiterer Fragment-Parameter, IDN nur als Punycode. Standard-Ports bleiben, wie
+  geschrieben (kein Umschreiben). Rust und TypeScript parsen von Hand (nicht `url`/`new URL`), damit beide gleich
+  entscheiden; ein späterer E2E-Schlüssel im Fragment braucht eine Regeländerung. Normalisieren entfernt jeden
+  Leerraum und Bindestriche.
+- Testvektoren erzeugt ein unabhängiger Python-Generator (`gen_account_vectors.py`, hashlib/base64); die
+  URL- und Normalisierungsfälle sind von Hand festgelegt.
+- **CSRF (zu D-104):** Nicht geroutete Pfade unter `/api/v1` erreichen die Layer des verschachtelten API-Routers nicht
+  (beobachtet: `POST /api/v1/session/pairing` ergab 404 statt 403). Der Guard hängt deshalb zusätzlich an den
+  Auffangrouten `/api` und `/api/{*rest}`; `is_session_path` versteht Pfade mit und ohne `/api/v1`.
+- Migrationstest: `MIGRATOR.run_to(2)` baut eine echte v3-Datenbank, darauf läuft 0003.
+- Web-Vertrag: `SyncEngine.loginWithCode/serverInfo/deleteAccount`, `QrScanner` (`isAvailable()` synchron, ohne
+  Kamera-Abfrage), `ServerSelector`/`ServerChoice`; neue Fehlerfälle über das Präfix von `WebSyncStatus.message`
+  (kein neuer Zustand). Bis Phase C werfen Engine und Test-Fake dafür einen Fehler „not implemented yet“.
+
+**D-111 Arbeitsumgebung v4: Windows-PC des Benutzers** (statt Linux-Cloud, HANDOFF §4). Server-Tests und clippy
+laufen in WSL (`CARGO_TARGET_DIR=~/buddy-target`); `rustfmt` fehlt dort, `cargo fmt` läuft unter Windows.
+Windows-Code prüft clippy nativ (`x86_64-pc-windows-msvc`); der MinGW-Cross-Build (D-17) entfällt hier, der
+Installer entsteht mit `npm run tauri build` (MSVC). **Vitest muss aus einem Pfad mit großem Laufwerksbuchstaben
+starten** (`C:/…`): Mit `c:/…` (so übergibt die IDE das Arbeitsverzeichnis) lädt Vitest zwei Modulkopien, und jede
+Suite scheitert mit „failed to find the current suite“. `test:tz` unter Windows: `TZ=… npx vitest run` aus Git Bash.
+
+**D-112 buddy.pev-point.de = bestehender v3-Server (Upgrade an Ort und Stelle).** Daten, Geräte, Sitzungen und
+die PWA-Origin bleiben; Migration 0003 läuft beim Start. Registrierung bleibt dort nach dem Update **zu**, bis der
+Betreiber `BUDDY_REGISTRATION=open` setzt (D-86) – sinnvollerweise erst, wenn Impressum und Datenschutzerklärung
+online sind (die URLs fehlen noch; in der pev-point-Konfiguration als auskommentierte Platzhalter). Firebase:
+FCM bleibt auf pev-point aus; Android bekommt neue Erinnerungen über den Hintergrundabgleich (D-105/D-107),
+`docs/OPERATIONS.md` beschreibt das spätere Nachrüsten.
