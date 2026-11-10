@@ -12,7 +12,7 @@ import {
 import { BuddyAvatar } from "../buddy/BuddyAvatar";
 import { BUILTIN_SKIN_INFO, skinFeatures } from "../buddy/skins";
 import { SkinPicker } from "./SkinPicker";
-import { SyncSection } from "./SyncSection";
+import { ACCOUNT_SECTION_ID, AccountSection } from "./AccountSection";
 import styles from "./SettingsApp.module.css";
 
 const FACE_PRESETS: { label: string; value: string }[] = [
@@ -70,10 +70,19 @@ export function SettingsApp() {
       .then((list) => alive && setSkins(list))
       .catch(() => alive && setError("Eigene Figuren konnten nicht geladen werden."));
     const unlistenSkins = api.onSkinsChanged((list) => alive && setSkins(list));
+    // open_settings("account"): fragment for a new window, event for an open one (v4)
+    const showSection = (section: string) => {
+      const el = section === ACCOUNT_SECTION_ID ? document.getElementById(ACCOUNT_SECTION_ID) : null;
+      el?.scrollIntoView({ block: "start" });
+      el?.focus();
+    };
+    if (window.location.hash === `#${ACCOUNT_SECTION_ID}`) requestAnimationFrame(() => showSection(ACCOUNT_SECTION_ID));
+    const unlistenSection = api.onSettingsSection(showSection);
     return () => {
       alive = false;
       void unlisten.then((u) => u());
       void unlistenSkins.then((u) => u());
+      void unlistenSection.then((u) => u());
     };
   }, []);
 
@@ -338,7 +347,7 @@ export function SettingsApp() {
         </label>
       </section>
 
-      <SyncSection />
+      <AccountSection />
 
       <section className={styles.group} aria-labelledby="sec-system">
         <h2 id="sec-system">System</h2>

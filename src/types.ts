@@ -291,4 +291,6 @@ export const EVENTS = {
   syncStatus: "sync-status",
   /** v3 payload: NotesChangedPayload. Rust -> notes after merging remote changes. */
   notesChanged: "notes-changed",
+  /** v4 payload: section name ("account"). Rust -> settings: open_settings(section) on an open window. */
+  settingsSection: "settings-section",
 } as const;

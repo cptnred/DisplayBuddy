@@ -7,17 +7,26 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   EVENTS,
+  type AccountInfo,
+  type AccountRegistered,
+  type DeviceInfo,
   type Note,
   type NotesChangedPayload,
+  type PairingInfo,
+  type PairingStatus,
   type Reminder,
   type ReminderRepeat,
   type Settings,
   type ShortcutList,
   type ShortcutsData,
   type SkinData,
+  type ServerInfo,
   type SkinInfo,
   type SyncStatus,
 } from "../types";
+
+/** Links of ServerInfo.legal that account_open_link can open. */
+export type LegalLinkKind = "imprint" | "privacy" | "terms";
 
 /** Deep-partial patch for save_settings (only `buddy` is nested). */
 export type SettingsPatch = Partial<Omit<Settings, "buddy" | "schemaVersion">> & {
@@ -45,7 +54,8 @@ export const api = {
   toggleNotes: () => invoke<void>("toggle_notes"),
   showNotes: () => invoke<void>("show_notes"),
   hideNotes: () => invoke<void>("hide_notes"),
-  openSettings: () => invoke<void>("open_settings"),
+  /** `section` "account" scrolls to „Konto & Handy“ (v4). */
+  openSettings: (section: "account" | null = null) => invoke<void>("open_settings", { section }),
   /** Pops up the native buddy context menu at the cursor. */
   showBuddyMenu: () => invoke<void>("show_buddy_menu"),
   /** Notes window: answer to `flush-request` once all saves are written. */
@@ -96,9 +106,10 @@ export const api = {
   // ---- v3: sync with the own server (Rust owns the HTTP client and the token) --------
   syncStatus: () => invoke<SyncStatus>("sync_status"),
   /**
-   * Registers this PC at the server and unites local data with it. Rejects with a
-   * string starting with a code: invalid_url, invalid_input, unauthorized, offline,
-   * server, protocol, keyring, not_ready.
+   * Registers this PC at the server and unites local data with it. `serverUrl` "" = standard
+   * server (v4). Rejects with a string starting with a code: invalid_url, invalid_input,
+   * unauthorized, offline, protocol, keyring, not_ready, a server code (too_many_requests,
+   * device_limit, account_disabled, …) or server.
    */
   syncConnect: (serverUrl: string, username: string, password: string, deviceName: string) =>
     invoke<SyncStatus>("sync_connect", { serverUrl, username, password, deviceName }),
@@ -106,6 +117,32 @@ export const api = {
   syncDisconnect: () => invoke<SyncStatus>("sync_disconnect"),
   /** Starts a sync right away; returns the current status. */
   syncNow: () => invoke<SyncStatus>("sync_now"),
+
+  // ---- v4: account & QR pairing (PLAN_V4 §7.1; errors "code: detail") ----------------
+  /** GET /info of the server ("" = standard); 404 → "server_too_old". */
+  accountServerInfo: (serverUrl: string) => invoke<ServerInfo>("account_server_info", { serverUrl }),
+  /** Proof-of-work + POST /accounts, then connected like syncConnect. */
+  accountRegister: (serverUrl: string, username: string, password: string, deviceName: string, inviteCode: string | null = null) =>
+    invoke<AccountRegistered>("account_register", { serverUrl, username, password, deviceName, inviteCode }),
+  accountRecover: (serverUrl: string, username: string, recoveryCode: string, newPassword: string, deviceName: string) =>
+    invoke<AccountRegistered>("account_recover", { serverUrl, username, recoveryCode, newPassword, deviceName }),
+  accountInfo: () => invoke<AccountInfo>("account_info"),
+  accountDevices: () => invoke<DeviceInfo[]>("account_devices"),
+  /** Returns the device list afterwards; older devices need the password (password_required). */
+  accountRevokeDevice: (deviceId: string, password: string | null = null) =>
+    invoke<DeviceInfo[]>("account_revoke_device", { deviceId, password }),
+  /** `currentPassword` null = „Ich kenne mein aktuelles Passwort nicht“; other devices are signed out. */
+  accountChangePassword: (currentPassword: string | null, newPassword: string) =>
+    invoke<void>("account_change_password", { currentPassword, newPassword }),
+  accountNewRecoveryCode: (password: string) => invoke<string>("account_new_recovery_code", { password }),
+  /** Save dialog in Rust; path of the file or null if cancelled. */
+  accountExport: () => invoke<string | null>("account_export"),
+  accountDelete: (password: string, confirmUsername: string) =>
+    invoke<SyncStatus>("account_delete", { password, confirmUsername }),
+  accountOpenLink: (kind: LegalLinkKind) => invoke<void>("account_open_link", { kind }),
+  pairingStart: () => invoke<PairingInfo>("pairing_start"),
+  pairingStatus: (pairingId: string) => invoke<PairingStatus>("pairing_status", { pairingId }),
+  pairingCancel: (pairingId: string) => invoke<void>("pairing_cancel", { pairingId }),
 
   // ---- events --------------------------------------------------------------
   onSettingsChanged: (cb: (s: Settings) => void): Promise<UnlistenFn> =>
@@ -127,6 +164,8 @@ export const api = {
   onSyncStatus: (cb: (s: SyncStatus) => void) => listen<SyncStatus>(EVENTS.syncStatus, (e) => cb(e.payload)),
   onNotesChanged: (cb: (p: NotesChangedPayload) => void) =>
     listen<NotesChangedPayload>(EVENTS.notesChanged, (e) => cb(e.payload)),
+  onSettingsSection: (cb: (section: string) => void) =>
+    listen<string>(EVENTS.settingsSection, (e) => cb(e.payload)),
 };
 
 export type Api = typeof api;

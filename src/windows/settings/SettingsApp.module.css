@@ -57,19 +57,3 @@ kbd { font: 12px/1 ui-monospace, monospace; background: #f3f4f6; border: 1px sol
 .footer { margin-top: 16px; display: flex; justify-content: flex-end; }
 .secondary { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 7px 14px; cursor: pointer; font: inherit; }
 .secondary:hover { background: #f3f4f6; }
-
-/* v3: Synchronisation */
-.syncStatus { margin: 0 0 10px; font-weight: 500; }
-.muted { color: var(--muted); font-weight: 400; }
-.warning { background: #fef3c7; color: #92400e; padding: 8px 12px; border-radius: 8px; margin: 0 0 10px; }
-.syncForm { display: grid; gap: 10px; margin: 0 0 10px; }
-.text { display: grid; gap: 4px; }
-.text span { font-weight: 500; }
-.text input {
-  font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; min-width: 0;
-}
-.text input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.buttons { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.primary { background: var(--accent); color: #fff; border: 1px solid var(--accent); border-radius: 8px; padding: 7px 14px; cursor: pointer; font: inherit; }
-.primary:hover { background: #1d4ed8; }
-.primary:disabled, .secondary:disabled { opacity: .5; cursor: default; }

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "Settings window: read/write settings, autostart, skins, sync connection",
+  "description": "Settings window: read/write settings, autostart, skins, sync connection, account & QR pairing",
   "windows": [
     "settings"
   ],
@@ -19,6 +19,20 @@
     "allow-sync-status",
     "allow-sync-connect",
     "allow-sync-disconnect",
-    "allow-sync-now"
+    "allow-sync-now",
+    "allow-account-server-info",
+    "allow-account-register",
+    "allow-account-recover",
+    "allow-account-info",
+    "allow-account-devices",
+    "allow-account-revoke-device",
+    "allow-account-change-password",
+    "allow-account-new-recovery-code",
+    "allow-account-export",
+    "allow-account-delete",
+    "allow-account-open-link",
+    "allow-pairing-start",
+    "allow-pairing-status",
+    "allow-pairing-cancel"
   ]
 }

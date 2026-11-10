@@ -182,6 +182,20 @@ pub fn run() {
             commands::sync::sync_connect,
             commands::sync::sync_disconnect,
             commands::sync::sync_now,
+            commands::account::account_server_info,
+            commands::account::account_register,
+            commands::account::account_recover,
+            commands::account::account_info,
+            commands::account::account_devices,
+            commands::account::account_revoke_device,
+            commands::account::account_change_password,
+            commands::account::account_new_recovery_code,
+            commands::account::account_export,
+            commands::account::account_delete,
+            commands::account::account_open_link,
+            commands::pairing::pairing_start,
+            commands::pairing::pairing_status,
+            commands::pairing::pairing_cancel,
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| crash::fatal("Die App konnte nicht gestartet werden", &e));
