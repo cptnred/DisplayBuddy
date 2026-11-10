@@ -116,8 +116,9 @@ function StorageSection() {
 
 /** German text for a failed account deletion (SyncError codes of src/web/sync). */
 export function deleteErrorText(e: unknown): string {
-  const code = (e as { code?: string } | null)?.code;
-  if (code === "unauthorized") return "Das Passwort ist falsch.";
+  const { code, status } = (e ?? {}) as { code?: string; status?: number };
+  // the server answers a wrong confirmation password with 403 forbidden (not 401)
+  if (status === 403 && code === "http") return "Das Passwort ist falsch.";
   if (code === "bad_request") return "Der Benutzername stimmt nicht.";
   if (code === "too_many_requests") return "Zu viele Versuche. Bitte später erneut versuchen.";
   if (code === "network") return "Der Server ist nicht erreichbar. Bitte Verbindung prüfen.";

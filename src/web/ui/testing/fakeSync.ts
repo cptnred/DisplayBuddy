@@ -129,8 +129,10 @@ export function createFakeSync(options: SyncEngineOptions): FakeSyncEngine {
       calls.push(`deleteAccount:${confirmUsername}`);
       takeError();
       const account = await store.getAccount();
-      if (!engine.accept(account?.username ?? "", password)) throw new SyncError("unauthorized", "unauthorized", 401);
+      // same order and errors as the server: username first, wrong password = 403 forbidden
       if (confirmUsername !== account?.username) throw new SyncError("bad_request", "bad_request: fake", 400);
+      if (!engine.accept(account?.username ?? "", password))
+        throw new SyncError("http", "HTTP 403 forbidden: POST /me/delete", 403);
       set({ state: "signedOut" });
     },
     async syncNow() {

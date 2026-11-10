@@ -143,7 +143,8 @@ export interface SyncEngine {
   serverInfo(): Promise<ServerInfo | null>;
   /**
    * v4: POST /me/delete, then like logout(); the UI then calls DataStore.signOut.
-   * Rejects with `unauthorized` (wrong password) or `bad_request` (username mismatch).
+   * Rejects with SyncError `http` + status 403 (`forbidden`: wrong password – deliberately not 401,
+   * which would sign the client out) or `bad_request` (username mismatch).
    */
   deleteAccount(password: string, confirmUsername: string): Promise<void>;
   /** Runs a sync now (push outbox → pull → merge); resolves when done or failed. */
