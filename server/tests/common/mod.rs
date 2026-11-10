@@ -284,3 +284,62 @@ pub fn reminder_rec(id: &str, at: &str, by: &str, state: &str, zone: Option<&str
 pub fn nid(n: u32) -> String {
     format!("00000000-0000-4000-8000-{n:012}")
 }
+
+/// The request as if it came from `ip` (limits are per IP).
+pub fn at_ip(mut req: Request<Body>, ip: &str) -> Request<Body> {
+    req.extensions_mut()
+        .insert(ConnectInfo(SocketAddr::new(ip.parse().unwrap(), 40000)));
+    req
+}
+
+/// Body of `POST /accounts` without challenge fields.
+pub fn account_body(username: &str, password: &str) -> Value {
+    json!({"username": username, "password": password, "deviceName": "Windows-PC",
+           "timeZone": "Europe/Berlin", "inviteCode": null})
+}
+
+impl TestApp {
+    /// `POST /accounts/challenge` from `ip`; returns (id, nonce solving it).
+    pub async fn solved_challenge(&self, ip: &str) -> (String, u32) {
+        let r = self
+            .send(at_ip(
+                request(
+                    Method::POST,
+                    "/api/v1/accounts/challenge",
+                    Cred::None,
+                    Some(json!({})),
+                ),
+                ip,
+            ))
+            .await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+        let ch = r.body["challenge"].as_str().unwrap();
+        let bits = r.body["bits"].as_u64().unwrap() as u32;
+        let nonce = buddy_core::pow::solve(ch, bits, 0..u32::MAX).unwrap();
+        (r.body["id"].as_str().unwrap().to_string(), nonce)
+    }
+
+    /// Full registration from `ip` (challenge + proof-of-work + `POST /accounts`).
+    pub async fn register(&self, ip: &str, mut body: Value) -> Resp {
+        let (id, nonce) = self.solved_challenge(ip).await;
+        body["challengeId"] = json!(id);
+        body["nonce"] = json!(nonce);
+        self.post_at(ip, "/api/v1/accounts", body).await
+    }
+
+    pub async fn post_at(&self, ip: &str, path: &str, body: Value) -> Resp {
+        self.send(at_ip(
+            request(Method::POST, path, Cred::None, Some(body)),
+            ip,
+        ))
+        .await
+    }
+
+    pub async fn count(&self, sql: &str, user: i64) -> i64 {
+        sqlx::query_scalar(sqlx::AssertSqlSafe(sql.to_string()))
+            .bind(user)
+            .fetch_one(&self.state.db)
+            .await
+            .unwrap()
+    }
+}
