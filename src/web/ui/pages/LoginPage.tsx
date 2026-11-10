@@ -244,7 +244,6 @@ export function LoginPage() {
     const code = takePendingCode();
     if (code) void redeem(code);
     // runs once per page load; redeem only reads state set before it
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [server]);
 
   /** Scanned or typed text → redeem, ask (foreign server, native) or refuse (PWA). */
