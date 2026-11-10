@@ -5,8 +5,9 @@
  *   `X-Buddy-Request: 1` (§7.5), `cache: "no-store"`.
  * - Native shell: injected `fetch` (from `@tauri-apps/plugin-http`, supplied by the shell)
  *   with `Authorization: Bearer <token>` from a {@link TokenProvider}; no cookies.
- *   The adapter stores the token returned by `POST /devices` itself and clears it on
- *   `DELETE /devices/current`, so the token never travels through the engine or the UI.
+ *   The adapter stores the token returned by `POST /devices` and `POST /devices/pairing`
+ *   (v4) itself and clears it on `DELETE /devices/current`, so the token never travels
+ *   through the engine or the UI.
  *
  * A failed `fetch` (rejected promise, MDN: network error) becomes {@link NetworkError};
  * HTTP error statuses are returned, not thrown.
@@ -121,7 +122,8 @@ export function createNativeHttp(options: NativeHttpOptions): OriginHttpAdapter 
       } finally {
         if (isLogout) await options.tokens.setToken(null);
       }
-      if (method === "POST" && path === "/devices" && res.status >= 200 && res.status < 300) {
+      const issuesToken = path === "/devices" || path === "/devices/pairing";
+      if (method === "POST" && issuesToken && res.status >= 200 && res.status < 300) {
         const b = res.body as { token?: unknown } | null;
         if (b && typeof b.token === "string") {
           await options.tokens.setToken(b.token);

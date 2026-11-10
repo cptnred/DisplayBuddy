@@ -37,6 +37,8 @@ export interface FakeDevice {
   /** Queue of forced responses for the next requests. */
   failNext(status: number, error?: string): void;
   authorized: boolean;
+  /** Account of the device after a login (default: the server's username). */
+  user?: string;
 }
 
 export class FakeServer {
@@ -57,6 +59,16 @@ export class FakeServer {
   inFlightPushes = 0;
   maxInFlightPushes = 0;
   private devCounter = 0;
+  /** v4: open pairing codes (normalised) → account; one use each. */
+  pairingCodes = new Map<string, string>();
+  /** v4: GET /me/account contentFormat; null = v3 server (404, also for /info). */
+  contentFormat: number | null = null;
+  /** v4: GET /info body (serverTime added); null = 404. */
+  info: Record<string, unknown> | null = null;
+  /** v4: logins answer 409 device_limit. */
+  deviceLimit = false;
+  /** v4: POST /me/delete happened. */
+  deleted = false;
 
   constructor(serverNow: () => number) {
     this.serverNow = serverNow;
@@ -107,19 +119,50 @@ export class FakeServer {
       const b = body as { username: string; password: string; deviceId?: string | null; kind?: string };
       if (b.username !== this.username || b.password !== this.password) return err(401, "unauthorized");
       if (route === "/session" && kind !== "web") return err(400, "bad_request");
+      if (this.deviceLimit) return err(409, "device_limit");
       dev.authorized = true;
+      dev.user = this.username;
       const deviceId = (route === "/session" && b.deviceId) || `srv-${++this.devCounter}`;
       return route === "/session"
         ? { status: 200, body: { deviceId, serverTime: st } }
         : { status: 200, body: { deviceId, token: "tok-secret", serverTime: st } };
     }
+    if (method === "GET" && route === "/info") {
+      return this.info ? { status: 200, body: { ...this.info, serverTime: st } } : err(404, "not_found");
+    }
+    if (method === "POST" && (route === "/session/pairing" || route === "/devices/pairing")) {
+      const b = body as { code: string; kind?: string; deviceId?: string | null };
+      if (route === "/session/pairing" && kind !== "web") return err(400, "bad_request");
+      const user = this.pairingCodes.get(b.code);
+      if (!user) return err(400, "pairing_invalid");
+      if (this.deviceLimit) return err(409, "device_limit");
+      this.pairingCodes.delete(b.code);
+      dev.authorized = true;
+      dev.user = user;
+      const deviceId = (route === "/session/pairing" && b.deviceId) || `srv-${++this.devCounter}`;
+      return route === "/session/pairing"
+        ? { status: 200, body: { deviceId, serverTime: st } }
+        : { status: 200, body: { deviceId, token: "tok-paired", username: user, serverTime: st } };
+    }
     if (!dev.authorized) return err(401, "unauthorized");
+    if (method === "GET" && route === "/me/account") {
+      if (this.contentFormat === null) return err(404, "not_found");
+      return { status: 200, body: { username: dev.user ?? this.username, contentFormat: this.contentFormat, serverTime: st } };
+    }
+    if (method === "POST" && route === "/me/delete") {
+      const b = body as { password: string; confirmUsername: string };
+      if (b.password !== this.password) return err(401, "unauthorized");
+      if (b.confirmUsername !== (dev.user ?? this.username)) return err(400, "bad_request");
+      this.deleted = true;
+      dev.authorized = false;
+      return { status: 204, body: null };
+    }
     if (method === "DELETE" && (route === "/session" || route === "/devices/current")) {
       dev.authorized = false;
       return { status: 204, body: null };
     }
     if (method === "GET" && route === "/me") {
-      return { status: 200, body: { username: this.username, timeZone: this.timeZone, deviceId: "x", serverTime: st } };
+      return { status: 200, body: { username: dev.user ?? this.username, timeZone: this.timeZone, deviceId: "x", serverTime: st } };
     }
     if (method === "GET" && route === "/sync/changes") {
       const params = new URLSearchParams(query);

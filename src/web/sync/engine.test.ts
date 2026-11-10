@@ -421,3 +421,158 @@ describe("native deviceState", () => {
     expect(server.deviceStates.get("last")).toEqual(state);
   });
 });
+
+describe("v4: pairing, account, limits", () => {
+  const CODE = "ABCDEFGHJKMN";
+
+  it("PWA loginWithCode: normalised code via POST /session/pairing, then GET /me and first sync", async () => {
+    const server = new FakeServer(() => real);
+    server.pairingCodes.set(CODE, server.username);
+    const c = await client(server);
+    await c.engine.loginWithCode("abcd efgh-jkmn", "Handy (Safari)");
+    expect(server.log[0]).toMatchObject({
+      method: "POST",
+      path: "/session/pairing",
+      body: { code: CODE, deviceName: "Handy (Safari)", deviceId: null },
+    });
+    expect(server.log[1]).toMatchObject({ method: "GET", path: "/me" });
+    expect(server.log[2]).toMatchObject({ method: "GET", path: "/me/account" });
+    expect(await c.store.getAccount()).toMatchObject({ username: "martin", serverUrl: "https://buddy.test" });
+    expect(c.engine.status().state).toBe("idle");
+  });
+
+  it("native loginWithCode: POST /devices/pairing with kind mobile", async () => {
+    const server = new FakeServer(() => real);
+    server.pairingCodes.set(CODE, server.username);
+    const c = await client(server, { kind: "mobile" });
+    await c.engine.loginWithCode(CODE, "Pixel 8");
+    expect(server.log[0]).toMatchObject({
+      method: "POST",
+      path: "/devices/pairing",
+      body: { code: CODE, deviceName: "Pixel 8", kind: "mobile" },
+    });
+    expect((await c.store.getAccount())?.username).toBe("martin");
+  });
+
+  it("pairing_invalid for unknown and malformed codes (malformed: no request at all)", async () => {
+    const server = new FakeServer(() => real);
+    const c = await client(server);
+    await expect(c.engine.loginWithCode("123", "Handy")).rejects.toMatchObject({ code: "pairing_invalid" });
+    expect(server.log).toHaveLength(0);
+    await expect(c.engine.loginWithCode(CODE, "Handy")).rejects.toMatchObject({ code: "pairing_invalid", status: 400 });
+    expect(await c.store.getAccount()).toBeNull();
+  });
+
+  it("device_limit is its own error (code login and password login)", async () => {
+    const server = new FakeServer(() => real);
+    server.pairingCodes.set(CODE, server.username);
+    server.deviceLimit = true;
+    const c = await client(server);
+    const err = await c.engine.loginWithCode(CODE, "Handy").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SyncError);
+    expect(err).toMatchObject({ code: "device_limit", status: 409 });
+    expect((err as Error).message.startsWith("device_limit")).toBe(true);
+    await expect(c.engine.login(server.username, server.password, "Handy")).rejects.toMatchObject({ code: "device_limit" });
+  });
+
+  it("a code of another account → account_mismatch, the new session is ended, local account kept", async () => {
+    const server = new FakeServer(() => real);
+    const c = await loggedIn(server);
+    server.pairingCodes.set(CODE, "eve");
+    await expect(c.engine.loginWithCode(CODE, "Handy")).rejects.toMatchObject({ code: "account_mismatch" });
+    expect(server.log.at(-1)).toMatchObject({ method: "DELETE", path: "/session" });
+    expect((await c.store.getAccount())?.username).toBe("martin");
+  });
+
+  it("unknown contentFormat stops the sync: no push, no retries, message content_format_unsupported", async () => {
+    const server = new FakeServer(() => real);
+    server.contentFormat = 2;
+    const c = await client(server);
+    await c.store.saveNote(note("a", "lokal"));
+    c.engine.start();
+    await c.engine.login(server.username, server.password, "Handy");
+    expect(c.engine.status()).toMatchObject({ state: "error" });
+    expect(c.engine.status().message?.startsWith("content_format_unsupported")).toBe(true);
+    const before = server.log.length;
+    await c.engine.syncNow();
+    c.engine.requestSync("online");
+    c.timers.advance(10 * HOUR);
+    await c.store.saveNote(note("b", "noch eine"));
+    c.timers.advance(10 * HOUR);
+    await c.engine.syncNow();
+    expect(server.log.length).toBe(before);
+    expect(server.log.some((l) => l.path === "/sync/push")).toBe(false);
+    expect(c.engine.status().pending).toBe(2);
+    expect(c.engine.status().message).toBe("content_format_unsupported");
+  });
+
+  it("known contentFormat: /me/account is checked once per engine, then the sync runs", async () => {
+    const server = new FakeServer(() => real);
+    server.contentFormat = 1;
+    const c = await loggedIn(server);
+    await c.store.saveNote(note("a", "x"));
+    await c.engine.syncNow();
+    expect(server.log.filter((l) => l.path === "/me/account")).toHaveLength(1);
+    expect(server.notes.get("a")).toBeDefined();
+  });
+
+  it("413 quota_exceeded keeps the outbox and reports its own message; 403 account_disabled is not a logout", async () => {
+    const server = new FakeServer(() => real);
+    const c = await loggedIn(server);
+    await c.store.saveNote(note("a", "groß"));
+    c.dev.failNext(413, "quota_exceeded");
+    await c.engine.syncNow();
+    expect(c.engine.status()).toMatchObject({ state: "error", pending: 1 });
+    expect(c.engine.status().message?.startsWith("quota_exceeded")).toBe(true);
+    c.dev.failNext(403, "account_disabled");
+    await c.engine.syncNow();
+    expect(c.engine.status().state).toBe("error");
+    expect(c.engine.status().message?.startsWith("account_disabled")).toBe(true);
+    await c.engine.syncNow();
+    expect(c.engine.status()).toMatchObject({ state: "idle", pending: 0 });
+  });
+
+  it("never puts the code or the password into console output, errors or the status", async () => {
+    const out: string[] = [];
+    for (const m of ["log", "info", "warn", "error", "debug"] as const) {
+      vi.spyOn(console, m).mockImplementation((...a: unknown[]) => void out.push(a.map(String).join(" ")));
+    }
+    const server = new FakeServer(() => real);
+    const c = await client(server);
+    const errors: unknown[] = [];
+    await c.engine.loginWithCode(CODE, "Handy").catch((e: unknown) => errors.push(e));
+    server.pairingCodes.set(CODE, server.username);
+    server.deviceLimit = true;
+    await c.engine.loginWithCode(CODE, "Handy").catch((e: unknown) => errors.push(e));
+    server.deviceLimit = false;
+    await c.engine.loginWithCode(CODE, "Handy");
+    await c.engine.deleteAccount("falsches-passwort", "martin").catch((e: unknown) => errors.push(e));
+    vi.restoreAllMocks();
+    expect(errors).toHaveLength(3);
+    const text = [...out, ...errors.map((e) => (e as Error).message), ...c.statuses.map((s) => s.message ?? "")].join(" | ");
+    expect(text).not.toContain(CODE);
+    expect(text).not.toContain("falsches-passwort");
+  });
+
+  it("serverInfo: GET /info, null on a v3 server (404)", async () => {
+    const server = new FakeServer(() => real);
+    const c = await client(server);
+    expect(await c.engine.serverInfo()).toBeNull();
+    server.info = { version: "0.4.0", apiLevel: 2, registration: "open", features: ["pairing"] };
+    expect(await c.engine.serverInfo()).toMatchObject({ apiLevel: 2, registration: "open" });
+  });
+
+  it("deleteAccount: wrong password / name rejected; success ends the session like logout", async () => {
+    const server = new FakeServer(() => real);
+    const c = await loggedIn(server);
+    await expect(c.engine.deleteAccount("falsch", "martin")).rejects.toMatchObject({ code: "unauthorized" });
+    // the failed attempt must not count as a sign-out (the fake turns 401 into "not authorized")
+    c.dev.authorized = true;
+    await expect(c.engine.deleteAccount(server.password, "eve")).rejects.toMatchObject({ code: "bad_request" });
+    expect(server.deleted).toBe(false);
+    await c.engine.deleteAccount(server.password, "martin");
+    expect(server.deleted).toBe(true);
+    expect(server.log.slice(-2).map((l) => `${l.method} ${l.path}`)).toEqual(["POST /me/delete", "DELETE /session"]);
+    expect(c.engine.status().state).toBe("signedOut");
+  });
+});
