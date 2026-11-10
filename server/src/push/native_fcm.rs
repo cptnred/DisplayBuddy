@@ -23,6 +23,10 @@
 //! The RSA signature uses `ring` (already in the tree through rustls, D-52); the private
 //! key is the PKCS#8 PEM `private_key` of the service account JSON. Logs never contain the
 //! device token, the access token or the key.
+//!
+//! `BUDDY_FCM_PAYLOAD=minimal` (D-102): FCM content is readable by Google (unlike Web Push,
+//! RFC 8291), so reminder notifications then show only „Erinnerung fällig“ / „Tippen zum
+//! Öffnen“; `data` (noteId, at, …) is unchanged so the app opens the right note.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -170,6 +174,7 @@ pub struct FcmChannel {
     endpoints: FcmEndpoints,
     clock: Arc<dyn Clock>,
     token: Mutex<Option<CachedToken>>,
+    minimal: bool,
 }
 
 /// Why an access token could not be obtained.
@@ -199,7 +204,14 @@ impl FcmChannel {
             endpoints,
             clock,
             token: Mutex::new(None),
+            minimal: false,
         })
+    }
+
+    /// `BUDDY_FCM_PAYLOAD=minimal`: reminders without note text (D-102).
+    pub fn minimal_payload(mut self, minimal: bool) -> Self {
+        self.minimal = minimal;
+        self
     }
 
     /// Production channel from `BUDDY_FCM_SERVICE_ACCOUNT_FILE`.
@@ -308,7 +320,7 @@ impl FcmChannel {
             .post(url)
             .bearer_auth(access)
             .header("content-type", "application/json; charset=UTF-8")
-            .body(fcm_message(token, payload).to_string())
+            .body(fcm_message(token, payload, self.minimal).to_string())
             .send()
             .await;
         let res = match res {
@@ -346,10 +358,13 @@ impl NativePushChannel for FcmChannel {
     }
 }
 
+pub const MINIMAL_TITLE: &str = "Erinnerung fällig";
+pub const MINIMAL_BODY: &str = "Tippen zum Öffnen";
+
 /// The `messages:send` body: a visible notification (title/body like Web Push) plus the
 /// payload fields as `data` (strings). Reminder messages of one note share
 /// `collapse_key` and `tag`, so an undelivered or shown older one is replaced.
-pub fn fcm_message(token: &str, p: &ReminderPushPayload) -> Value {
+pub fn fcm_message(token: &str, p: &ReminderPushPayload, minimal: bool) -> Value {
     let mut data = serde_json::Map::new();
     data.insert("v".into(), Value::String(p.v.to_string()));
     data.insert("type".into(), Value::String(p.kind.clone()));
@@ -371,10 +386,15 @@ pub fn fcm_message(token: &str, p: &ReminderPushPayload) -> Value {
         android_notification["tag"] = Value::String(t);
     }
     android["notification"] = android_notification;
+    let notification = if minimal && p.kind == "reminder" {
+        json!({ "title": MINIMAL_TITLE, "body": MINIMAL_BODY })
+    } else {
+        json!({ "title": p.title, "body": p.body })
+    };
     json!({
         "message": {
             "token": token,
-            "notification": { "title": p.title, "body": p.body },
+            "notification": notification,
             "data": data,
             "android": android,
         }
@@ -482,7 +502,7 @@ mod tests {
 
     #[test]
     fn message_shape() {
-        let m = fcm_message("tok", &reminder_payload());
+        let m = fcm_message("tok", &reminder_payload(), false);
         let msg = &m["message"];
         assert_eq!(msg["token"], "tok");
         assert_eq!(msg["notification"]["title"], "Erinnerung: Einkauf");
@@ -506,10 +526,25 @@ mod tests {
         assert_eq!(msg["android"]["notification"]["tag"], t.as_str());
         assert_eq!(msg["android"]["notification"]["channel_id"], "reminders");
 
-        let test = fcm_message("tok", &payload());
+        let test = fcm_message("tok", &payload(), false);
         assert!(test["message"]["android"].get("collapse_key").is_none());
         assert!(test["message"]["data"].get("noteId").is_none());
         assert_eq!(test["message"]["data"]["type"], "test");
+    }
+
+    #[test]
+    fn minimal_payload_hides_the_note() {
+        let full = fcm_message("tok", &reminder_payload(), false);
+        let min = fcm_message("tok", &reminder_payload(), true);
+        assert_eq!(min["message"]["notification"]["title"], MINIMAL_TITLE);
+        assert_eq!(min["message"]["notification"]["body"], MINIMAL_BODY);
+        assert!(!min.to_string().contains("Einkauf") && !min.to_string().contains("Milch"));
+        // data and Android options unchanged (noteId/at open the note)
+        assert_eq!(min["message"]["data"], full["message"]["data"]);
+        assert_eq!(min["message"]["android"], full["message"]["android"]);
+        // the test push carries no note content and keeps its text
+        let test = fcm_message("tok", &payload(), true);
+        assert_eq!(test["message"]["notification"]["title"], "Display Buddy");
     }
 
     fn fcm_error(status: &str, code: Option<&str>, fields: &[&str]) -> Value {

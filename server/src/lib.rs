@@ -153,7 +153,10 @@ pub async fn state_from_config(config: Config) -> Result<AppState> {
     }
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let fcm = match &config.fcm_service_account_file {
-        Some(p) => Some(push::native_fcm::FcmChannel::from_file(p, clock.clone())?),
+        Some(p) => Some(
+            push::native_fcm::FcmChannel::from_file(p, clock.clone())?
+                .minimal_payload(config.fcm_payload == config::FcmPayload::Minimal),
+        ),
         None => {
             tracing::info!("BUDDY_FCM_SERVICE_ACCOUNT_FILE not set: no native push (Android)");
             None
