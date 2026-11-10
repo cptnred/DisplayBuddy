@@ -491,3 +491,14 @@ keine neuen Zugangsdaten.
 - Server: `/sync/changes` bekommt keine Bremse (D-103). `synced_seq`/`last_seen_at` werden auch von den
   Abfragen des Dienstes gesetzt; `synced_seq` liest keine Server-Logik (geprüft), also unkritisch.
 - Betrieb pev-point: etwa 480 Abfragen pro Gerät und Tag; Firebase wird dort optional (D-105).
+
+**D-108 – Audit-Fixes (2026-11-10):**
+- **410 gleich auf allen Clients:** Web-App und Handy-App löschen nach einem vollen Neuabgleich keine lokalen
+  Notizen/Erinnerungen mehr, die der Server nicht geschickt hat (`pruneUnseen` entfällt). Lebende Dokumente kommen
+  stattdessen mit unverändertem Stempel in die Outbox (`requeueUnseen`), nur Tombstones werden verworfen – wie
+  `enqueue_all` am PC. Grund: 410 kommt auch nach dem Zurückspielen einer Sicherung (D-69); vorher gingen dabei die
+  neuesten, schon synchronisierten Notizen am Handy verloren. Preis: Eine Löschung, deren Tombstone schon
+  entfernt ist (> 180 Tage), verliert gegen ein Gerät, das noch länger offline war – die Notiz kommt einmal zurück.
+- **Login-Flut:** höchstens 4 Argon2-Prüfungen gleichzeitig (`AppState::password_checks`, je 19 MiB); weitere
+  Logins warten. Sonst ließ sich der Server mit parallelen Logins unter zufälligen Namen aus dem Speicher drängen.
+- `devices.last_seen_at` wird höchstens alle 5 Minuten geschrieben (vorher bei jeder Anfrage eine Schreibsperre).
