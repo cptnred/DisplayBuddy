@@ -1,5 +1,7 @@
 //! Command line (PLAN_V3_SYNC §7.1): `serve`, `user add/passwd`, `device list/revoke`,
-//! `revisions`, `restore`, `vapid generate/public-key`.
+//! `revisions`, `restore`, `vapid generate/public-key`; v4 admin tools (D-95, PLAN_V4 §7.4):
+//! `user list|show|disable|enable|delete|quota|recovery`, `invite create|list|revoke`.
+//! Recovery and invite codes are printed exactly once (stdout) and stored only as SHA-256.
 //!
 //! Passwords are read from the terminal without echo (twice), or as one line from stdin
 //! when stdin is not a terminal (`echo … | buddy-server user add martin`); never from
@@ -9,10 +11,11 @@ use std::io::{BufRead, IsTerminal, Write};
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow, bail};
+use buddy_core::accounts::{Quota, format_recovery_code};
 use buddy_core::model::{Note, is_valid_note_id};
 use buddy_core::sync::NoteRecord;
 use buddy_core::zoned::{format_utc, parse_zone};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use clap::{Parser, Subcommand};
 
 use crate::auth::password::{hash_password, validate_new_password};
@@ -52,6 +55,9 @@ pub enum Command {
     /// VAPID key pair for Web Push.
     #[command(subcommand)]
     Vapid(VapidCmd),
+    /// Invite codes for BUDDY_REGISTRATION=invite.
+    #[command(subcommand)]
+    Invite(InviteCmd),
 }
 
 #[derive(Subcommand, Debug)]
@@ -69,6 +75,51 @@ pub enum UserCmd {
         /// Also sign out every desktop/mobile device.
         #[arg(long)]
         revoke_devices: bool,
+    },
+    /// List all accounts.
+    List,
+    /// Details, usage and quotas of one account.
+    Show { username: String },
+    /// Lock an account: every request answers 403 account_disabled.
+    Disable { username: String },
+    /// Unlock an account.
+    Enable { username: String },
+    /// Delete an account and all its data immediately.
+    Delete {
+        username: String,
+        /// Required: confirms the deletion.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Set the account's quotas: a number, or "default" for the server default.
+    Quota {
+        username: String,
+        #[arg(long)]
+        bytes: Option<String>,
+        #[arg(long)]
+        notes: Option<String>,
+        #[arg(long)]
+        devices: Option<String>,
+    },
+    /// Issue a new recovery code (only after checking the person's identity yourself).
+    Recovery { username: String },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum InviteCmd {
+    /// Create an invite code (printed once).
+    Create {
+        /// Validity, e.g. 7d, 24h or 30m; without it the code does not expire.
+        #[arg(long)]
+        expires: Option<String>,
+        /// Admin note, e.g. "for Anna".
+        #[arg(long)]
+        label: Option<String>,
+    },
+    List,
+    /// Delete an unused invite (id from `invite list`).
+    Revoke {
+        id: String,
     },
 }
 
@@ -191,6 +242,208 @@ pub async fn user_passwd(
         crate::api::revoke_device(db, &d, &format_utc(&now))
             .await
             .map_err(|e| anyhow!("revoking device: {}", e.message))?;
+    }
+    Ok(())
+}
+
+async fn user_id(db: &Db, username: &str) -> Result<i64> {
+    sqlx::query_scalar("SELECT id FROM users WHERE username = ?")
+        .bind(username)
+        .fetch_optional(db)
+        .await?
+        .ok_or_else(|| anyhow!("no user {username}"))
+}
+
+/// Replaces the account's recovery code; returns the new (normalised) code.
+pub async fn user_recovery(db: &Db, now: DateTime<Utc>, username: &str) -> Result<String> {
+    let id = user_id(db, username).await?;
+    let (code, hash) = crate::accounts::new_code();
+    sqlx::query("UPDATE users SET recovery_hash = ?, recovery_created_at = ? WHERE id = ?")
+        .bind(hash)
+        .bind(format_utc(&now))
+        .bind(id)
+        .execute(db)
+        .await?;
+    Ok(code)
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct UserRow {
+    pub id: i64,
+    pub username: String,
+    pub created_at: String,
+    pub created_via: String,
+    pub time_zone: String,
+    pub disabled_at: Option<String>,
+    pub recovery_created_at: Option<String>,
+    pub password_changed_at: Option<String>,
+    pub content_format: i64,
+    pub devices: i64,
+}
+
+/// All users, or the one named by `?1`.
+const USER_QUERY: &str = "SELECT u.id, u.username, u.created_at, u.created_via, u.time_zone, \
+     u.disabled_at, u.recovery_created_at, u.password_changed_at, u.content_format, \
+     (SELECT COUNT(*) FROM devices d WHERE d.user_id = u.id AND d.revoked_at IS NULL) AS devices \
+     FROM users u WHERE ?1 IS NULL OR u.username = ?1 ORDER BY u.id";
+
+pub async fn user_list(db: &Db) -> Result<Vec<UserRow>> {
+    Ok(sqlx::query_as(USER_QUERY)
+        .bind(None::<&str>)
+        .fetch_all(db)
+        .await?)
+}
+
+/// Account row, usage and effective quotas.
+pub async fn user_show(
+    db: &Db,
+    defaults: &Quota,
+    username: &str,
+) -> Result<(UserRow, crate::accounts::quota::Measure, Quota)> {
+    let row: UserRow = sqlx::query_as(USER_QUERY)
+        .bind(username)
+        .fetch_optional(db)
+        .await?
+        .ok_or_else(|| anyhow!("no user {username}"))?;
+    let mut c = db.acquire().await?;
+    let err = |e: crate::error::AppError| anyhow!("{}", e.message);
+    let m = crate::accounts::quota::measure(&mut c, row.id)
+        .await
+        .map_err(err)?;
+    let q = crate::accounts::quota::effective(&mut c, defaults, row.id)
+        .await
+        .map_err(err)?;
+    Ok((row, m, q))
+}
+
+/// Locks or unlocks an account (D-95). Tokens and sessions stay, so unlocking restores
+/// every device.
+pub async fn user_set_disabled(
+    db: &Db,
+    now: DateTime<Utc>,
+    username: &str,
+    disabled: bool,
+) -> Result<()> {
+    let id = user_id(db, username).await?;
+    sqlx::query("UPDATE users SET disabled_at = ? WHERE id = ?")
+        .bind(disabled.then(|| format_utc(&now)))
+        .bind(id)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
+/// Deletes the account; `ON DELETE CASCADE` removes all its data (D-92).
+pub async fn user_delete(db: &Db, username: &str) -> Result<()> {
+    let id = user_id(db, username).await?;
+    sqlx::query("DELETE FROM users WHERE id = ?")
+        .bind(id)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
+/// `"default"` → `None` (server default), otherwise a whole number ≥ 0.
+pub fn parse_quota(v: &str) -> Result<Option<i64>> {
+    if v.eq_ignore_ascii_case("default") {
+        return Ok(None);
+    }
+    match v.parse::<i64>() {
+        Ok(n) if n >= 0 => Ok(Some(n)),
+        _ => bail!("quota must be a whole number or \"default\", not {v:?}"),
+    }
+}
+
+/// Sets the given quotas (`Some(None)` = back to the server default).
+pub async fn user_quota(
+    db: &Db,
+    username: &str,
+    bytes: Option<Option<i64>>,
+    notes: Option<Option<i64>>,
+    devices: Option<Option<i64>>,
+) -> Result<()> {
+    let id = user_id(db, username).await?;
+    for (sql, v) in [
+        ("UPDATE users SET quota_bytes = ? WHERE id = ?", bytes),
+        ("UPDATE users SET quota_notes = ? WHERE id = ?", notes),
+        ("UPDATE users SET quota_devices = ? WHERE id = ?", devices),
+    ] {
+        if let Some(v) = v {
+            sqlx::query(sql).bind(v).bind(id).execute(db).await?;
+        }
+    }
+    Ok(())
+}
+
+/// `7d`, `24h`, `30m` → duration.
+pub fn parse_expires(v: &str) -> Result<Duration> {
+    let v = v.trim();
+    let (n, unit) = v.split_at(v.len().saturating_sub(1));
+    let n = n.parse::<i64>().ok().filter(|n| (1..=100_000).contains(n));
+    match (n, unit) {
+        (Some(n), "d") => Ok(Duration::days(n)),
+        (Some(n), "h") => Ok(Duration::hours(n)),
+        (Some(n), "m") => Ok(Duration::minutes(n)),
+        _ => bail!("--expires must look like 7d, 24h or 30m"),
+    }
+}
+
+/// Creates an invite; returns the code (normalised, shown once).
+pub async fn invite_create(
+    db: &Db,
+    now: DateTime<Utc>,
+    expires: Option<Duration>,
+    label: Option<&str>,
+) -> Result<String> {
+    let (code, hash) = crate::accounts::new_code();
+    sqlx::query(
+        "INSERT INTO invites (code_hash, created_at, expires_at, label) VALUES (?, ?, ?, ?)",
+    )
+    .bind(hash)
+    .bind(format_utc(&now))
+    .bind(expires.map(|d| format_utc(&(now + d))))
+    .bind(label.map(str::trim).filter(|l| !l.is_empty()))
+    .execute(db)
+    .await?;
+    Ok(code)
+}
+
+/// Length of the invite id of `invite list`: a prefix of the code's hash, not the code.
+pub const INVITE_ID_LEN: usize = 12;
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct InviteRow {
+    pub id: String,
+    pub created_at: String,
+    pub expires_at: Option<String>,
+    pub used_at: Option<String>,
+    pub used_by: Option<String>,
+    pub label: Option<String>,
+}
+
+pub async fn invite_list(db: &Db) -> Result<Vec<InviteRow>> {
+    Ok(sqlx::query_as(
+        "SELECT substr(i.code_hash, 1, 12) AS id, i.created_at, i.expires_at, i.used_at, \
+         u.username AS used_by, i.label FROM invites i LEFT JOIN users u ON u.id = i.used_by \
+         ORDER BY i.created_at",
+    )
+    .fetch_all(db)
+    .await?)
+}
+
+/// Deletes an unused invite by its id from `invite list`.
+pub async fn invite_revoke(db: &Db, id: &str) -> Result<()> {
+    let id = id.trim().to_ascii_lowercase();
+    if id.len() != INVITE_ID_LEN || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
+        bail!("invite id: the {INVITE_ID_LEN} characters shown by `invite list`");
+    }
+    let r =
+        sqlx::query("DELETE FROM invites WHERE substr(code_hash, 1, 12) = ? AND used_at IS NULL")
+            .bind(&id)
+            .execute(db)
+            .await?;
+    if r.rows_affected() == 0 {
+        bail!("no unused invite {id}");
     }
     Ok(())
 }
@@ -371,7 +624,109 @@ pub async fn run_admin(cmd: Command, config: &crate::config::Config) -> Result<(
             }) => {
                 let pw = read_password(true)?;
                 user_add(&db, now, &username, &pw, &time_zone).await?;
-                eprintln!("Benutzer {username} angelegt.");
+                let code = user_recovery(&db, now, &username).await?;
+                eprintln!("Benutzer {username} angelegt. Wiederherstellungscode (nur jetzt sichtbar):");
+                writeln!(out, "{}", format_recovery_code(&code))?;
+            }
+            Command::User(UserCmd::List) => {
+                writeln!(
+                    out,
+                    "{:>5}  {:<24}  {:<8}  {:<24}  {:>7}  {:<8}  {:<8}",
+                    "id", "user", "via", "created", "devices", "recovery", "disabled"
+                )?;
+                let yes_no = |b: bool| if b { "yes" } else { "no" };
+                for u in user_list(&db).await? {
+                    writeln!(
+                        out,
+                        "{:>5}  {:<24}  {:<8}  {:<24}  {:>7}  {:<8}  {:<8}",
+                        u.id,
+                        u.username,
+                        u.created_via,
+                        u.created_at,
+                        u.devices,
+                        yes_no(u.recovery_created_at.is_some()),
+                        yes_no(u.disabled_at.is_some())
+                    )?;
+                }
+            }
+            Command::User(UserCmd::Show { username }) => {
+                let (u, m, q) = user_show(&db, &config.quota, &username).await?;
+                let lim = |v: Option<u64>| v.map_or("unlimited".to_string(), |v| v.to_string());
+                writeln!(out, "id:              {}", u.id)?;
+                writeln!(out, "user:            {}", u.username)?;
+                writeln!(out, "created:         {} ({})", u.created_at, u.created_via)?;
+                writeln!(out, "time zone:       {}", u.time_zone)?;
+                writeln!(out, "content format:  {}", u.content_format)?;
+                writeln!(out, "disabled:        {}", opt(&u.disabled_at))?;
+                writeln!(out, "recovery code:   {}", opt(&u.recovery_created_at))?;
+                writeln!(out, "password change: {}", opt(&u.password_changed_at))?;
+                writeln!(out, "bytes:           {} / {}", m.bytes, lim(q.bytes))?;
+                writeln!(out, "notes:           {} / {}", m.notes, lim(q.notes))?;
+                writeln!(out, "devices:         {} / {}", m.devices, lim(q.devices))?;
+            }
+            Command::User(UserCmd::Disable { username }) => {
+                user_set_disabled(&db, now, &username, true).await?;
+                eprintln!("Konto {username} gesperrt.");
+            }
+            Command::User(UserCmd::Enable { username }) => {
+                user_set_disabled(&db, now, &username, false).await?;
+                eprintln!("Konto {username} entsperrt.");
+            }
+            Command::User(UserCmd::Delete { username, yes }) => {
+                if !yes {
+                    bail!("deleting {username} removes all their data; repeat with --yes");
+                }
+                user_delete(&db, &username).await?;
+                eprintln!(
+                    "Konto {username} gelöscht. Sicherungen enthalten es noch bis zu 14 Tage; \
+                     einzelne Konten werden daraus nicht wiederhergestellt."
+                );
+            }
+            Command::User(UserCmd::Quota {
+                username,
+                bytes,
+                notes,
+                devices,
+            }) => {
+                let p = |v: Option<String>| v.as_deref().map(parse_quota).transpose();
+                user_quota(&db, &username, p(bytes)?, p(notes)?, p(devices)?).await?;
+                eprintln!("Kontingente von {username} gesetzt.");
+            }
+            Command::User(UserCmd::Recovery { username }) => {
+                let code = user_recovery(&db, now, &username).await?;
+                eprintln!(
+                    "Neuer Wiederherstellungscode für {username} (nur jetzt sichtbar; der alte gilt nicht mehr):"
+                );
+                writeln!(out, "{}", format_recovery_code(&code))?;
+            }
+            Command::Invite(InviteCmd::Create { expires, label }) => {
+                let expires = expires.as_deref().map(parse_expires).transpose()?;
+                let code = invite_create(&db, now, expires, label.as_deref()).await?;
+                eprintln!("Einladungscode (nur jetzt sichtbar):");
+                writeln!(out, "{}", format_recovery_code(&code))?;
+            }
+            Command::Invite(InviteCmd::List) => {
+                writeln!(
+                    out,
+                    "{:<12}  {:<24}  {:<24}  {:<24}  {:<16}  label",
+                    "id", "created", "expires", "used", "used by"
+                )?;
+                for i in invite_list(&db).await? {
+                    writeln!(
+                        out,
+                        "{:<12}  {:<24}  {:<24}  {:<24}  {:<16}  {}",
+                        i.id,
+                        i.created_at,
+                        opt(&i.expires_at),
+                        opt(&i.used_at),
+                        opt(&i.used_by),
+                        opt(&i.label)
+                    )?;
+                }
+            }
+            Command::Invite(InviteCmd::Revoke { id }) => {
+                invite_revoke(&db, &id).await?;
+                eprintln!("Einladung {id} gelöscht.");
             }
             Command::User(UserCmd::Passwd {
                 username,
@@ -435,4 +790,22 @@ pub async fn run_admin(cmd: Command, config: &crate::config::Config) -> Result<(
     .await;
     db.close().await;
     res
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quota_and_expiry_arguments() {
+        assert_eq!(parse_quota("default").unwrap(), None);
+        assert_eq!(parse_quota("5000").unwrap(), Some(5000));
+        assert!(parse_quota("-1").is_err() && parse_quota("50MB").is_err());
+        assert_eq!(parse_expires("7d").unwrap(), Duration::days(7));
+        assert_eq!(parse_expires("24h").unwrap(), Duration::hours(24));
+        assert_eq!(parse_expires("30m").unwrap(), Duration::minutes(30));
+        for bad in ["", "d", "0d", "7", "7w", "-1h", "1.5d"] {
+            assert!(parse_expires(bad).is_err(), "{bad}");
+        }
+    }
 }
