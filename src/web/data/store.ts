@@ -66,8 +66,8 @@ export interface SyncAccess {
   applyPushResults(sent: OutboxEntry[], results: PushResult[]): Promise<ApplyOutcome>;
   /** LWW-merges one pulled page and stores its cursor in the same transaction. */
   mergeChanges(changes: Pick<SyncChanges, "cursor" | "notes" | "reminders" | "order">): Promise<ApplyOutcome>;
-  /** After a full resync: drops local documents the server no longer knows (unless pending). */
-  pruneUnseen(seenNotes: ReadonlySet<string>, seenReminders: ReadonlySet<string>): Promise<void>;
+  /** After a full resync: puts live local documents the server did not send back into the outbox. */
+  requeueUnseen(seenNotes: ReadonlySet<string>, seenReminders: ReadonlySet<string>): Promise<void>;
   /** Adds an offset sample, stores the last 5 and sets the clock to their median. */
   addClockSample(offsetMs: number): Promise<number>;
   getLastSyncAt(): Promise<string | null>;
@@ -536,7 +536,7 @@ class IdbDataStore implements DataStore {
     outbox: async () => (await this.db()).getAll("outbox"),
     applyPushResults: (sent, results) => this.applyPushResultsImpl(sent, results),
     mergeChanges: (changes) => this.mergeChangesImpl(changes),
-    pruneUnseen: (n, r) => this.pruneUnseenImpl(n, r),
+    requeueUnseen: (n, r) => this.requeueUnseenImpl(n, r),
     addClockSample: async (offsetMs) => {
       const db = await this.db();
       const tx = db.transaction("meta", "readwrite");
@@ -723,27 +723,26 @@ class IdbDataStore implements DataStore {
     return outcome;
   }
 
-  private async pruneUnseenImpl(seenNotes: ReadonlySet<string>, seenReminders: ReadonlySet<string>): Promise<void> {
+  /**
+   * Same rule as the desktop (`enqueue_all`): a live local document the server did not send
+   * goes back into the outbox, so a server restored from a backup gets it again. Only
+   * tombstones are dropped (the server purged them already).
+   */
+  private async requeueUnseenImpl(seenNotes: ReadonlySet<string>, seenReminders: ReadonlySet<string>): Promise<void> {
     const db = await this.db();
     const tx = db.transaction(ALL_STORES, "readwrite");
     const pending = new Set(await tx.objectStore("outbox").getAllKeys());
-    const removed: string[] = [];
-    let reminders = false;
-    for (const id of await tx.objectStore("notes").getAllKeys()) {
-      if (!seenNotes.has(id) && !pending.has(outboxKey("note", id))) {
-        await tx.objectStore("notes").delete(id);
-        removed.push(id);
-      }
+    for (const rec of await tx.objectStore("notes").getAll()) {
+      if (seenNotes.has(rec.id) || pending.has(outboxKey("note", rec.id))) continue;
+      if (rec.deleted) await tx.objectStore("notes").delete(rec.id);
+      else await IdbDataStore.enqueue(tx, { kind: "note", id: rec.id, record: rec });
     }
-    for (const id of await tx.objectStore("reminders").getAllKeys()) {
-      if (!seenReminders.has(id) && !pending.has(outboxKey("reminder", id))) {
-        await tx.objectStore("reminders").delete(id);
-        reminders = true;
-      }
+    for (const rec of await tx.objectStore("reminders").getAll()) {
+      if (seenReminders.has(rec.noteId) || pending.has(outboxKey("reminder", rec.noteId))) continue;
+      if (rec.deleted) await tx.objectStore("reminders").delete(rec.noteId);
+      else await IdbDataStore.enqueue(tx, { kind: "reminder", id: rec.noteId, record: rec });
     }
     await tx.done;
-    if (removed.length > 0) this.emit({ kind: "notes", ids: removed, source: "remote" });
-    if (reminders) this.emit({ kind: "reminders", source: "remote" });
   }
 
   private emitTouched(touched: Set<"notes" | "reminders" | "order">, ids: Set<string>): void {

@@ -393,7 +393,7 @@ describe("sync access", () => {
     expect(await store.pendingCount()).toBe(2);
   });
 
-  it("pruneUnseen removes unknown documents except pending ones", async () => {
+  it("requeueUnseen puts unseen live documents back into the outbox and drops unseen tombstones", async () => {
     const { store, sync } = await setup();
     await store.saveNote(note("pending"));
     await sync.mergeChanges({
@@ -401,11 +401,16 @@ describe("sync access", () => {
       notes: [
         { id: "old", updatedAt: "2026-11-01T00:00:00.000Z", updatedBy: "pc", deleted: false, note: note("old") },
         { id: "kept", updatedAt: "2026-11-01T00:00:00.000Z", updatedBy: "pc", deleted: false, note: note("kept") },
+        { id: "tomb", updatedAt: "2026-11-01T00:00:00.000Z", updatedBy: "pc", deleted: true, note: null },
       ],
       reminders: [],
       order: null,
     });
-    await sync.pruneUnseen(new Set(["kept"]), new Set());
-    expect((await store.listNotes()).map((n) => n.id).sort()).toEqual(["kept", "pending"]);
+    await sync.requeueUnseen(new Set(["kept"]), new Set());
+    expect((await store.listNotes()).map((n) => n.id).sort()).toEqual(["kept", "old", "pending"]);
+    const keys = (await sync.outbox()).map((e) => e.key).sort();
+    expect(keys).toEqual(["note:old", "note:pending"]);
+    const old = (await sync.outbox()).find((e) => e.key === "note:old")!.record;
+    expect(old).toMatchObject({ updatedAt: "2026-11-01T00:00:00.000Z", updatedBy: "pc" }); // stamp unchanged
   });
 });

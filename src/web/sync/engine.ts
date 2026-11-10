@@ -7,8 +7,8 @@
  * Every response with `serverTime` feeds the clock offset (src/lib/clock.ts).
  *
  * - 401 → state "unauthorized", outbox kept, no automatic retries until login.
- * - 410 full_resync_required → pull everything from 0, LWW merge, prune what the server
- *   no longer knows (except pending), outbox kept and pushed afterwards.
+ * - 410 full_resync_required → pull everything from 0, LWW merge, live local documents the
+ *   server did not send go back into the outbox (restored backup), outbox pushed afterwards.
  * - Network error → "offline"; other failures → "error"; retry with backoff
  *   5 s → 30 s → 2 min → 5 min. `navigator.onLine` is only a hint.
  * - Runs are serialized per tab and across tabs with Web Locks
@@ -504,7 +504,7 @@ class Engine implements SyncEngine {
       cursor = body.cursor;
       if (!body.hasMore) break;
     }
-    if (full) await this.access.pruneUnseen(seenNotes, seenReminders);
+    if (full) await this.access.requeueUnseen(seenNotes, seenReminders);
   }
 
   // ---- account ----------------------------------------------------------------------

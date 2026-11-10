@@ -268,7 +268,21 @@ describe("responses", () => {
     expect(c.engine.status()).toMatchObject({ state: "idle", pending: 0 });
   });
 
-  it("410 → full resync with LWW, outbox kept and pushed, purged documents removed", async () => {
+  it("410 after a server restore → notes the backup lacks are uploaded again, not deleted", async () => {
+    const server = new FakeServer(() => real);
+    const phone = await loggedIn(server);
+    await phone.store.saveNote(note("new", "nach der Sicherung"));
+    await phone.engine.syncNow();
+    expect(phone.engine.status().pending).toBe(0);
+    server.notes.delete("new"); // backup from before the note was written
+    phone.dev.failNext(410, "full_resync_required");
+    await phone.engine.syncNow();
+    expect((await phone.store.listNotes()).map((n) => n.id)).toEqual(["new"]);
+    expect(server.notes.get("new")?.rec.deleted).toBe(false);
+    expect(phone.engine.status()).toMatchObject({ state: "idle", pending: 0 });
+  });
+
+  it("410 → full resync with LWW, outbox kept and pushed, unseen live notes re-uploaded", async () => {
     const server = new FakeServer(() => real);
     const phone = await loggedIn(server);
     const pc = await loggedIn(server, { kind: "mobile" });
@@ -286,8 +300,11 @@ describe("responses", () => {
     phone.dev.failNext(410, "full_resync_required");
     await phone.engine.syncNow();
     expect(phone.notices).toContainEqual({ kind: "fullResync" });
-    expect((await phone.store.listNotes()).map((n) => n.id).sort()).toEqual(["kept", "mine"]);
+    // accepted trade-off (same as the desktop): a deletion whose tombstone was purged loses
+    // against a device that was offline longer than that — the note comes back, nothing is lost
+    expect((await phone.store.listNotes()).map((n) => n.id).sort()).toEqual(["gone", "kept", "mine"]);
     expect(server.notes.get("mine")).toBeDefined();
+    expect(server.notes.get("gone")?.rec.deleted).toBe(false);
     expect(phone.engine.status()).toMatchObject({ state: "idle", pending: 0 });
   });
 
