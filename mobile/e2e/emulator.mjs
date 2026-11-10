@@ -16,7 +16,9 @@
  *     pending (old plan cancelled);
  *  4. scenario 28: flight mode, app process killed → the notification is posted on time;
  *  5. "Erledigt" in the notification while offline → after reconnecting the server has
- *     state "done".
+ *     state "done";
+ *  6. background sync: app process killed (online), the PC sets the reminder again → the
+ *     3-minute tick (BackgroundSync.kt) plans it without the app and it rings on time.
  * Usage: node mobile/e2e/emulator.mjs <app-debug.apk>
  */
 import { execFileSync } from "node:child_process";
@@ -334,6 +336,24 @@ async function main() {
   );
   log("offline „Erledigt“ synced ✓");
   app.close();
+
+  // background sync (D-107): app process gone, online → only BackgroundSync can plan the
+  // reminder (tick every 3 min); it must ring on time with the note title it learned itself
+  await until("old notification dismissed", () => !notificationPosted(), 30_000, 1000);
+  adb("shell", "input", "keyevent", "KEYCODE_HOME");
+  await sleep(1500);
+  adb("shell", "am", "kill", PKG);
+  const at3 = Math.ceil((Date.now() + 270_000) / 1000) * 1000; // > one tick interval + sync time
+  await pcPushReminder(pc, noteId, at3, Date.now());
+  log(`app killed; PC set reminder at ${iso(at3)}; waiting for the background tick to plan it`);
+  while (Date.now() < at3 - 3000) {
+    if (notificationPosted()) throw new Error("background-planned notification posted too early");
+    await sleep(2000);
+  }
+  await until("background-planned notification posted", () => notificationPosted(), 90_000, 1000);
+  const late3 = Date.now() - at3;
+  log(`background sync: notification posted ${Math.round(late3 / 1000)} s after the reminder time ✓`);
+  if (late3 > 60_000) throw new Error(`background-planned notification too late (${late3} ms)`);
 }
 
 main().then(
