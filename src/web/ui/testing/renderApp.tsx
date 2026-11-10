@@ -2,8 +2,9 @@
 import { render } from "@testing-library/react";
 import { vi } from "vitest";
 import { createClock } from "../../../lib/clock";
+import type { ServerInfo } from "../../../lib/sync/types";
 import type { Note, Reminder } from "../../../types";
-import type { Account } from "../../contract";
+import type { Account, QrScanner, ServerSelector } from "../../contract";
 import type { InstallController, Notifier, NotifierStatus, StorageController } from "../../notify/types";
 import { App } from "../App";
 import { memoryHistory } from "../router";
@@ -80,6 +81,10 @@ export interface RenderOptions {
   notifier?: Notifier | null;
   install?: InstallController | null;
   storage?: StorageController | null;
+  scanner?: QrScanner | null;
+  server?: ServerSelector | null;
+  /** GET /info answer of the fake engine. */
+  info?: ServerInfo | null;
 }
 
 export function renderApp(opts: RenderOptions = {}) {
@@ -93,6 +98,7 @@ export function renderApp(opts: RenderOptions = {}) {
   });
   const sync = createFakeSync({ store, http: createFakeHttp() });
   if (opts.account !== null) sync.setStatus({ state: "idle" });
+  sync.info = opts.info ?? null;
   const history = memoryHistory(opts.path ?? "/");
   const notifier = opts.notifier === undefined ? createFakeNotifier() : opts.notifier;
   let ids = 0;
@@ -105,6 +111,8 @@ export function renderApp(opts: RenderOptions = {}) {
     deviceZone: () => zone,
     newId: () => `new-${++ids}`,
     defaultDeviceName: () => "Testgerät",
+    scanner: opts.scanner ?? null,
+    server: opts.server ?? null,
   };
   const utils = render(<App services={services} history={history} update={opts.update ?? null} />);
   return { ...utils, store, sync, history, services, notifier };

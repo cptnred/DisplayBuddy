@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import type { SyncNotice } from "../contract";
 import type { InstallMode, NotifierStatus } from "../notify/types";
+import { useServerInfo } from "./hooks";
 import { useSaveTracker } from "./saves";
 import { useServices, type UpdateState } from "./services";
 import styles from "./ui.module.css";
@@ -248,5 +249,24 @@ export function NoticeToast({ notice, onClose }: { notice: string | null; onClos
         ×
       </button>
     </div>
+  );
+}
+
+/** v4: „Datenschutz“ / „Impressum“ of the own server (GET /info; only https links are shown). */
+export function LegalLinks() {
+  const info = useServerInfo();
+  const links = [
+    { label: "Datenschutz", url: info?.legal?.privacyUrl },
+    { label: "Impressum", url: info?.legal?.imprintUrl },
+  ].filter((l): l is { label: string; url: string } => typeof l.url === "string" && l.url.startsWith("https://"));
+  if (links.length === 0) return null;
+  return (
+    <p className={styles.row}>
+      {links.map((l) => (
+        <a key={l.label} href={l.url} target="_blank" rel="noopener noreferrer" aria-label={`${l.label} (öffnet neues Fenster)`}>
+          {l.label}
+        </a>
+      ))}
+    </p>
   );
 }

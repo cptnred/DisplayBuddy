@@ -8,6 +8,14 @@ import styles from "./ui.module.css";
 
 const waiting = (n: number) => (n === 1 ? "1 Änderung wartet" : `${n} Änderungen warten`);
 
+/** v4 error codes at the start of WebSyncStatus.message with their own text (PLAN_V4 §10). */
+const ERROR_TEXTS: [string, string][] = [
+  ["quota_exceeded", "Der Speicher deines Kontos ist voll. Lösche oder kürze Notizen, damit wieder synchronisiert wird."],
+  ["account_disabled", "Das Konto ist gesperrt."],
+  ["content_format_unsupported", "Dein Konto nutzt ein neueres Datenformat. Bitte aktualisiere Display Buddy."],
+  ["device_limit", "Zu viele Geräte. Bitte zuerst ein altes Gerät abmelden."],
+];
+
 /** German status line for a sync status (PLAN_V3_SYNC §8 texts). */
 export function statusText(s: WebSyncStatus, pending: number, deviceZone: string): string {
   const n = Math.max(pending, s.pending);
@@ -20,8 +28,11 @@ export function statusText(s: WebSyncStatus, pending: number, deviceZone: string
       return n > 0 ? `Offline – ${waiting(n)}` : "Offline";
     case "unauthorized":
       return n > 0 ? `Abgemeldet – bitte neu anmelden (${waiting(n)})` : "Abgemeldet – bitte neu anmelden";
-    case "error":
+    case "error": {
+      const special = ERROR_TEXTS.find(([code]) => s.message?.startsWith(code));
+      if (special) return special[1];
       return n > 0 ? `Sync-Fehler – ${waiting(n)}` : "Sync-Fehler – neuer Versuch folgt";
+    }
     case "idle": {
       if (n > 0) return waiting(n);
       const last = s.lastSyncAt ? parseInstant(s.lastSyncAt) : null;

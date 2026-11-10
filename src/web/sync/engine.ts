@@ -20,16 +20,23 @@
  * No DOM required: `window`/`document` listeners are installed only if present.
  */
 import { needsClockWarning, offsetSample } from "../../lib/clock";
+import { normalizeCode } from "../../lib/pairing";
 import { parseInstant } from "../../lib/schedule";
 import {
+  type AccountDelete,
+  type AccountInfo,
+  CONTENT_FORMAT_PLAIN,
   type DeviceLoginResponse,
   type DeviceState,
   ERROR_CODES,
   type Me,
+  type PairingAccess,
+  type PairingRedeem,
   PUSH_BATCH_MAX,
   type PushRequest,
   type PushResponse,
   type ServerInfo,
+  type SessionPairing,
   type SessionResponse,
   type SyncChanges,
 } from "../../lib/sync/types";
@@ -65,7 +72,24 @@ export type SyncErrorCode =
   | "full_resync_required"
   | "account_mismatch"
   | "http"
-  | "invalid_response";
+  | "invalid_response"
+  // v4 server error codes the UI shows with own texts (PLAN_V4 §5.3)
+  | "pairing_invalid"
+  | "device_limit"
+  | "account_disabled"
+  | "quota_exceeded"
+  | "content_format_unsupported"
+  | "bad_request";
+
+/** Server `error` codes passed through as SyncError codes; the message starts with the code. */
+const PASSED_CODES: readonly SyncErrorCode[] = [
+  ERROR_CODES.pairingInvalid,
+  ERROR_CODES.deviceLimit,
+  ERROR_CODES.accountDisabled,
+  ERROR_CODES.quotaExceeded,
+  ERROR_CODES.contentFormatUnsupported,
+  ERROR_CODES.badRequest,
+];
 
 /** Error with a machine-readable code (the UI maps codes to German texts). */
 export class SyncError extends Error {
@@ -141,6 +165,10 @@ class Engine implements SyncEngine {
   private started = false;
   /** logout() done; stays signed out until login() even if the account is still stored. */
   private loggedOut = false;
+  /** GET /me/account checked since this engine started or the last login. */
+  private formatChecked = false;
+  /** The account uses an unknown content format: no sync, no writes until reload/login (D-101). */
+  private formatBlocked = false;
   private running: Promise<void> | null = null;
   private queued: Promise<void> | null = null;
   private rerun: Parameters<SyncEngine["requestSync"]>[0] | null = null;
@@ -250,7 +278,7 @@ class Engine implements SyncEngine {
   // ---- triggers ---------------------------------------------------------------------
 
   private blocked(): boolean {
-    return this.current.state === "signedOut" || this.current.state === "unauthorized";
+    return this.current.state === "signedOut" || this.current.state === "unauthorized" || this.formatBlocked;
   }
 
   private arm(delayMs: number): void {
@@ -368,6 +396,10 @@ class Engine implements SyncEngine {
       this.setStatus({ state: "signedOut" });
       return;
     }
+    if (this.formatBlocked) {
+      this.setStatus({ state: "error", message: ERROR_CODES.contentFormatUnsupported });
+      return;
+    }
     this.setStatus({ state: "syncing", message: null });
     try {
       const locks = lockManager();
@@ -387,6 +419,7 @@ class Engine implements SyncEngine {
   }
 
   private async cycle(): Promise<void> {
+    await this.checkContentFormat();
     try {
       await this.push();
       await this.pull(false);
@@ -408,6 +441,9 @@ class Engine implements SyncEngine {
         retry = false;
       } else if (e.code === "network") {
         state = "offline";
+      } else if (e.code === "content_format_unsupported") {
+        this.formatBlocked = true;
+        retry = false;
       }
     } else if (isNetworkFailure(e)) {
       state = "offline";
@@ -456,6 +492,8 @@ class Engine implements SyncEngine {
       throw new SyncError("full_resync_required", "full resync required", s);
     }
     if (s === 429) throw new SyncError("too_many_requests", "too many requests", s);
+    const passed = PASSED_CODES.find((c) => c === code);
+    if (passed) throw new SyncError(passed, `${passed}: HTTP ${s} ${method} ${path.split("?")[0]}`, s);
     throw new SyncError("http", `HTTP ${s}${code ? ` ${code}` : ""}: ${method} ${path.split("?")[0]}`, s);
   }
 
@@ -468,6 +506,32 @@ class Engine implements SyncEngine {
     if (sample === null) return;
     await this.access.addClockSample(sample);
     this.setStatus({});
+  }
+
+  /**
+   * v4 (PLAN_V4 §7.3, D-101): an account in a content format this client does not know
+   * stops the sync before anything is pushed. v3 servers have no /me/account (404 = plain).
+   */
+  private async checkContentFormat(): Promise<void> {
+    if (this.formatChecked) return;
+    let info: AccountInfo | null;
+    try {
+      info = (await this.call<AccountInfo>("GET", "/me/account")).body;
+    } catch (e) {
+      if (e instanceof SyncError && e.status === 404) {
+        this.formatChecked = true;
+        return;
+      }
+      throw e;
+    }
+    if (typeof info?.contentFormat !== "number") throw new SyncError("invalid_response", "malformed account response");
+    if (info.contentFormat !== CONTENT_FORMAT_PLAIN) {
+      throw new SyncError(
+        "content_format_unsupported",
+        `${ERROR_CODES.contentFormatUnsupported}: account format ${info.contentFormat}`,
+      );
+    }
+    this.formatChecked = true;
   }
 
   private async push(): Promise<void> {
@@ -533,14 +597,44 @@ class Engine implements SyncEngine {
       });
       deviceId = res.body?.deviceId ?? "";
     }
+    await this.completeLogin(deviceId, username, previous?.username ?? null);
+  }
+
+  async loginWithCode(code: string, deviceName: string): Promise<void> {
+    const normalized = normalizeCode(code);
+    if (!normalized) throw new SyncError("pairing_invalid", `${ERROR_CODES.pairingInvalid}: malformed code`);
+    const previous = await this.store.getAccount();
+    let deviceId: string;
+    let username = "";
+    if (this.http.kind === "web") {
+      const body: SessionPairing = { code: normalized, deviceName, deviceId: previous?.deviceId ?? null };
+      deviceId = (await this.call<SessionResponse>("POST", "/session/pairing", body)).body?.deviceId ?? "";
+    } else {
+      // the adapter stores the token and strips it from the body (createNativeHttp)
+      const body: PairingRedeem = { code: normalized, deviceName, kind: "mobile" };
+      const res = await this.call<Omit<PairingAccess, "token">>("POST", "/devices/pairing", body);
+      deviceId = res.body?.deviceId ?? "";
+      username = res.body?.username ?? "";
+    }
+    await this.completeLogin(deviceId, username, previous?.username ?? null);
+  }
+
+  /** After POST /session(/pairing) or /devices(/pairing): GET /me, account check, store, first sync. */
+  private async completeLogin(deviceId: string, username: string, previousUsername: string | null): Promise<void> {
     if (!deviceId) throw new SyncError("invalid_response", "login response without deviceId");
     const me = (await this.call<Me>("GET", "/me")).body;
+    const signedIn = me?.username || username;
+    if (previousUsername !== null && signedIn !== previousUsername) {
+      // a code of another account (D-71): undo the new session/device, keep the local data
+      await this.call("DELETE", this.logoutPath()).catch(() => undefined);
+      throw new SyncError("account_mismatch", "another account is signed in on this device");
+    }
     const serverUrl =
       (this.http as { serverUrl?: string }).serverUrl ??
       (globalThis as { location?: { origin?: string } }).location?.origin ??
       "";
     await this.access.setAccount({
-      username: me?.username || username,
+      username: signedIn,
       deviceId,
       serverUrl,
       timeZone: me?.timeZone ?? null,
@@ -550,14 +644,20 @@ class Engine implements SyncEngine {
     this.inBackoff = false;
     this.lastDeviceState = null;
     this.loggedOut = false;
+    this.formatChecked = false;
+    this.formatBlocked = false;
     this.setStatus({ state: "idle", message: null });
     await this.syncNow();
+  }
+
+  private logoutPath(): string {
+    return this.http.kind === "web" ? "/session" : "/devices/current";
   }
 
   async logout(): Promise<void> {
     this.stopTimersForLogout();
     try {
-      await this.call("DELETE", this.http.kind === "web" ? "/session" : "/devices/current");
+      await this.call("DELETE", this.logoutPath());
     } catch (e) {
       // offline or already invalid: the local sign-out goes ahead anyway
       this.setStatus({ message: e instanceof Error ? e.message : String(e) });
@@ -566,17 +666,20 @@ class Engine implements SyncEngine {
     this.setStatus({ state: "signedOut" });
   }
 
-  // Phase 0 placeholders for the v4 contract; phase C implements them (PLAN_V4 §7.3).
-  async loginWithCode(_code: string, _deviceName: string): Promise<void> {
-    throw new SyncError("http", "loginWithCode not implemented yet (phase C)");
-  }
-
   async serverInfo(): Promise<ServerInfo | null> {
-    throw new SyncError("http", "serverInfo not implemented yet (phase C)");
+    try {
+      return (await this.call<ServerInfo>("GET", "/info")).body;
+    } catch (e) {
+      if (e instanceof SyncError && e.status === 404) return null;
+      throw e;
+    }
   }
 
-  async deleteAccount(_password: string, _confirmUsername: string): Promise<void> {
-    throw new SyncError("http", "deleteAccount not implemented yet (phase C)");
+  async deleteAccount(password: string, confirmUsername: string): Promise<void> {
+    const body: AccountDelete = { password, confirmUsername };
+    await this.call("POST", "/me/delete", body);
+    // device and session are gone on the server; logout() also clears the native token
+    await this.logout();
   }
 
   private stopTimersForLogout(): void {

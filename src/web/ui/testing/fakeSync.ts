@@ -4,6 +4,8 @@
  * answers from a route table.
  */
 import { WARN_OFFSET_MS } from "../../../lib/clock";
+import { normalizeCode } from "../../../lib/pairing";
+import type { ServerInfo } from "../../../lib/sync/types";
 import type {
   HttpAdapter,
   HttpResponse,
@@ -12,7 +14,11 @@ import type {
   SyncNotice,
   WebSyncStatus,
 } from "../../contract";
+import { SyncError } from "../../sync/engine";
 import type { FakeDataStore } from "./fakeStore";
+
+/** The pairing code the fake engine accepts by default. */
+export const FAKE_PAIRING_CODE = "ABCDEFGHJKMN";
 
 export interface FakeSyncEngine extends SyncEngine {
   readonly calls: string[];
@@ -22,6 +28,12 @@ export interface FakeSyncEngine extends SyncEngine {
   notice(n: SyncNotice): void;
   /** Credentials accepted by `login` (default: any non-empty password ≥ 12 chars). */
   accept: (username: string, password: string) => boolean;
+  /** Pairing codes (normalised) accepted by `loginWithCode` → account name. */
+  codes: Map<string, string>;
+  /** GET /info answer (null = v3 server). */
+  info: ServerInfo | null;
+  /** Thrown by the next login / loginWithCode / deleteAccount instead of the normal result. */
+  nextError: unknown;
 }
 
 export const INITIAL_STATUS: WebSyncStatus = {
@@ -50,9 +62,18 @@ export function createFakeSync(options: SyncEngineOptions): FakeSyncEngine {
     if (a && status.state === "signedOut") set({ state: "idle" });
   });
 
+  const takeError = () => {
+    const e = engine.nextError;
+    engine.nextError = null;
+    if (e) throw e;
+  };
+
   const engine: FakeSyncEngine = {
     calls,
     accept: (_u, p) => p.length >= 12,
+    codes: new Map([[FAKE_PAIRING_CODE, "anna"]]),
+    info: null,
+    nextError: null,
     status: () => ({ ...status }),
     onStatus(l) {
       statusListeners.add(l);
@@ -64,6 +85,7 @@ export function createFakeSync(options: SyncEngineOptions): FakeSyncEngine {
     },
     async login(username, password, deviceName) {
       calls.push(`login:${username}:${deviceName}`);
+      takeError();
       if (!engine.accept(username, password)) {
         set({ state: "unauthorized", message: "invalid credentials" });
         throw Object.assign(new Error("Unauthorized"), { status: 401 });
@@ -80,18 +102,36 @@ export function createFakeSync(options: SyncEngineOptions): FakeSyncEngine {
       calls.push("logout");
       set({ state: "signedOut" });
     },
-    // Phase 0 placeholders for the v4 contract; phase C replaces them with real fakes.
     async loginWithCode(code, deviceName) {
       calls.push(`loginWithCode:${code}:${deviceName}`);
-      throw new Error("not_implemented");
+      takeError();
+      const normalized = normalizeCode(code);
+      const username = normalized ? engine.codes.get(normalized) : undefined;
+      if (!normalized || !username) throw new SyncError("pairing_invalid", "pairing_invalid: fake", 400);
+      engine.codes.delete(normalized);
+      const previous = await store.getAccount();
+      if (previous && previous.username !== username) {
+        throw new SyncError("account_mismatch", "another account is signed in on this device");
+      }
+      store.setAccount?.({
+        username,
+        deviceId: "fake-device",
+        serverUrl: globalThis.location?.origin ?? "https://buddy.test",
+        timeZone: null,
+      });
+      set({ state: "idle", message: null, lastSyncAt: store.clock.correctedNowIso() });
     },
     async serverInfo() {
       calls.push("serverInfo");
-      return null;
+      return engine.info;
     },
-    async deleteAccount(_password, confirmUsername) {
+    async deleteAccount(password, confirmUsername) {
       calls.push(`deleteAccount:${confirmUsername}`);
-      throw new Error("not_implemented");
+      takeError();
+      const account = await store.getAccount();
+      if (!engine.accept(account?.username ?? "", password)) throw new SyncError("unauthorized", "unauthorized", 401);
+      if (confirmUsername !== account?.username) throw new SyncError("bad_request", "bad_request: fake", 400);
+      set({ state: "signedOut" });
     },
     async syncNow() {
       calls.push("syncNow");

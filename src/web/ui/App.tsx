@@ -9,6 +9,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { ListPage } from "./pages/ListPage";
 import { NotePage } from "./pages/NotePage";
 import { NewPage, SettingsPage, SetupPage } from "./pages/OtherPages";
+import { PairPage } from "./pages/PairPage";
 import { NoticeToast, noticeText, UpdateBanner } from "./Panels";
 import { Link, RouterProvider, useRouter, type HistoryLike, type Route } from "./router";
 import { SaveTrackerProvider } from "./saves";
@@ -43,6 +44,7 @@ const TITLES: Record<Route["name"], string> = {
   new: "Neue Notiz",
   setup: "Einrichten",
   settings: "Einstellungen",
+  pair: "Anmelden",
   notFound: "Nicht gefunden",
 };
 
@@ -80,7 +82,7 @@ function Shell({
     const first = !gateSeen.current;
     gateSeen.current = true;
     const name = routeRef.current.name;
-    if (!signedIn && name !== "login") navigate("/login", { replace: true });
+    if (!signedIn && name !== "login" && name !== "pair") navigate("/login", { replace: true });
     if (first && signedIn && name === "login" && sync.status().state !== "unauthorized") {
       navigate("/", { replace: true });
     }
@@ -126,6 +128,7 @@ function Shell({
 
   let page;
   if (!accountLoaded) page = null;
+  else if (route.name === "pair") page = <PairPage />;
   else if (route.name === "login" || !signedIn) page = <LoginPage />;
   else {
     switch (route.name) {
@@ -159,13 +162,13 @@ function Shell({
   return (
     <div className={styles.app}>
       <header className={styles.header}>
-        {signedIn && route.name !== "list" && route.name !== "login" && (
+        {signedIn && route.name !== "list" && route.name !== "login" && route.name !== "pair" && (
           <Link to="/" className={styles.iconButton} aria-label="Zurück zur Übersicht">
             ←
           </Link>
         )}
         <h1 className={styles.headerTitle}>{TITLES[route.name]}</h1>
-        {signedIn && route.name !== "settings" && route.name !== "login" && (
+        {signedIn && route.name !== "settings" && route.name !== "login" && route.name !== "pair" && (
           <Link to="/settings" className={styles.iconButton} aria-label="Einstellungen">
             ⚙
           </Link>

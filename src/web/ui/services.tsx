@@ -4,7 +4,7 @@
  * the data/sync implementation or touches service-worker/push globals.
  */
 import { createContext, useContext, type ReactNode } from "react";
-import type { DataStore, SyncEngine } from "../contract";
+import type { DataStore, QrScanner, ServerSelector, SyncEngine } from "../contract";
 import type { InstallController, Notifier, StorageController } from "../notify/types";
 
 /** Service-worker update state (PWA: useRegisterSW; native: none). */
@@ -27,6 +27,16 @@ export interface Services {
   newId(): string;
   /** Suggested device name for the login form. */
   defaultDeviceName(): string;
+  /**
+   * v4: QR scanner for the login page (PWA: createWebScanner; native: barcode-scanner plugin).
+   * Missing or isAvailable() false → no „QR-Code scannen“ button.
+   */
+  scanner?: QrScanner | null;
+  /**
+   * v4, native app only: server choice. Present → login page shows „Server: … · ändern“ and a
+   * scanned code of another origin asks before switching; absent (PWA) → such codes are refused.
+   */
+  server?: ServerSelector | null;
 }
 
 const ServicesContext = createContext<Services | null>(null);

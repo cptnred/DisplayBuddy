@@ -97,6 +97,23 @@ describe("createNativeHttp (shell)", () => {
     expect((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].headers).not.toHaveProperty("Authorization");
   });
 
+  it("v4: stores the token from POST /devices/pairing and strips it from the body", async () => {
+    const tokens = memoryTokens();
+    const answer = { deviceId: "d2", token: "paired-secret", username: "anna", serverTime: "2026-11-06T10:00:00.000Z" };
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(json(400, { error: "pairing_invalid", message: "x" }))
+      .mockResolvedValueOnce(json(200, answer));
+    const http = createNativeHttp({ baseUrl: "https://b", tokens, fetch });
+    const body = { code: "ABCDEFGHJKMN", deviceName: "Pixel", kind: "mobile" };
+    await http.request("POST", "/devices/pairing", body);
+    expect(tokens.value).toBeNull();
+    const res = await http.request("POST", "/devices/pairing", body);
+    expect(tokens.value).toBe("paired-secret");
+    expect(res.body).toEqual({ deviceId: "d2", username: "anna", serverTime: "2026-11-06T10:00:00.000Z" });
+    expect((fetch.mock.calls[1] as unknown as [string, RequestInit])[0]).toBe("https://b/api/v1/devices/pairing");
+  });
+
   it("keeps the token on a failed login and clears it on logout, even offline", async () => {
     const tokens = memoryTokens("old");
     const fetch = vi
