@@ -332,8 +332,8 @@ fn ts_union(ts: &str, name: &str) -> Vec<String> {
         .collect()
 }
 
-/// `export const NAME = <number>;`
-fn ts_number_const(ts: &str, name: &str) -> Value {
+/// `export const NAME = <JSON literal>;` (number or string).
+fn ts_const(ts: &str, name: &str) -> Value {
     let raw = between(ts, &format!("export const {name} = "), ";").trim();
     serde_json::from_str(raw).unwrap_or_else(|e| panic!("{name}: {e}"))
 }
@@ -344,7 +344,7 @@ fn ts_value(ts: &str, raw: &str) -> Value {
         return v;
     }
     if raw.ends_with("_SCHEMA_VERSION") {
-        return ts_number_const(ts, raw);
+        return ts_const(ts, raw);
     }
     if raw == "DEFAULT_BUDDY" {
         return ts_object_value(ts, raw);
@@ -388,7 +388,7 @@ fn default_settings_match_types_ts_default_settings() {
     assert_json_eq(&actual, &expected, "DEFAULT_SETTINGS");
     // sanity: the parser really saw the nested object and all top-level keys
     assert_eq!(expected["buddy"]["faceColor"], "#FFD54A");
-    assert_eq!(keys(&expected).len(), 17);
+    assert_eq!(keys(&expected).len(), 18);
 }
 
 #[test]
@@ -443,6 +443,13 @@ fn rust_structs_have_exactly_the_ts_interface_keys() {
 
     let v = serde_json::to_value(display_buddy_lib::model::SyncStatus::default()).unwrap();
     assert_eq!(keys(&v), sorted(ts_interface_keys(&ts, "SyncStatus")));
+    let v = serde_json::to_value(display_buddy_lib::model::AccountRegistered::default()).unwrap();
+    assert_eq!(
+        keys(&v),
+        sorted(ts_interface_keys(&ts, "AccountRegistered"))
+    );
+    let v = serde_json::to_value(display_buddy_lib::model::PairingInfo::default()).unwrap();
+    assert_eq!(keys(&v), sorted(ts_interface_keys(&ts, "PairingInfo")));
     let v = serde_json::to_value(display_buddy_lib::model::NotesChangedPayload::default()).unwrap();
     assert_eq!(
         keys(&v),
@@ -512,12 +519,17 @@ fn enums_serialise_to_the_ts_union_values() {
 
     // schema versions agree
     assert_eq!(
-        ts_number_const(&ts, "NOTE_SCHEMA_VERSION"),
+        ts_const(&ts, "NOTE_SCHEMA_VERSION"),
         json!(display_buddy_lib::model::NOTE_SCHEMA_VERSION)
     );
     assert_eq!(
-        ts_number_const(&ts, "SETTINGS_SCHEMA_VERSION"),
+        ts_const(&ts, "SETTINGS_SCHEMA_VERSION"),
         json!(display_buddy_lib::model::SETTINGS_SCHEMA_VERSION)
+    );
+    // v4: the standard server is the same constant on both sides (D-96)
+    assert_eq!(
+        ts_const(&ts, "DEFAULT_SYNC_SERVER_URL"),
+        json!(display_buddy_lib::model::DEFAULT_SYNC_SERVER_URL)
     );
 }
 

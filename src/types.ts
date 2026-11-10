@@ -101,6 +101,8 @@ export interface Settings {
   syncServerUrl: string;
   /** v3: name of this PC on the server. The token never lives in settings. */
   syncDeviceName: string;
+  /** v4: the account hint card in the notes window was dismissed for good („Nicht mehr zeigen“). */
+  accountHintDismissed: boolean;
 }
 
 export const DEFAULT_BUDDY: BuddyConfig = {
@@ -132,6 +134,7 @@ export const DEFAULT_SETTINGS: Settings = {
   syncEnabled: false,
   syncServerUrl: "",
   syncDeviceName: "",
+  accountHintDismissed: false,
 };
 
 // ---- v2: reminders -----------------------------------------------------------
@@ -226,6 +229,32 @@ export interface SyncStatus {
   message: string | null;
   /** Median offset to the server clock in ms (positive = PC is behind). Warn above 2 min. */
   clockOffsetMs: number;
+}
+
+// ---- v4: accounts and pairing (PLAN_V4 §7.1) ------------------------------------
+
+/** Standard server (D-96); `syncServerUrl = ""` means this one. Same value in model.rs. */
+export const DEFAULT_SYNC_SERVER_URL = "https://buddy.pev-point.de";
+
+/** Server messages passed through unchanged by the account/pairing commands. */
+export type { AccountInfo, DeviceInfo, PairingStatus, ServerInfo } from "./lib/sync/types";
+
+/** Result of account_register and account_recover. */
+export interface AccountRegistered {
+  /** Sync status after connecting (like sync_connect). */
+  status: SyncStatus;
+  /** Normalised 24 chars; shown once in the mandatory dialog (formatRecoveryCode). */
+  recoveryCode: string;
+}
+
+/** Result of pairing_start. */
+export interface PairingInfo {
+  pairingId: string;
+  /** Normalised 12 chars; displayed with formatCode. */
+  code: string;
+  /** QR code as SVG markup (EC level M); shown as data:image/svg+xml. */
+  qrSvg: string;
+  expiresAt: string;
 }
 
 /** Payload of `notes-changed` (remote changes merged by the sync). */

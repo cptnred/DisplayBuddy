@@ -122,6 +122,8 @@ pub struct Settings {
     pub sync_server_url: String,
     /// v3: device name shown on the server. The token never lives in settings.json.
     pub sync_device_name: String,
+    /// v4: account hint card dismissed for good (notes window, „Nicht mehr zeigen“).
+    pub account_hint_dismissed: bool,
 }
 
 impl Default for Settings {
@@ -144,6 +146,7 @@ impl Default for Settings {
             sync_enabled: false,
             sync_server_url: String::new(),
             sync_device_name: String::new(),
+            account_hint_dismissed: false,
         }
     }
 }
@@ -338,6 +341,36 @@ pub struct SyncStatus {
     pub clock_offset_ms: i64,
 }
 
+// ---- v4: accounts and pairing (PLAN_V4 §7.1) ---------------------------------
+
+/// Standard server (D-96); `sync_server_url = ""` means this one. Same value in types.ts.
+pub const DEFAULT_SYNC_SERVER_URL: &str = "https://buddy.pev-point.de";
+
+pub use buddy_core::accounts::{AccountInfo, DeviceInfo, ServerInfo};
+pub use buddy_core::pairing::PairingStatus;
+
+/// Result of `account_register` / `account_recover`.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountRegistered {
+    /// Sync status after connecting (like `sync_connect`).
+    pub status: SyncStatus,
+    /// Normalised; shown once in the mandatory dialog.
+    pub recovery_code: String,
+}
+
+/// Result of `pairing_start`.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PairingInfo {
+    pub pairing_id: String,
+    /// Normalised 12 characters.
+    pub code: String,
+    /// QR code as SVG markup (error correction M).
+    pub qr_svg: String,
+    pub expires_at: String,
+}
+
 /// Payload of the `notes-changed` event (remote changes merged by the sync).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
@@ -431,7 +464,8 @@ mod tests {
                 "shortcutBarTab": "items",
                 "syncEnabled": false,
                 "syncServerUrl": "",
-                "syncDeviceName": ""
+                "syncDeviceName": "",
+                "accountHintDismissed": false
             })
         );
     }
