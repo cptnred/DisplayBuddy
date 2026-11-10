@@ -58,14 +58,31 @@ impl AppError {
     }
 
     pub fn too_many(retry_after_secs: u64) -> Self {
+        Self::rate_limited(
+            retry_after_secs,
+            "too many failed sign-in attempts, try again later",
+        )
+    }
+
+    /// `429` + `Retry-After` for every limit of PLAN_V4 §8.2.
+    pub fn rate_limited(retry_after_secs: u64, message: &str) -> Self {
         Self {
             retry_after: Some(retry_after_secs.max(1)),
             ..Self::new(
                 StatusCode::TOO_MANY_REQUESTS,
                 codes::TOO_MANY_REQUESTS,
-                "too many failed sign-in attempts, try again later",
+                message,
             )
         }
+    }
+
+    /// Admin lock (`users.disabled_at`, D-95).
+    pub fn account_disabled() -> Self {
+        Self::new(
+            StatusCode::FORBIDDEN,
+            codes::ACCOUNT_DISABLED,
+            "this account is disabled",
+        )
     }
 
     pub fn full_resync() -> Self {

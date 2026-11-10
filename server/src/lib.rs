@@ -34,6 +34,7 @@ use axum::middleware;
 use axum::routing::any;
 use tokio::sync::Notify;
 
+use crate::auth::limits::Limits;
 use crate::auth::throttle::LoginThrottle;
 use crate::clock::{Clock, SystemClock};
 use crate::config::Config;
@@ -47,6 +48,8 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub clock: Arc<dyn Clock>,
     pub throttle: Arc<LoginThrottle>,
+    /// Rate limits of PLAN_V4 §8.2 (IP-wide failures, registration, pairing, export).
+    pub limits: Arc<Limits>,
     /// Caps parallel Argon2 checks (19 MiB each) so a login flood cannot exhaust memory.
     pub password_checks: Arc<tokio::sync::Semaphore>,
     pub vapid: Option<Arc<Vapid>>,
@@ -60,11 +63,13 @@ impl AppState {
     pub fn new(db: Db, config: Config, clock: Arc<dyn Clock>, vapid: Option<Vapid>) -> Self {
         let vapid = vapid.map(Arc::new);
         let push = Arc::new(PushService::new(&config, vapid.clone()));
+        let limits = Arc::new(Limits::new(config.registration_daily_limit));
         Self {
             db,
             config: Arc::new(config),
             clock,
             throttle: Arc::new(LoginThrottle::new()),
+            limits,
             password_checks: Arc::new(tokio::sync::Semaphore::new(
                 auth::MAX_PARALLEL_PASSWORD_CHECKS,
             )),

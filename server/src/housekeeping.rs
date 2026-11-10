@@ -141,6 +141,7 @@ pub async fn run_once(state: &AppState) {
         Err(e) => tracing::error!(error = %e, "housekeeping failed"),
     }
     state.throttle.prune(now);
+    state.limits.prune(now);
     match backup(&state.db, &state.config.backup_dir, now).await {
         Ok(Some(p)) => tracing::info!(path = %p.display(), "backup written"),
         Ok(None) => {}

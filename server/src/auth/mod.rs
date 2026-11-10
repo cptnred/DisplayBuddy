@@ -5,6 +5,7 @@
 //!   only its SHA-256 is stored; 30 days, extended by every sync, new id on every login.
 
 pub mod csrf;
+pub mod limits;
 pub mod password;
 pub mod throttle;
 
@@ -114,48 +115,109 @@ pub fn request_ip(
     throttle::client_ip(peer, headers, &state.config.trusted_proxies)
 }
 
-/// Checks username + password with the login brake. Returns the user id.
+/// Runs Argon2 work (hash or verify) on the blocking pool, at most
+/// [`MAX_PARALLEL_PASSWORD_CHECKS`] at a time (D-108) – logins, registration, recovery and
+/// password confirmations alike.
+pub async fn argon2<R: Send + 'static>(
+    state: &AppState,
+    work: impl FnOnce() -> R + Send + 'static,
+) -> ApiResult<R> {
+    let _permit = state
+        .password_checks
+        .acquire()
+        .await
+        .map_err(|e| anyhow::anyhow!("password check semaphore: {e}"))?;
+    Ok(tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| anyhow::anyhow!("argon2 task: {e}"))?)
+}
+
+/// Brake before a secret check (login, recovery, password confirmation, D-103): the
+/// (IP, user) brake of D-67 and the IP-wide failure limit. `429` + `Retry-After`.
+pub fn brake_check(state: &AppState, ip: IpAddr, username: &str) -> ApiResult<()> {
+    let now = state.clock.now();
+    let res = state
+        .throttle
+        .check(ip, username, now)
+        .and(state.limits.login_failures.check(&ip, now));
+    res.map_err(|secs| {
+        tracing::warn!(%ip, "blocked by sign-in brake");
+        AppError::too_many(secs)
+    })
+}
+
+/// Counts a failed secret check for the brake.
+pub fn brake_fail(state: &AppState, ip: IpAddr, username: &str) {
+    let now = state.clock.now();
+    state.throttle.fail(ip, username, now);
+    state.limits.login_failures.hit(&ip, now);
+}
+
+/// Checks username + password with the login brake. Returns the user id; a disabled
+/// account gets `403 account_disabled` (only after the right password, D-95).
 pub async fn verify_login(
     state: &AppState,
     ip: IpAddr,
     username: &str,
     password: &str,
 ) -> ApiResult<i64> {
-    let now = state.clock.now();
-    if let Err(secs) = state.throttle.check(ip, username, now) {
-        tracing::warn!(%ip, "login blocked by throttle");
-        return Err(AppError::too_many(secs));
-    }
-    let row: Option<(i64, String)> =
-        sqlx::query_as("SELECT id, password_hash FROM users WHERE username = ?")
-            .bind(username.trim())
-            .fetch_optional(&state.db)
-            .await?;
+    brake_check(state, ip, username)?;
+    let row: Option<(i64, String, bool)> = sqlx::query_as(
+        "SELECT id, password_hash, disabled_at IS NOT NULL FROM users WHERE username = ?",
+    )
+    .bind(username.trim())
+    .fetch_optional(&state.db)
+    .await?;
     let pw = password.to_string();
-    let _permit = state
-        .password_checks
-        .acquire()
-        .await
-        .map_err(|e| anyhow::anyhow!("password check semaphore: {e}"))?;
-    let ok_id = tokio::task::spawn_blocking(move || match row {
-        Some((id, hash)) => password::verify_password(&pw, &hash).then_some(id),
+    let ok = argon2(state, move || match row {
+        Some((id, hash, disabled)) => {
+            password::verify_password(&pw, &hash).then_some((id, disabled))
+        }
         None => {
             password::verify_dummy(&pw);
             None
         }
     })
-    .await
-    .map_err(|e| anyhow::anyhow!("verify task: {e}"))?;
-    match ok_id {
-        Some(id) => {
+    .await?;
+    match ok {
+        Some((id, disabled)) => {
             state.throttle.success(ip, username);
+            if disabled {
+                return Err(AppError::account_disabled());
+            }
             Ok(id)
         }
         None => {
-            state.throttle.fail(ip, username, state.clock.now());
+            brake_fail(state, ip, username);
             tracing::info!(%ip, "failed login");
             Err(AppError::bad_credentials())
         }
+    }
+}
+
+/// Password confirmation of a signed-in user (revoke an older device, change password,
+/// new recovery code, delete account): same brake as the login. A wrong password is
+/// `403 forbidden` – not 401, which would make the client sign out.
+pub async fn confirm_password(
+    state: &AppState,
+    ip: IpAddr,
+    user_id: i64,
+    password: &str,
+) -> ApiResult<()> {
+    let (username, hash): (String, String) =
+        sqlx::query_as("SELECT username, password_hash FROM users WHERE id = ?")
+            .bind(user_id)
+            .fetch_one(&state.db)
+            .await?;
+    brake_check(state, ip, &username)?;
+    let pw = password.to_string();
+    if argon2(state, move || password::verify_password(&pw, &hash)).await? {
+        state.throttle.success(ip, &username);
+        Ok(())
+    } else {
+        brake_fail(state, ip, &username);
+        tracing::info!(%ip, "failed password confirmation");
+        Err(AppError::forbidden("wrong password"))
     }
 }
 
@@ -181,11 +243,10 @@ pub struct Auth {
 impl Auth {
     pub async fn from_headers(state: &AppState, headers: &HeaderMap) -> ApiResult<Self> {
         let now = format_utc(&state.clock.now());
-        let (row, via): (Option<(i64, String, String)>, Via) = if let Some(token) =
-            bearer_token(headers)
-        {
+        type Row = (i64, String, String, bool);
+        let (row, via): (Option<Row>, Via) = if let Some(token) = bearer_token(headers) {
             let row = sqlx::query_as(
-                "SELECT user_id, id, kind FROM devices WHERE token_hash = ? AND revoked_at IS NULL",
+                "SELECT d.user_id, d.id, d.kind, u.disabled_at IS NOT NULL                  FROM devices d JOIN users u ON u.id = d.user_id                  WHERE d.token_hash = ? AND d.revoked_at IS NULL",
             )
             .bind(sha256_hex(token))
             .fetch_optional(&state.db)
@@ -194,7 +255,7 @@ impl Auth {
         } else if let Some(sid) = session_cookie(headers) {
             let id_hash = sha256_hex(sid);
             let row = sqlx::query_as(
-                "SELECT d.user_id, d.id, d.kind FROM sessions s JOIN devices d ON d.id = s.device_id \
+                "SELECT d.user_id, d.id, d.kind, u.disabled_at IS NOT NULL                  FROM sessions s JOIN devices d ON d.id = s.device_id JOIN users u ON u.id = d.user_id \
                  WHERE s.id_hash = ? AND s.expires_at > ? AND d.revoked_at IS NULL",
             )
             .bind(&id_hash)
@@ -205,7 +266,11 @@ impl Auth {
         } else {
             return Err(AppError::unauthorized());
         };
-        let (user_id, device_id, kind) = row.ok_or_else(AppError::unauthorized)?;
+        let (user_id, device_id, kind, disabled) = row.ok_or_else(AppError::unauthorized)?;
+        // Admin lock (D-95, S19): every request of the account, also with old tokens.
+        if disabled {
+            return Err(AppError::account_disabled());
+        }
         let kind = parse_kind(&kind).ok_or_else(AppError::internal)?;
         let seen_before =
             format_utc(&(state.clock.now() - Duration::minutes(LAST_SEEN_EVERY_MINUTES)));
