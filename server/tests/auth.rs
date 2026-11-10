@@ -411,6 +411,29 @@ async fn csrf_rules_for_cookie_requests() {
     req.headers_mut()
         .insert("sec-fetch-site", "cross-site".parse().unwrap());
     assert_eq!(t.send(req).await.status, StatusCode::FORBIDDEN);
+    // v4 (D-104): every path under /session is guarded, even before its route exists –
+    // the guard runs before routing (login CSRF via POST /session/pairing)
+    let mut req = pwa_request(
+        Method::POST,
+        "/api/v1/session/pairing",
+        None,
+        Some(json!({"code": "ABCD-EFGH-JKMN", "deviceName": "x"})),
+    );
+    req.headers_mut()
+        .insert("sec-fetch-site", "cross-site".parse().unwrap());
+    let r = t.send(req).await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN, "{}", r.text);
+    assert_eq!(r.body["error"], "forbidden");
+    // without the custom header as well
+    let mut req = request(
+        Method::POST,
+        "/api/v1/session/pairing",
+        Cred::None,
+        Some(json!({"code": "ABCD-EFGH-JKMN", "deviceName": "x"})),
+    );
+    req.headers_mut()
+        .insert("origin", "https://evil.example".parse().unwrap());
+    assert_eq!(t.send(req).await.status, StatusCode::FORBIDDEN);
     // bearer requests are exempt (no cookie, no CSRF headers needed)
     let (_, token) = t.device("desktop").await;
     let mut req = request(

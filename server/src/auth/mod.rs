@@ -270,11 +270,20 @@ pub async fn extend_session(State(state): State<AppState>, req: Request, next: N
     res
 }
 
+/// Paths that set the session cookie (login CSRF, D-104): `/session` and everything under
+/// `/session/` (e.g. `/session/pairing`). The guard sits on the nested API router: routed
+/// requests arrive without the `/api/v1` prefix, unrouted ones (fallback) with it.
+pub fn is_session_path(path: &str) -> bool {
+    let p = path.strip_prefix("/api/v1").unwrap_or(path);
+    p == "/session" || p.starts_with("/session/")
+}
+
 /// Middleware on the whole API: CSRF rules for requests that carry the session cookie and
-/// for `POST /session` (which sets it). Bearer clients (`POST /devices`, sync with token)
-/// send neither cookie nor `Origin` and are not affected.
+/// for the `/session*` endpoints (which set it). Bearer clients (`POST /devices`,
+/// `POST /devices/pairing`, sync with token) send neither cookie nor `Origin` and are not
+/// affected. Runs before routing, so it also guards routes that do not exist (yet).
 pub async fn csrf_guard(State(state): State<AppState>, req: Request, next: Next) -> Response {
-    let applies = session_cookie(req.headers()).is_some() || req.uri().path().ends_with("/session");
+    let applies = session_cookie(req.headers()).is_some() || is_session_path(req.uri().path());
     if !applies {
         return next.run(req).await;
     }
@@ -290,6 +299,28 @@ pub async fn csrf_guard(State(state): State<AppState>, req: Request, next: Next)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_paths() {
+        for p in [
+            "/session",
+            "/session/pairing",
+            "/session/x/y",
+            "/api/v1/session",
+            "/api/v1/session/pairing",
+        ] {
+            assert!(is_session_path(p), "{p}");
+        }
+        for p in [
+            "/sessions",
+            "/sessionx",
+            "/devices/pairing",
+            "/me",
+            "/x/session",
+        ] {
+            assert!(!is_session_path(p), "{p}");
+        }
+    }
 
     #[test]
     fn secrets_and_hashes() {

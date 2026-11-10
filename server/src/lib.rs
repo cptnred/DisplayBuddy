@@ -98,13 +98,25 @@ pub fn build_app(state: AppState) -> Router {
     let web_dir = state.config.web_dir.clone();
     Router::new()
         .nest("/api/v1", api)
+        // Unrouted API paths land here, not in the nested fallback: they get the CSRF guard
+        // too, so e.g. a cross-site POST /api/v1/session/<new> is a 403, never a 404 (D-104).
         .route(
             "/api",
-            any(api::api_not_found).layer(middleware::from_fn(web::no_store)),
+            any(api::api_not_found)
+                .layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    auth::csrf_guard,
+                ))
+                .layer(middleware::from_fn(web::no_store)),
         )
         .route(
             "/api/{*rest}",
-            any(api::api_not_found).layer(middleware::from_fn(web::no_store)),
+            any(api::api_not_found)
+                .layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    auth::csrf_guard,
+                ))
+                .layer(middleware::from_fn(web::no_store)),
         )
         .fallback(move |req| web::serve_static(web_dir.clone(), req))
         .layer(middleware::from_fn(web::security_headers))
