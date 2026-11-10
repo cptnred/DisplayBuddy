@@ -432,11 +432,7 @@ fn run_cycle(app: &AppHandle, mode: Mode) {
 
 /// Error strings of `sync_connect` start with a code the UI maps to German texts:
 /// `invalid_url`, `invalid_input`, `unauthorized`, `offline`, `server`, `protocol`,
-/// `keyring`, `not_ready`.
-fn connect_error(e: ClientError) -> String {
-    e.to_string()
-}
-
+/// `keyring`, `not_ready` (`ClientError`'s `Display` already starts with its code).
 pub async fn connect(
     app: AppHandle,
     server_url: String,
@@ -444,7 +440,7 @@ pub async fn connect(
     password: String,
     device_name: String,
 ) -> Result<SyncStatus, String> {
-    let server = client::normalize_server_url(&server_url).map_err(connect_error)?;
+    let server = client::normalize_server_url(&server_url).map_err(|e| e.to_string())?;
     let username = username.trim().to_string();
     let device_name = device_name.trim().to_string();
     if username.is_empty() || password.is_empty() {
@@ -453,11 +449,11 @@ pub async fn connect(
     if device_name.is_empty() || device_name.chars().count() > DEVICE_NAME_MAX {
         return Err("invalid_input: device name".into());
     }
-    let client = Client::new(&server, None, Arc::new(SystemClock)).map_err(connect_error)?;
+    let client = Client::new(&server, None, Arc::new(SystemClock)).map_err(|e| e.to_string())?;
     let resp = client
         .register(&username, &password, &device_name)
         .await
-        .map_err(connect_error)?;
+        .map_err(|e| e.to_string())?;
     log::info!(
         "sync: registered this PC as device {}",
         resp.value.device_id
