@@ -29,6 +29,7 @@ import {
   PUSH_BATCH_MAX,
   type PushRequest,
   type PushResponse,
+  type ServerInfo,
   type SessionResponse,
   type SyncChanges,
 } from "../../lib/sync/types";
@@ -563,6 +564,19 @@ class Engine implements SyncEngine {
     }
     this.loggedOut = true;
     this.setStatus({ state: "signedOut" });
+  }
+
+  // Phase 0 placeholders for the v4 contract; phase C implements them (PLAN_V4 §7.3).
+  async loginWithCode(_code: string, _deviceName: string): Promise<void> {
+    throw new SyncError("http", "loginWithCode not implemented yet (phase C)");
+  }
+
+  async serverInfo(): Promise<ServerInfo | null> {
+    throw new SyncError("http", "serverInfo not implemented yet (phase C)");
+  }
+
+  async deleteAccount(_password: string, _confirmUsername: string): Promise<void> {
+    throw new SyncError("http", "deleteAccount not implemented yet (phase C)");
   }
 
   private stopTimersForLogout(): void {

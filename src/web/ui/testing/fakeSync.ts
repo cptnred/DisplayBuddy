@@ -80,6 +80,19 @@ export function createFakeSync(options: SyncEngineOptions): FakeSyncEngine {
       calls.push("logout");
       set({ state: "signedOut" });
     },
+    // Phase 0 placeholders for the v4 contract; phase C replaces them with real fakes.
+    async loginWithCode(code, deviceName) {
+      calls.push(`loginWithCode:${code}:${deviceName}`);
+      throw new Error("not_implemented");
+    },
+    async serverInfo() {
+      calls.push("serverInfo");
+      return null;
+    },
+    async deleteAccount(_password, confirmUsername) {
+      calls.push(`deleteAccount:${confirmUsername}`);
+      throw new Error("not_implemented");
+    },
     async syncNow() {
       calls.push("syncNow");
       if (status.state === "signedOut" || status.state === "unauthorized") return;

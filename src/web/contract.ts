@@ -11,7 +11,7 @@
  * service worker and in the native shell).
  */
 import type { Clock } from "../lib/clock";
-import type { DeviceKind, DeviceState, RecordKind } from "../lib/sync/types";
+import type { DeviceKind, DeviceState, RecordKind, ServerInfo } from "../lib/sync/types";
 import type { Note, Reminder, ReminderRepeat } from "../types";
 
 export interface Account {
@@ -105,7 +105,12 @@ export interface WebSyncStatus {
   clockOffsetMs: number;
   /** |offset| > 2 min → UI shows the clock warning. */
   clockWarning: boolean;
-  /** Technical detail (UI shows German texts per state). */
+  /**
+   * Technical detail (UI shows German texts per state). v4: on `error` the message starts
+   * with a server error code where the UI needs its own text: `quota_exceeded` (413, outbox
+   * kept), `device_limit` (409), `account_disabled` (403, token kept – the lock is
+   * reversible), `content_format_unsupported` (sync stopped, no writes; PLAN_V4 §7.3).
+   */
   message: string | null;
 }
 
@@ -126,6 +131,21 @@ export interface SyncEngine {
   login(username: string, password: string, deviceName: string): Promise<void>;
   /** Server logout (DELETE /session or /devices/current); the UI then calls DataStore.signOut. */
   logout(): Promise<void>;
+  /**
+   * v4: sign in with a pairing code (any input form; normalised with src/lib/pairing.ts).
+   * PWA: POST /session/pairing (cookie, deviceId reused); native: POST /devices/pairing (the
+   * adapter stores the token like after POST /devices). Then like login(): GET /me,
+   * account_mismatch rule (D-71), first sync. Rejects with SyncError code `pairing_invalid`
+   * (also for malformed input), `device_limit`, `account_disabled`, `too_many_requests`.
+   */
+  loginWithCode(code: string, deviceName: string): Promise<void>;
+  /** v4: GET /info of the own server; null if the server is older than v4 (404). */
+  serverInfo(): Promise<ServerInfo | null>;
+  /**
+   * v4: POST /me/delete, then like logout(); the UI then calls DataStore.signOut.
+   * Rejects with `unauthorized` (wrong password) or `bad_request` (username mismatch).
+   */
+  deleteAccount(password: string, confirmUsername: string): Promise<void>;
   /** Runs a sync now (push outbox → pull → merge); resolves when done or failed. */
   syncNow(): Promise<void>;
   /** Debounced trigger (2 s after a change). */
@@ -167,3 +187,45 @@ export interface SyncEngineOptions {
 
 /** Factory exported by src/web/sync/index.ts. */
 export type CreateSyncEngine = (options: SyncEngineOptions) => SyncEngine;
+
+// ---- v4: QR scanner and server choice (PLAN_V4 §6.2, §6.5, §7.3) -------------------------
+
+/**
+ * Reads a QR code with the camera. PWA: src/web/pairing/web-scanner.ts (getUserMedia +
+ * BarcodeDetector or jsQR); native app: tauri-plugin-barcode-scanner (mobile/src/main.tsx).
+ * The UI shows „QR-Code scannen“ only if a scanner is passed and isAvailable() is true.
+ */
+export interface QrScanner {
+  /** Cheap check WITHOUT asking for the camera (no permission prompt). */
+  isAvailable(): boolean;
+  /**
+   * Opens the camera, resolves with the raw QR text or null if cancelled. Rejects with an
+   * Error whose message is `camera_denied` (permission refused) or `camera_failed`.
+   * The camera is always released when the promise settles.
+   */
+  scan(): Promise<string | null>;
+  /** Stops a running scan (scan() then resolves null). */
+  cancel(): Promise<void>;
+}
+
+/** server_get of the native app. */
+export interface ServerChoice {
+  /** Effective origin (server.json before the build default). */
+  origin: string;
+  defaultOrigin: string;
+  isDefault: boolean;
+}
+
+/**
+ * Native app only (the PWA always talks to its own origin, D-98). The UI shows the server
+ * line and „ändern“ only if a selector is passed.
+ */
+export interface ServerSelector {
+  current(): Promise<ServerChoice>;
+  /**
+   * server_set: origin (https://, http:// only localhost/10.0.2.2) or null = default. Only
+   * while signed out (rejects with `signed_in`); `invalid_url` for a bad origin. On success
+   * the app reloads (scope change, D-97) – callers must not rely on code after it.
+   */
+  set(origin: string | null): Promise<void>;
+}
