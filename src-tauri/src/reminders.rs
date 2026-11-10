@@ -25,7 +25,7 @@ use crate::model::{
     Note, REMINDERS_SCHEMA_VERSION, Reminder, ReminderRepeat, RemindersFile, is_valid_note_id,
 };
 use crate::state::lock;
-use crate::storage::{Read, read_json, write_json_atomic};
+use crate::storage::{Read, StorageError, read_json, write_json_atomic};
 
 pub const REMINDERS_FILE: &str = "reminders.json";
 pub const REMINDERS_CHANGED: &str = "reminders-changed";
@@ -76,14 +76,15 @@ impl RemindersState {
         *guard = false;
     }
 
-    fn persist(&self, list: &[Reminder]) {
+    fn persist(&self, list: &[Reminder]) -> Result<(), String> {
         let file = RemindersFile {
             schema_version: REMINDERS_SCHEMA_VERSION,
             reminders: list.to_vec(),
         };
-        if let Err(e) = write_json_atomic(&self.path, &file) {
+        write_json_atomic(&self.path, &file).map_err(|e| {
             log::error!("could not save {}: {e}", self.path.display());
-        }
+            format!("could not save reminders: {e}")
+        })
     }
 }
 
@@ -223,7 +224,13 @@ fn modify_inner<T>(
     let before = list.clone();
     let result = f(&mut list)?;
     if *list != before {
-        state.persist(&list);
+        if let Err(e) = state.persist(&list)
+            && record
+        {
+            // a user action must not look saved when it is not: undo it and report
+            *list = before;
+            return Err(e);
+        }
         emit_changed(app, &list);
         state.notify();
         if record {
@@ -255,7 +262,7 @@ fn scheduler(app: &AppHandle) {
             let due = schedule::due_now(&list, &now);
             if !due.is_empty() {
                 schedule::fire(&mut list, &due, &now);
-                state.persist(&list);
+                let _ = state.persist(&list); // logged; the next change writes the file again
                 emit_changed(app, &list);
             }
             due.iter()
@@ -295,17 +302,27 @@ pub fn notification_title(note_title: &str) -> String {
 
 /// Toast and/or sound for a due reminder, according to the settings.
 pub(crate) fn alert(app: &AppHandle, note_id: &str) {
+    let note =
+        crate::state::try_app_state(app).map(|state| lock(&state.storage).load_note(note_id));
+    if let Some(Err(StorageError::NotFound(_))) = note {
+        // Orphan (e.g. the note was deleted here, the reminder edited elsewhere later):
+        // it could never be acknowledged, so remove it like a local note deletion would.
+        log::info!("reminder for missing note {note_id} removed");
+        on_note_deleted(app, note_id);
+        return;
+    }
     let settings = crate::state::current_settings(app);
     if settings.reminder_notification {
-        let (title, body) = match load_note(app, note_id) {
-            Ok(note) => (
+        let (title, body) = match note {
+            Some(Ok(note)) => (
                 notification_title(&note.title),
                 text::truncate_chars(&text::plain_text(&note.content), BODY_CHARS),
             ),
-            Err(e) => {
+            Some(Err(e)) => {
                 log::warn!("reminder note {note_id} not readable: {e}");
                 (notification_title(""), String::new())
             }
+            None => (notification_title(""), String::new()),
         };
         show_toast(app, &title, &body, settings.reminder_sound);
     } else if settings.reminder_sound {
@@ -351,6 +368,13 @@ fn check_note_id(note_id: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("invalid note id: {note_id}"))
+    }
+}
+
+/// Broadcasts the current list (end of `setup`: a window may have asked too early).
+pub fn announce(app: &AppHandle) {
+    if let Ok(state) = reminders_state(app) {
+        emit_changed(app, &lock(&state.reminders));
     }
 }
 
@@ -467,7 +491,7 @@ mod tests {
             time_zone: Some("Europe/Berlin".into()),
         };
         let state = RemindersState::new(path.clone(), Vec::new());
-        state.persist(std::slice::from_ref(&r));
+        state.persist(std::slice::from_ref(&r)).unwrap();
         let raw: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(raw["schemaVersion"], 1);
@@ -477,6 +501,17 @@ mod tests {
         std::fs::write(&path, "{ nope").unwrap();
         assert!(load_file(&path).is_empty());
         assert!(!path.exists(), "corrupt file is quarantined");
+    }
+
+    #[test]
+    fn persist_reports_write_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        // the target is a non-empty directory → the atomic rename fails
+        let path = dir.path().join(REMINDERS_FILE);
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("x"), "x").unwrap();
+        let state = RemindersState::new(path, Vec::new());
+        assert!(state.persist(&[]).is_err());
     }
 
     fn at(s: &str) -> chrono::DateTime<chrono::Utc> {
