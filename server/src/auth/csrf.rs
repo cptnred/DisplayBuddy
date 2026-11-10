@@ -14,7 +14,7 @@
 //! 2. `Sec-Fetch-Site` missing (older browsers): `Origin` must equal `BUDDY_PUBLIC_URL`.
 //! 3. `X-Buddy-Request: 1` is required.
 
-use axum::http::{HeaderMap, Method, header};
+use axum::http::{HeaderMap, Method};
 
 use crate::error::AppError;
 
@@ -24,18 +24,9 @@ pub fn is_unsafe(method: &Method) -> bool {
     !matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS)
 }
 
-pub fn has_bearer(headers: &HeaderMap) -> bool {
-    headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| {
-            v.len() > 7 && v[..7].eq_ignore_ascii_case("bearer ") && !v[7..].trim().is_empty()
-        })
-}
-
 /// `Ok` if the request may proceed.
 pub fn check(method: &Method, headers: &HeaderMap, public_origin: &str) -> Result<(), AppError> {
-    if !is_unsafe(method) || has_bearer(headers) {
+    if !is_unsafe(method) || super::bearer_token(headers).is_some() {
         return Ok(());
     }
     let text = |name: &str| headers.get(name).and_then(|v| v.to_str().ok());
