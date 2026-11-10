@@ -30,6 +30,10 @@ pub const SESSION_COOKIE: &str = "__Host-buddy_session";
 pub const SESSION_DAYS: i64 = 30;
 /// A session is extended at most this often (avoids a DB write per request).
 const SESSION_REFRESH_AFTER_HOURS: i64 = 1;
+/// `devices.last_seen_at` is written at most this often per device.
+const LAST_SEEN_EVERY_MINUTES: i64 = 5;
+/// Parallel Argon2 verifications (19 MiB each); further logins wait for a slot.
+pub const MAX_PARALLEL_PASSWORD_CHECKS: usize = 4;
 
 /// 256 random bits, base64url (43 characters). Used for bearer tokens and session ids.
 pub fn random_secret() -> String {
@@ -128,6 +132,11 @@ pub async fn verify_login(
             .fetch_optional(&state.db)
             .await?;
     let pw = password.to_string();
+    let _permit = state
+        .password_checks
+        .acquire()
+        .await
+        .map_err(|e| anyhow::anyhow!("password check semaphore: {e}"))?;
     let ok_id = tokio::task::spawn_blocking(move || match row {
         Some((id, hash)) => password::verify_password(&pw, &hash).then_some(id),
         None => {
@@ -198,11 +207,17 @@ impl Auth {
         };
         let (user_id, device_id, kind) = row.ok_or_else(AppError::unauthorized)?;
         let kind = parse_kind(&kind).ok_or_else(AppError::internal)?;
-        sqlx::query("UPDATE devices SET last_seen_at = ? WHERE id = ?")
-            .bind(&now)
-            .bind(&device_id)
-            .execute(&state.db)
-            .await?;
+        let seen_before =
+            format_utc(&(state.clock.now() - Duration::minutes(LAST_SEEN_EVERY_MINUTES)));
+        sqlx::query(
+            "UPDATE devices SET last_seen_at = ? \
+             WHERE id = ? AND (last_seen_at IS NULL OR last_seen_at < ?)",
+        )
+        .bind(&now)
+        .bind(&device_id)
+        .bind(seen_before)
+        .execute(&state.db)
+        .await?;
         Ok(Self {
             user_id,
             device_id,

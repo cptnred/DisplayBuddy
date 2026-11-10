@@ -47,6 +47,8 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub clock: Arc<dyn Clock>,
     pub throttle: Arc<LoginThrottle>,
+    /// Caps parallel Argon2 checks (19 MiB each) so a login flood cannot exhaust memory.
+    pub password_checks: Arc<tokio::sync::Semaphore>,
     pub vapid: Option<Arc<Vapid>>,
     /// Woken after reminder changes (phase-D scheduler).
     pub reminders_changed: Arc<Notify>,
@@ -63,6 +65,9 @@ impl AppState {
             config: Arc::new(config),
             clock,
             throttle: Arc::new(LoginThrottle::new()),
+            password_checks: Arc::new(tokio::sync::Semaphore::new(
+                auth::MAX_PARALLEL_PASSWORD_CHECKS,
+            )),
             vapid,
             reminders_changed: Arc::new(Notify::new()),
             push,
