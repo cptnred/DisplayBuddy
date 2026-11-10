@@ -297,7 +297,7 @@ fn capabilities_only_reference_known_commands() {
     // Commands no window may call: only reachable via tray/menu/Rust (load_note is kept
     // for the PLAN contract but no window needs it, so no capability grants it).
     // If a window starts using one, add it to its capability and remove it here.
-    let rust_only: BTreeSet<String> = ["load_note", "show_notes", "open_settings", "quit_app"]
+    let rust_only: BTreeSet<String> = ["load_note", "show_notes", "quit_app"]
         .into_iter()
         .map(String::from)
         .collect();

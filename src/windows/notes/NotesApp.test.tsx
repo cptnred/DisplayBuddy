@@ -412,8 +412,8 @@ describe("NotesApp / useNotesStore", () => {
     unmount();
     await tick();
     // 9 store/app subscriptions (hidden, flush, create, settings, reminders, sync-status,
-    // notes-changed, shown, open-note)
-    expect(h.unlisten).toHaveBeenCalledTimes(9);
+    // notes-changed, shown, open-note) + settings of the account hint (v4)
+    expect(h.unlisten).toHaveBeenCalledTimes(10);
   });
 });
 

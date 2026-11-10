@@ -29,6 +29,7 @@
     "allow-reorder-shortcuts",
     "allow-open-shortcut",
     "allow-shortcut-icon",
-    "allow-sync-status"
+    "allow-sync-status",
+    "allow-open-settings"
   ]
 }
