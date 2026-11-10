@@ -67,7 +67,7 @@ async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(json!({ "ok": true, "serverTime": now_s(&state) }))
 }
 
-fn check_device_name(name: &str) -> ApiResult<String> {
+pub fn check_device_name(name: &str) -> ApiResult<String> {
     let name = name.trim();
     if name.is_empty()
         || name.chars().count() > MAX_DEVICE_NAME
@@ -119,6 +119,8 @@ async fn device_login(
     let user_id = auth::verify_login(&state, ip, &body.username, &body.password).await?;
     let device_id = uuid::Uuid::new_v4().to_string();
     let token = random_secret();
+    let mut tx = state.db.begin_with(crate::db::BEGIN_WRITE).await?;
+    crate::accounts::quota::check_device_limit(&mut tx, &state.config.quota, user_id).await?;
     sqlx::query(
         "INSERT INTO devices (id, user_id, kind, name, token_hash, created_at, last_seen_at) \
          VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -130,8 +132,9 @@ async fn device_login(
     .bind(sha256_hex(&token))
     .bind(now_s(&state))
     .bind(now_s(&state))
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
     tracing::info!(device = %device_id, kind = kind_str(body.kind), "device registered");
     Ok(Json(DeviceLoginResponse {
         device_id,
@@ -212,6 +215,8 @@ async fn session_login(
             id
         }
         None => {
+            crate::accounts::quota::check_device_limit(&mut tx, &state.config.quota, user_id)
+                .await?;
             let id = uuid::Uuid::new_v4().to_string();
             sqlx::query(
                 "INSERT INTO devices (id, user_id, kind, name, created_at, last_seen_at) \
@@ -335,6 +340,7 @@ async fn sync_push(
         auth.user_id,
         &auth.device_id,
         auth.kind,
+        &state.config.quota,
         body,
     )
     .await?;

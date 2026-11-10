@@ -1,5 +1,8 @@
 //! buddy-server: accounts, devices, LWW sync and PWA hosting for Display Buddy v3
 //! (PLAN_V3_SYNC §5–§7). Phase A = server core, phase D = reminder scheduler and push.
+//! v4 (PLAN_V4_ACCOUNTS): [`accounts`] (registration, recovery, `/me/*`, quotas) and
+//! [`auth::limits`] ([`AppState::limits`]); proof-of-work challenges in
+//! [`AppState::challenges`].
 //!
 //! - [`AppState::reminders_changed`] is notified after every `/sync/push` that stored a
 //!   reminder change and after a new push subscription (`notify_one`, so a wake-up is
@@ -11,6 +14,7 @@
 //! - `build_app` merges [`push::router`], `serve` spawns the scheduler with a clone of the
 //!   shutdown receiver.
 
+pub mod accounts;
 pub mod api;
 pub mod auth;
 pub mod cli;
@@ -50,6 +54,8 @@ pub struct AppState {
     pub throttle: Arc<LoginThrottle>,
     /// Rate limits of PLAN_V4 §8.2 (IP-wide failures, registration, pairing, export).
     pub limits: Arc<Limits>,
+    /// Open registration challenges (proof-of-work, in memory, PLAN_V4 §6.1).
+    pub challenges: Arc<accounts::ChallengeStore>,
     /// Caps parallel Argon2 checks (19 MiB each) so a login flood cannot exhaust memory.
     pub password_checks: Arc<tokio::sync::Semaphore>,
     pub vapid: Option<Arc<Vapid>>,
@@ -70,6 +76,7 @@ impl AppState {
             clock,
             throttle: Arc::new(LoginThrottle::new()),
             limits,
+            challenges: Arc::new(accounts::ChallengeStore::new()),
             password_checks: Arc::new(tokio::sync::Semaphore::new(
                 auth::MAX_PARALLEL_PASSWORD_CHECKS,
             )),
@@ -94,6 +101,8 @@ impl AppState {
 pub fn build_app(state: AppState) -> Router {
     let api = api::router(state.clone())
         .merge(push::router(state.clone()))
+        .merge(accounts::router())
+        // Phase P: `.merge(pairing::router(state.clone()))` goes here (PLAN_V4 §5.1/§5.2).
         .fallback(api::api_not_found)
         .layer(middleware::from_fn_with_state(
             state.clone(),

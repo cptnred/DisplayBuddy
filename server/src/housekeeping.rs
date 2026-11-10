@@ -3,6 +3,10 @@
 //! - tombstones (notes and reminders) received more than 180 days ago are deleted and
 //!   `users.min_cursor` is raised to the highest purged `seq` (older cursors → 410);
 //! - expired sessions are deleted, old login-brake counters forgotten;
+//! - v4 (PLAN_V4 §4): pairings older than a day, devices revoked more than 30 days ago
+//!   (cascade: sessions, push subscriptions, push log) and invites used or expired more
+//!   than 90 days ago are deleted; expired registration challenges and idle limiter keys
+//!   are dropped from memory;
 //! - once per UTC day `VACUUM INTO <backup_dir>/buddy-YYYYMMDD.db`, 14 copies kept.
 
 use std::path::{Path, PathBuf};
@@ -18,12 +22,18 @@ pub const REVISION_DAYS: i64 = 30;
 pub const TOMBSTONE_DAYS: i64 = 180;
 pub const BACKUPS_KEPT: usize = 14;
 pub const INTERVAL_SECS: u64 = 3600;
+pub const PAIRING_KEEP_DAYS: i64 = 1;
+pub const REVOKED_DEVICE_DAYS: i64 = 30;
+pub const INVITE_KEEP_DAYS: i64 = 90;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct PurgeStats {
     pub revisions: u64,
     pub tombstones: u64,
     pub sessions: u64,
+    pub pairings: u64,
+    pub revoked_devices: u64,
+    pub invites: u64,
 }
 
 pub async fn purge(db: &Db, now: DateTime<Utc>) -> Result<PurgeStats> {
@@ -78,11 +88,32 @@ pub async fn purge(db: &Db, now: DateTime<Utc>) -> Result<PurgeStats> {
         .execute(&mut *tx)
         .await?
         .rows_affected();
+    let pairings = sqlx::query("DELETE FROM pairings WHERE created_at < ?")
+        .bind(format_utc(&(now - Duration::days(PAIRING_KEEP_DAYS))))
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    let revoked_devices =
+        sqlx::query("DELETE FROM devices WHERE revoked_at IS NOT NULL AND revoked_at < ?")
+            .bind(format_utc(&(now - Duration::days(REVOKED_DEVICE_DAYS))))
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+    let invite_cut = format_utc(&(now - Duration::days(INVITE_KEEP_DAYS)));
+    let invites = sqlx::query("DELETE FROM invites WHERE used_at < ? OR expires_at < ?")
+        .bind(&invite_cut)
+        .bind(&invite_cut)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
     tx.commit().await?;
     Ok(PurgeStats {
         revisions,
         tombstones,
         sessions,
+        pairings,
+        revoked_devices,
+        invites,
     })
 }
 
@@ -136,12 +167,16 @@ pub async fn run_once(state: &AppState) {
             revisions = s.revisions,
             tombstones = s.tombstones,
             sessions = s.sessions,
+            pairings = s.pairings,
+            revoked_devices = s.revoked_devices,
+            invites = s.invites,
             "housekeeping"
         ),
         Err(e) => tracing::error!(error = %e, "housekeeping failed"),
     }
     state.throttle.prune(now);
     state.limits.prune(now);
+    state.challenges.prune(now);
     match backup(&state.db, &state.config.backup_dir, now).await {
         Ok(Some(p)) => tracing::info!(path = %p.display(), "backup written"),
         Ok(None) => {}

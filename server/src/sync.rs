@@ -14,7 +14,11 @@
 //!   lost, `rejected` = incoming copy that lost);
 //! - reminders without `timeZone` are stored as sent; computations use the account zone
 //!   ([`effective_zone`]).
+//! - v4 quotas (D-94): a push that grows the live data and leaves the account over its
+//!   quota is refused as a whole (`413 quota_exceeded`, rollback; [`crate::accounts::quota`]).
+//!   No rate limit here (D-103: the Android background sync polls every 3 min).
 
+use buddy_core::accounts::Quota;
 use buddy_core::lww::{
     Winner, clamp_future, cmp_stamp, note_winner, order_winner, reminder_winner,
 };
@@ -30,6 +34,7 @@ use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use sqlx::SqliteConnection;
 
+use crate::accounts::quota;
 use crate::db::{BEGIN_WRITE, Db};
 use crate::error::{ApiResult, AppError};
 
@@ -54,9 +59,9 @@ pub async fn user_time_zone(db: &Db, user_id: i64) -> ApiResult<String> {
 
 // ---------------------------------------------------------------- rows ↔ records
 
-type DocRow = (Option<String>, String, String, bool, i64);
+pub(crate) type DocRow = (Option<String>, String, String, bool, i64);
 
-fn note_from_row(id: &str, (payload, at, by, deleted, _): DocRow) -> NoteRecord {
+pub(crate) fn note_from_row(id: &str, (payload, at, by, deleted, _): DocRow) -> NoteRecord {
     NoteRecord {
         id: id.to_string(),
         updated_at: at,
@@ -70,7 +75,7 @@ fn note_from_row(id: &str, (payload, at, by, deleted, _): DocRow) -> NoteRecord 
     }
 }
 
-fn reminder_from_row(id: &str, (payload, at, by, deleted, _): DocRow) -> ReminderRecord {
+pub(crate) fn reminder_from_row(id: &str, (payload, at, by, deleted, _): DocRow) -> ReminderRecord {
     ReminderRecord {
         note_id: id.to_string(),
         updated_at: at,
@@ -110,7 +115,10 @@ async fn load_reminder(
     Ok(row.map(|r| reminder_from_row(id, r)))
 }
 
-async fn load_order(c: &mut SqliteConnection, user: i64) -> ApiResult<Option<(OrderRecord, Seq)>> {
+pub(crate) async fn load_order(
+    c: &mut SqliteConnection,
+    user: i64,
+) -> ApiResult<Option<(OrderRecord, Seq)>> {
     let row: Option<(String, String, String, i64)> =
         sqlx::query_as("SELECT ids, updated_at, updated_by, seq FROM note_order WHERE user_id = ?")
             .bind(user)
@@ -564,6 +572,7 @@ pub async fn push(
     user: i64,
     device_id: &str,
     kind: DeviceKind,
+    quota_defaults: &Quota,
     req: PushRequest,
 ) -> ApiResult<PushOutcome> {
     if req.notes.len() > PUSH_BATCH_MAX || req.reminders.len() > PUSH_BATCH_MAX {
@@ -572,6 +581,13 @@ pub async fn push(
         )));
     }
     let mut tx = db.begin_with(BEGIN_WRITE).await?;
+    // Quota (D-94): measured in this transaction; skipped when the account is unlimited.
+    let q = quota::effective(&mut tx, quota_defaults, user).await?;
+    let before = if q.bytes.is_some() || q.notes.is_some() {
+        Some(quota::measure(&mut tx, user).await?)
+    } else {
+        None
+    };
     let mut results = Vec::with_capacity(req.notes.len() + req.reminders.len() + 1);
     let mut reminders_changed = false;
     for rec in req.notes {
@@ -587,6 +603,14 @@ pub async fn push(
     }
     if let Some(ds) = req.device_state {
         store_device_state(&mut tx, device_id, kind, ds).await?;
+    }
+    if let Some(before) = before {
+        let after = quota::measure(&mut tx, user).await?;
+        if quota::push_exceeds(&before, &after, &q) {
+            // nothing is applied: dropping `tx` rolls back; the client keeps its outbox
+            tracing::info!(user, "push refused: quota exceeded");
+            return Err(quota::quota_exceeded());
+        }
     }
     let cursor: Seq = sqlx::query_scalar("SELECT seq FROM users WHERE id = ?")
         .bind(user)
