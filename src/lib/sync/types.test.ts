@@ -1,6 +1,7 @@
 /** The shared API examples (round-tripped by buddy-core) also fit the TypeScript types. */
 import examples from "../../../crates/buddy-core/tests/fixtures/api_examples.json";
 import type * as T from "./types";
+import { API_LEVEL, EXPORT_FORMAT } from "./types";
 
 type Examples = {
   syncChanges: T.SyncChanges;
@@ -17,6 +18,24 @@ type Examples = {
   vapidPublicKey: T.VapidPublicKey;
   reminderPushPayload: T.ReminderPushPayload;
   apiError: T.ApiError;
+  serverInfo: T.ServerInfo;
+  registrationChallenge: T.RegistrationChallenge;
+  accountCreate: T.AccountCreate;
+  accountAccess: T.AccountAccess;
+  accountRecover: T.AccountRecover;
+  accountInfo: T.AccountInfo;
+  deviceList: T.DeviceList;
+  deviceRevoke: T.DeviceRevoke;
+  passwordChange: T.PasswordChange;
+  recoveryCodeRequest: T.RecoveryCodeRequest;
+  recoveryCodeResponse: T.RecoveryCodeResponse;
+  accountDelete: T.AccountDelete;
+  accountExport: T.AccountExport;
+  pairingStart: T.PairingStart;
+  pairingStatus: T.PairingStatus;
+  pairingRedeem: T.PairingRedeem;
+  pairingAccess: T.PairingAccess;
+  sessionPairing: T.SessionPairing;
 };
 
 // Compile-time check (npm run build / tsc): every example is assignable to its type.
@@ -36,11 +55,31 @@ const check: Examples = {
   vapidPublicKey: examples.vapidPublicKey,
   reminderPushPayload: examples.reminderPushPayload as T.ReminderPushPayload,
   apiError: examples.apiError,
+  serverInfo: examples.serverInfo as T.ServerInfo,
+  registrationChallenge: examples.registrationChallenge,
+  accountCreate: examples.accountCreate,
+  accountAccess: examples.accountAccess,
+  accountRecover: examples.accountRecover,
+  accountInfo: examples.accountInfo,
+  deviceList: examples.deviceList as T.DeviceList,
+  deviceRevoke: examples.deviceRevoke,
+  passwordChange: examples.passwordChange,
+  recoveryCodeRequest: examples.recoveryCodeRequest,
+  recoveryCodeResponse: examples.recoveryCodeResponse,
+  accountDelete: examples.accountDelete,
+  accountExport: examples.accountExport as T.AccountExport,
+  pairingStart: examples.pairingStart,
+  pairingStatus: examples.pairingStatus as T.PairingStatus,
+  pairingRedeem: examples.pairingRedeem as T.PairingRedeem,
+  pairingAccess: examples.pairingAccess,
+  sessionPairing: examples.sessionPairing,
 };
 
 describe("api_examples.json", () => {
   it("covers every message type", () => {
     expect(Object.keys(check).sort()).toEqual(Object.keys(examples).filter((k) => k !== "$comment").sort());
     expect(typed.pushResponse.results.map((r) => r.status)).toEqual(["applied", "stale", "applied", "invalid"]);
+    expect(typed.serverInfo.apiLevel).toBe(API_LEVEL);
+    expect(typed.accountExport.format).toBe(EXPORT_FORMAT);
   });
 });
