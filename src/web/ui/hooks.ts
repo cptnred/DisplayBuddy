@@ -1,6 +1,7 @@
 /** Data hooks over the DataStore / SyncEngine (local-first: the UI reads only locally). */
 import { useEffect, useRef, useState } from "react";
 import { earliestScheduled, isDue } from "../../lib/schedule";
+import type { ServerInfo } from "../../lib/sync/types";
 import type { Note, Reminder } from "../../types";
 import type { Account, DataChange, WebSyncStatus } from "../contract";
 import { useServices } from "./services";
@@ -139,4 +140,21 @@ export function useDueTimer(reminders: Reminder[]): void {
       if (timer) clearTimeout(timer);
     };
   }, [store, reminders]);
+}
+
+/** v4: GET /info of the own server (legal links); null while loading, offline or on a v3 server. */
+export function useServerInfo(): ServerInfo | null {
+  const { sync } = useServices();
+  const [info, setInfo] = useState<ServerInfo | null>(null);
+  useEffect(() => {
+    let alive = true;
+    sync.serverInfo().then(
+      (i) => alive && setInfo(i),
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, [sync]);
+  return info;
 }

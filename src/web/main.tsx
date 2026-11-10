@@ -15,6 +15,7 @@ import { createInstallController, createStorageController } from "./notify/insta
 import { currentPlatform, suggestDeviceName } from "./notify/platform";
 import type { OpenMessage } from "./notify/swHandlers";
 import type { StorageController } from "./notify/types";
+import { createWebScanner } from "./pairing/web-scanner";
 import { createBrowserNotifier } from "./notify/web";
 import { createSyncEngine, createWebHttp } from "./sync";
 import { App, browserHistory, type Services, type UpdateState } from "./ui";
@@ -100,6 +101,8 @@ async function boot() {
     deviceZone,
     newId: () => crypto.randomUUID(),
     defaultDeviceName: () => suggestDeviceName(currentPlatform()),
+    // v4: in-app QR scanning; no ServerSelector – the PWA only talks to its own origin (D-98)
+    scanner: createWebScanner(),
   };
   root.render(
     <StrictMode>

@@ -9,5 +9,8 @@ describe("login error texts", () => {
     expect(errorText(new SyncError("account_mismatch", "x"))).toMatch(/anderes Konto/);
     expect(errorText(new SyncError("network", "x"))).toMatch(/nicht erreichbar/);
     expect(errorText(new SyncError("http", "x", 500))).toMatch(/unerwartet/);
+    expect(errorText(new SyncError("pairing_invalid", "x", 400))).toMatch(/ungültig, abgelaufen/);
+    expect(errorText(new SyncError("device_limit", "x", 409))).toMatch(/Zu viele Geräte/);
+    expect(errorText(new SyncError("account_disabled", "x", 403))).toBe("Das Konto ist gesperrt.");
   });
 });

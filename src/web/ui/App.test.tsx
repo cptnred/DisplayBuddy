@@ -14,9 +14,10 @@ describe("login", () => {
       account: null,
       storage: { persist, persisted: async () => true, estimate: async () => null },
     });
-    await screen.findByRole("form", { name: "Anmelden" });
+    await screen.findByRole("region", { name: "Anmelden" });
     expect(history.path()).toBe("/login");
     const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Mit Passwort anmelden" }));
     await user.type(screen.getByLabelText("Benutzername"), "anna");
     await user.type(screen.getByLabelText("Passwort"), "zu-kurz");
     await user.click(screen.getByRole("button", { name: "Anmelden" }));
