@@ -316,6 +316,29 @@ fn edit_on_one_pc_reaches_the_other() {
     assert!(pc2.core.meta().last_sync_at.is_some());
 }
 
+#[test]
+fn a_remote_note_that_cannot_be_written_is_pulled_again() {
+    let srv = server();
+    let pc1 = TestLocal::new("pc1");
+    let pc2 = TestLocal::new("pc2");
+    pc1.edit(A, "Einkauf", "2026-11-06T10:00:00.000Z");
+    pc1.run(&srv).unwrap();
+
+    // e.g. a virus scanner holds the file: the rename onto `<id>.json` fails
+    let blocked = lock(&pc2.storage)
+        .root()
+        .join("notes")
+        .join(format!("{A}.json"));
+    std::fs::create_dir_all(&blocked).unwrap();
+    std::fs::write(blocked.join("x"), "x").unwrap();
+    assert!(matches!(pc2.run(&srv), Err(SyncError::Local(_))));
+    assert_eq!(pc2.core.meta().cursor, 0, "cursor kept for the retry");
+
+    std::fs::remove_dir_all(&blocked).unwrap();
+    pc2.run(&srv).unwrap();
+    assert_eq!(pc2.title(A).as_deref(), Some("Einkauf"));
+}
+
 /// §13 16a/16b: the newer edit wins, regardless of who arrives last.
 #[test]
 fn offline_edits_newest_wins_in_both_orders() {

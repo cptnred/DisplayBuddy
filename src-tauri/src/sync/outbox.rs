@@ -88,13 +88,6 @@ impl Outbox {
         });
     }
 
-    pub fn is_pending(&self, kind: Kind, id: &str) -> bool {
-        match kind {
-            Kind::Note => self.notes.contains_key(id),
-            Kind::Reminder => self.reminders.contains_key(id),
-        }
-    }
-
     /// Removes the entry if it still has revision `rev` (not edited since the push).
     /// Returns whether it was removed.
     pub fn ack(&mut self, kind: Kind, id: &str, rev: u64) -> bool {
@@ -142,8 +135,8 @@ mod tests {
             o.notes["a"].deleted_at.as_deref(),
             Some("2026-11-06T10:00:00.000Z")
         );
-        assert!(o.is_pending(Kind::Note, "a") && o.is_pending(Kind::Reminder, "a"));
-        assert!(!o.is_pending(Kind::Note, "b"));
+        assert!(o.notes.contains_key("a") && o.reminders.contains_key("a"));
+        assert!(!o.notes.contains_key("b"));
     }
 
     #[test]
@@ -153,7 +146,7 @@ mod tests {
         let pushed = o.notes["a"].rev;
         o.changed(Kind::Note, "a"); // edited again while the push was in flight
         assert!(!o.ack(Kind::Note, "a", pushed));
-        assert!(o.is_pending(Kind::Note, "a"));
+        assert!(o.notes.contains_key("a"));
         let rev = o.notes["a"].rev;
         assert!(o.ack(Kind::Note, "a", rev));
         assert!(o.is_empty());

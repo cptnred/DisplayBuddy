@@ -270,17 +270,13 @@ impl<L: LocalData> Engine<'_, L> {
     /// A pushed record lost against a newer server version: take the server version
     /// over, unless the user changed the document again meanwhile.
     fn take_stale(&self, res: &buddy_core::sync::PushResult, rev: u64) -> Result<(), SyncError> {
-        let still = |kind: Kind| {
-            self.core
-                .pending(kind, &res.id)
-                .is_some_and(|p| p.rev == rev)
-        };
+        // check and drop in one step: an edit saved meanwhile (new rev) keeps its entry
+        let take = |kind: Kind| self.core.outbox_update(|o| o.ack(kind, &res.id, rev));
         match res.kind {
             RecordKind::Note => {
                 if let Some(remote) = &res.note
-                    && still(Kind::Note)
+                    && take(Kind::Note)
                 {
-                    self.core.drop_pending(Kind::Note, &res.id);
                     let page = SyncChanges {
                         cursor: 0,
                         has_more: false,
@@ -294,26 +290,25 @@ impl<L: LocalData> Engine<'_, L> {
             }
             RecordKind::Reminder => {
                 if let Some(remote) = &res.reminder
-                    && still(Kind::Reminder)
+                    && take(Kind::Reminder)
                 {
-                    self.core.drop_pending(Kind::Reminder, &res.id);
                     self.merge_reminders(std::slice::from_ref(remote))?;
                 }
             }
             RecordKind::Order => {
-                if self.core.pending_order().is_some_and(|p| p.rev == rev) {
-                    self.core.outbox_update(|o| o.ack_order(rev));
-                    if let Some(remote) = &res.order {
-                        let page = SyncChanges {
-                            cursor: 0,
-                            has_more: false,
-                            notes: vec![],
-                            reminders: vec![],
-                            order: Some(remote.clone()),
-                            server_time: String::new(),
-                        };
-                        self.merge_notes(&page)?;
-                    }
+                // the ack runs first, so it also happens when the answer carries no order
+                if self.core.outbox_update(|o| o.ack_order(rev))
+                    && let Some(remote) = &res.order
+                {
+                    let page = SyncChanges {
+                        cursor: 0,
+                        has_more: false,
+                        notes: vec![],
+                        reminders: vec![],
+                        order: Some(remote.clone()),
+                        server_time: String::new(),
+                    };
+                    self.merge_notes(&page)?;
                 }
             }
         }
@@ -366,10 +361,11 @@ impl<L: LocalData> Engine<'_, L> {
         }
         let device = self.device_id()?;
         let now = format_utc(&self.local.now());
-        let payload = self
+        let (payload, failed) = self
             .local
             .with_storage(|s| {
                 let mut payload = NotesChangedPayload::default();
+                let mut failed = 0usize;
                 for remote in &page.notes {
                     let pending: Option<Pending> = self.core.pending(Kind::Note, &remote.id);
                     let local = match load_opt(s, &remote.id) {
@@ -397,7 +393,13 @@ impl<L: LocalData> Engine<'_, L> {
                                 self.core.drop_pending(Kind::Note, &remote.id);
                             }
                         }
-                        Err(e) => log::warn!("could not apply remote note {}: {e}", remote.id),
+                        Err(e) => {
+                            log::warn!("could not apply remote note {}: {e}", remote.id);
+                            // a newer-version file is refused forever; retrying would block the sync
+                            if !matches!(e, StorageError::NewerVersion(_)) {
+                                failed += 1;
+                            }
+                        }
                     }
                 }
                 if let Some(remote) = &page.order {
@@ -418,15 +420,24 @@ impl<L: LocalData> Engine<'_, L> {
                                     .unwrap_or_default();
                                 payload.order = Some(ids);
                             }
-                            Err(e) => log::warn!("could not apply remote order: {e}"),
+                            Err(e) => {
+                                log::warn!("could not apply remote order: {e}");
+                                failed += 1;
+                            }
                         }
                     }
                 }
-                payload
+                (payload, failed)
             })
             .map_err(SyncError::Local)?;
         if !payload.notes.is_empty() || !payload.deleted_ids.is_empty() || payload.order.is_some() {
             self.local.notes_changed(&payload);
+        }
+        if failed > 0 {
+            // keep the cursor: the page is pulled again next cycle (applied records are echoes)
+            return Err(SyncError::Local(format!(
+                "{failed} remote change(s) not written"
+            )));
         }
         Ok(())
     }

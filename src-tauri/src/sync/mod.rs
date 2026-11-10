@@ -62,11 +62,6 @@ pub const PERIOD: Duration = Duration::from_secs(60);
 pub const LOGOUT_TIMEOUT: Duration = Duration::from_secs(5);
 pub const DEVICE_NAME_MAX: usize = 64;
 
-/// Corrected device time (§8: `sync::corrected_now()` for `reminders`).
-pub fn corrected_now() -> DateTime<Utc> {
-    crate::clock::corrected_now()
-}
-
 // ---- start gate: the reminder scheduler waits for the start-up pull ----------
 
 static START_GATE: LazyLock<(Mutex<bool>, Condvar)> =
@@ -180,7 +175,7 @@ impl LocalData for AppLocal<'_> {
         crate::reminders::alert(self.app, note_id);
     }
     fn now(&self) -> DateTime<Utc> {
-        corrected_now()
+        crate::clock::corrected_now()
     }
     fn set_clock_offset(&self, offset_ms: i64) {
         crate::clock::set_offset_ms(offset_ms);
@@ -287,7 +282,7 @@ fn record(app: &AppHandle, f: impl FnOnce(&mut outbox::Outbox, &str)) {
     if !m.enabled.load(Ordering::SeqCst) {
         return; // sync off: behaviour of 0.2.0 (the first connect unites everything)
     }
-    let now = buddy_core::zoned::format_utc(&corrected_now());
+    let now = buddy_core::zoned::format_utc(&crate::clock::corrected_now());
     m.core.outbox_update(|o| f(o, &now));
     m.wake_change();
 }
@@ -478,16 +473,26 @@ pub async fn connect(
             meta.clock_offsets.offset_ms()
         });
         crate::clock::set_offset_ms(offset);
-        // first connect: unite local data with the server (by id, LWW per id)
-        enqueue_all(&AppLocal { app: &app }, &m.core)?;
-        let (_, new) = crate::state::update_settings(&app, |s| {
-            let mut s = s.clone();
-            s.sync_enabled = true;
-            s.sync_server_url = server.clone();
-            s.sync_device_name = device_name.clone();
-            Ok(s)
-        })?;
+        // Record local saves from now on, so none falls between the snapshot below and
+        // the switch (a double outbox entry is harmless).
         m.enabled.store(true, Ordering::SeqCst);
+        // first connect: unite local data with the server (by id, LWW per id)
+        let united = enqueue_all(&AppLocal { app: &app }, &m.core).and_then(|()| {
+            crate::state::update_settings(&app, |s| {
+                let mut s = s.clone();
+                s.sync_enabled = true;
+                s.sync_server_url = server.clone();
+                s.sync_device_name = device_name.clone();
+                Ok(s)
+            })
+        });
+        let new = match united {
+            Ok((_, new)) => new,
+            Err(e) => {
+                m.enabled.store(false, Ordering::SeqCst);
+                return Err(e);
+            }
+        };
         *lock(&m.run_state) = (SyncState::Idle, None);
         crate::state::emit_settings_changed(&app, &new);
         m.wake_now();

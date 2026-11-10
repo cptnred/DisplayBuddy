@@ -25,11 +25,6 @@ pub fn corrected_now() -> DateTime<Utc> {
     buddy_core::clock::corrected_now(Utc::now(), offset_ms())
 }
 
-/// [`corrected_now`] in the wire format `YYYY-MM-DDTHH:MM:SS.sssZ`.
-pub fn corrected_now_string() -> String {
-    buddy_core::zoned::format_utc(&corrected_now())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -43,6 +38,5 @@ mod tests {
         set_offset_ms(0);
         let diff = (b - a).num_milliseconds();
         assert!((3_599_000..3_601_000).contains(&diff), "{diff}");
-        assert!(corrected_now_string().ends_with('Z'));
     }
 }
