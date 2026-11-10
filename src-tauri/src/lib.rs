@@ -106,6 +106,12 @@ fn setup_inner(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     if settings.global_shortcut {
         shortcut::apply(app, true);
     }
+    // While Tauri created the notes webview (before this setup), WebView2 pumped messages
+    // and the buddy page may already have asked for settings/reminders/skins and got
+    // defaults or "not ready". Send the real state once now.
+    state::emit_settings_changed(app, &state::current_settings(app));
+    reminders::announce(app);
+    skins::announce(app);
     Ok(())
 }
 

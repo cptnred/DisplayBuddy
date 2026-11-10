@@ -86,6 +86,11 @@ npm run tauri build -- --target x86_64-pc-windows-gnu --no-bundle --features con
 - **Wine** taugt nur bis „tauri app built“ in `diagnostics.log` (kein WebView2) – reicht, um Panics in
   Plugin-Initialisierung auszuschließen.
 
+**Unter Windows (Rechner des Benutzers):** Frontend, `src-tauri` und `crates/buddy-core` laufen direkt. Der Server
+(`server/`) baut unter Windows nicht (OpenSSL über `web-push` → `ece`): Tests und clippy in WSL (Ubuntu) mit
+`CARGO_TARGET_DIR=~/buddy-target`. Einrichtung und Befehle: `README.md` → „Testen unter Windows". Android-Emulator
+nur in GitHub Actions (`mobile-android.yml`). `ShortcutBar.test.tsx` ist unter Last gelegentlich wackelig.
+
 ## 5. Wichtige Lektionen (nicht wiederholen!)
 
 1. **Startabsturz unter Windows (behoben in 0.1.2):** Tauri erzeugt die Fenster aus `tauri.conf.json`
@@ -93,6 +98,9 @@ npm run tauri build -- --target x86_64-pc-windows-gnu --no-bundle --features con
    einem Event-Handler panikte → wegen `panic = "abort"` und ohne Konsole verschwand der Prozess spurlos.
    **Regel:** außerhalb von `state.rs` nie `.state::<`/`.state()`; immer `state::try_app_state()` bzw.
    `app.try_state()` (Vertragstest erzwingt das). Eigene Modul-States mit `app.manage` in `init` + `try_state`.
+   Auch **IPC-Aufrufe** können vor `setup` ankommen: WebView2 pumpt beim Erzeugen des Notizfensters Nachrichten
+   (`webview2-com::wait_with_pump`), das Buddy-Fenster lädt in der Zeit schon und ruft `load_settings` auf
+   (→ Standardwerte). Deshalb sendet `setup` am Ende einmal `settings-changed`, `reminders-changed`, `skins-changed`.
 2. Release-Builds zeigen Startfehler jetzt als MessageBox und schreiben
    `%LOCALAPPDATA%\de.displaybuddy.desktop\diagnostics.log`. Bei „startet nicht“: Diagnose-EXE schicken.
 3. **CSP ist streng** (`script-src 'self'`, kein eval, `style-src 'unsafe-inline'` wegen TipTap-Styles,

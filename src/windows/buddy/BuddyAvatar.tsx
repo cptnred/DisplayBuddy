@@ -8,7 +8,7 @@ import { clampSpeed } from "./motion";
 import { Robot } from "./Robot";
 import { isBuiltinSkin } from "./skins";
 import { SkinFrame, type SkinProps } from "./SkinFrame";
-import { useSkinData, type SkinLoader } from "./skinStore";
+import { useSkinData, type SkinLoader, type SkinLoadState } from "./skinStore";
 import { Smiley } from "./Smiley";
 
 const BUILTIN: Record<BuiltinSkin, ComponentType<SkinProps>> = {
@@ -39,8 +39,9 @@ function warnFallback(id: string, err: unknown) {
 
 function CustomSkin({ id, loadSkin, ...props }: SkinProps & { id: string; loadSkin?: SkinLoader }) {
   const state = useSkinData(id, loadSkin);
-  const [renderFailed, setRenderFailed] = useState(false);
-  const failed = state.status === "error" || renderFailed;
+  // The load result that failed to render; a fresh load (after `skins-changed`) gets a new chance.
+  const [failedLoad, setFailedLoad] = useState<SkinLoadState | null>(null);
+  const failed = state.status === "error" || failedLoad === state;
 
   useEffect(() => {
     if (state.status === "error") warnFallback(id, state.error);
@@ -56,7 +57,7 @@ function CustomSkin({ id, loadSkin, ...props }: SkinProps & { id: string; loadSk
       data={state.data}
       onFail={(err) => {
         warnFallback(id, err);
-        setRenderFailed(true);
+        setFailedLoad(state);
       }}
       {...props}
     />

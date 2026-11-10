@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_BUDDY, type BuddyConfig, type SkinData, type SkinInfo } from "../../types";
 
@@ -126,6 +126,25 @@ describe("BuddyAvatar", () => {
     await act(async () => skinsListener!([]));
     expect(api.loadSkin).toHaveBeenCalledTimes(2);
     expect(await screen.findByTestId("smiley")).toBeInTheDocument();
+  });
+
+  it("retries a skin that failed at start-up on skins-changed", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.loadSkin).mockRejectedValueOnce(new Error("skins not ready"));
+    render(<BuddyAvatar config={cfg({ skin: IMG_ID })} />);
+    expect(await screen.findByTestId("smiley")).toBeInTheDocument();
+    await act(async () => skinsListener!([info(IMG_ID, "image")]));
+    expect(await screen.findByTestId("skin-image")).toBeInTheDocument();
+  });
+
+  it("an image that failed to decode is tried again on skins-changed", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    render(<BuddyAvatar config={cfg({ skin: IMG_ID })} />);
+    const img = (await screen.findByTestId("skin-image")).querySelector("img")!;
+    fireEvent.error(img);
+    expect(await screen.findByTestId("smiley")).toBeInTheDocument();
+    await act(async () => skinsListener!([info(IMG_ID, "image")]));
+    expect(await screen.findByTestId("skin-image")).toBeInTheDocument();
   });
 
   it("uses an injected loader", async () => {

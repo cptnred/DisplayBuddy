@@ -46,6 +46,14 @@ fn emit_changed(app: &AppHandle, skins: &[SkinInfo]) {
     }
 }
 
+/// Broadcasts the current list (end of `setup`: lets windows retry a failed early load).
+pub fn announce(app: &AppHandle) {
+    match list(app) {
+        Ok(all) => emit_changed(app, &all),
+        Err(e) => log::warn!("could not list skins: {e}"),
+    }
+}
+
 pub fn list(app: &AppHandle) -> Result<Vec<SkinInfo>, String> {
     with_store(app, SkinStore::list)
 }

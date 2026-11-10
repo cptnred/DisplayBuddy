@@ -21,7 +21,8 @@ pub fn delete_skin(app: AppHandle, id: String) -> Result<(), String> {
     skins::delete(&app, &id)
 }
 
-#[tauri::command]
+/// Async: reads and base64-encodes up to 5 MB, which must not block the event loop.
+#[tauri::command(async)]
 pub fn load_skin(app: AppHandle, id: String) -> Result<SkinData, String> {
     skins::load(&app, &id)
 }
