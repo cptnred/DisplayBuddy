@@ -68,19 +68,6 @@ export function nextColor(current: NoteColor | undefined): NoteColor {
   return COLOR_ORDER[(COLOR_ORDER.indexOf(current) + 1) % COLOR_ORDER.length];
 }
 
-function newId(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  // RFC 4122 v4 fallback (only for very old engines; WebView2 has randomUUID).
-  const b = new Uint8Array(16);
-  crypto.getRandomValues(b);
-  b[6] = (b[6] & 0x0f) | 0x40;
-  b[8] = (b[8] & 0x3f) | 0x80;
-  const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
-}
-
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export interface NotesController {
@@ -127,7 +114,10 @@ export function createNotesController(): NotesController {
   };
   const listeners = new Set<() => void>();
   const failing = new Set<string>();
+  /** Notes being deleted (until `delete_note` finished): no saves, no remote copies. */
   const deleted = new Set<string>();
+  /** `notes-changed` payloads that arrived while the initial list was loading. */
+  const remoteDuringLoad: NotesChangedPayload[] = [];
   let createQueued = false;
   /** Bumped by every reminders update so a late initial list never overwrites newer data. */
   let remindersVersion = 0;
@@ -185,7 +175,11 @@ export function createNotesController(): NotesController {
    * takes the remote version. The editor of the active note reloads via `remoteRevision`.
    */
   const applyRemote = (p: NotesChangedPayload) => {
-    if (state.status !== "ready") return; // the initial list is loaded after this anyway
+    // The initial list may have been read before this merge: replay after the load.
+    if (state.status !== "ready") {
+      remoteDuringLoad.push(p);
+      return;
+    }
     const activeId = state.notes[state.activeIndex]?.id;
     let notes = state.notes.slice();
     const remoteRevision = { ...state.remoteRevision };
@@ -311,6 +305,7 @@ export function createNotesController(): NotesController {
       console.error("[notes] load failed", error);
       set({ status: "ready", loadError: "Notizen konnten nicht geladen werden" });
     }
+    remoteDuringLoad.splice(0).forEach(applyRemote);
     if (createQueued) {
       createQueued = false;
       await ctrl.createNote();
@@ -374,7 +369,7 @@ export function createNotesController(): NotesController {
       const current = activeNote();
       const now = clock.correctedNowIso();
       const note: Note = {
-        id: newId(),
+        id: crypto.randomUUID(),
         title: "",
         color: nextColor(current?.color),
         content: emptyDoc(),
@@ -407,6 +402,8 @@ export function createNotesController(): NotesController {
       } catch (error) {
         reportActionError("Notiz konnte nicht gelöscht werden", error);
       }
+      // a newer edit from another device may bring the note back (LWW), so stop ignoring it
+      deleted.delete(note.id);
       await persistOrder();
       persistActiveId();
     },

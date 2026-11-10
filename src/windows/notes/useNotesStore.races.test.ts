@@ -223,11 +223,24 @@ describe("v3 sync: notes-changed and corrected clock", () => {
     expect(active(ctrl)).toBe(C);
   });
 
-  test("notes-changed before the initial load is ignored (the load brings the data)", async () => {
+  test("notes-changed during the initial load is replayed afterwards (the list may be older)", async () => {
     const ctrl = createNotesController();
     ctrl.connect();
-    remote([mk(id("e"), "e")]);
+    const E = id("e");
+    remote([{ ...mk(A, "remote a"), title: "A!" }, mk(E, "e")]);
     await ctrl.load();
-    expect(ids(ctrl)).toEqual([A, B, C]);
+    expect(ids(ctrl)).toEqual([A, B, C, E]);
+    expect(ctrl.getState().notes[0].title).toBe("A!");
+  });
+
+  test("a note deleted here comes back when another device edited it later", async () => {
+    const { ctrl } = await connected();
+    ctrl.select(1); // B active
+    h.api.deleteNote.mockResolvedValue(undefined);
+    h.api.saveOrder.mockResolvedValue(undefined);
+    await ctrl.deleteActive();
+    expect(ids(ctrl)).toEqual([A, C]);
+    remote([{ ...mk(B, "edited elsewhere"), updatedAt: "2026-11-06T12:00:00.000Z" }]);
+    expect(ids(ctrl)).toEqual([A, C, B]);
   });
 });
