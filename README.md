@@ -125,6 +125,41 @@ rustup target add x86_64-pc-windows-gnu
 npm run tauri build -- --target x86_64-pc-windows-gnu
 ```
 
+### Testen unter Windows
+
+Was wo läuft:
+
+| Teil | Wo | Befehl |
+|---|---|---|
+| Frontend (Desktop, Web-App, Handy-Oberfläche) | Windows | `npm test` · Typprüfung: `npm run build` |
+| Desktop-Rust (`src-tauri`) | Windows | `cd src-tauri && cargo test` · `cargo clippy --all-targets -- -D warnings` |
+| Gemeinsame Logik (`crates/buddy-core`) | Windows | `cd crates/buddy-core && cargo test` |
+| Sync-Server (`server`) | **WSL** (braucht OpenSSL, das unter Windows fehlt) | siehe unten |
+| Android (Emulator, Szenarien 28/29 + Hintergrund-Sync) | **nur GitHub Actions** (`.github/workflows/mobile-android.yml`, Job `emulator`) | läuft nach einem Push |
+
+Der Server hängt über `web-push` → `ece` an OpenSSL (`openssl-sys`). Unter Windows bricht deshalb schon der Build ab.
+Einmalig in WSL (Ubuntu) einrichten:
+
+```bash
+wsl sudo apt-get update && wsl sudo apt-get install -y build-essential pkg-config libssl-dev
+wsl -e bash -lc 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal && ~/.cargo/bin/rustup component add clippy'
+```
+
+Server-Tests und Lint (aus Windows heraus). Der Build liegt in `~/buddy-target` innerhalb von WSL: schneller als auf
+`/mnt/c` und kein zweiter `target`-Ordner im Projekt:
+
+```bash
+wsl -e bash -lc 'cd /mnt/c/Users/<name>/Projekte/DisplayBuddy/server && CARGO_TARGET_DIR=~/buddy-target ~/.cargo/bin/cargo test'
+wsl -e bash -lc 'cd /mnt/c/Users/<name>/Projekte/DisplayBuddy/server && CARGO_TARGET_DIR=~/buddy-target ~/.cargo/bin/cargo clippy --all-targets -- -D warnings'
+```
+
+Hinweise:
+- `src/windows/notes/shortcuts/ShortcutBar.test.tsx` schlägt unter hoher Last gelegentlich fehl (Zeitüberschreitung
+  beim simulierten Tippen). Ein zweiter Lauf ist dann grün; ein Fehler, der wiederkommt, ist echt.
+- Das Emulator-Szenario „Hintergrund-Sync" wartet auf den echten 3-Minuten-Tick und dauert deshalb etwa 5 Minuten.
+- Unter Linux läuft alles direkt (dort ist OpenSSL vorhanden); `npm run e2e` braucht Chromium und einen
+  Server-Release-Build.
+
 Wichtige Dokumente:
 - `docs/PLAN.md`: Schnittstellen (Typen, Rust-Commands, Events, Fenster)
 - `docs/DECISIONS.md`: technische Entscheidungen

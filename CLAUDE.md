@@ -16,6 +16,10 @@ Ziel: Windows 10/11 x64 (WebView2), Installer: NSIS.
 - `npm run build` – Typecheck + Vite-Build
 - `cd src-tauri && cargo test` – Rust-Tests
 - `cd src-tauri && cargo clippy --all-targets -- -D warnings`
+- `cd crates/buddy-core && cargo test` – gemeinsame Logik
+- Server (`server/`) braucht OpenSSL → unter Windows in WSL:
+  `wsl -e bash -lc 'cd /mnt/c/.../DisplayBuddy/server && CARGO_TARGET_DIR=~/buddy-target ~/.cargo/bin/cargo test'`
+  (Einrichtung: README „Testen unter Windows"). Android-Emulator nur in GitHub Actions (`mobile-android.yml`).
 - `npm run tauri build` – NSIS-Installer (unter Windows)
 - Cross-Build von Linux (MinGW, siehe D-17): `npm run tauri build -- --target x86_64-pc-windows-gnu`
 - Diagnose-EXE mit Konsole: `... --target x86_64-pc-windows-gnu --no-bundle --features console`
