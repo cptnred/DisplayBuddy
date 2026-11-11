@@ -159,7 +159,8 @@ describe("BuddyAvatar", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     render(<BuddyAvatar config={cfg({ skin: "dddddddd-dddd-4ddd-8ddd-dddddddddddd" })} />);
     expect(await screen.findByTestId("smiley")).toBeInTheDocument();
-    expect(warn).toHaveBeenCalled();
+    // the smiley shows while the skin loads; the warning comes when loading fails
+    await waitFor(() => expect(warn).toHaveBeenCalled());
   });
 
   it("falls back to the smiley for invalid Lottie JSON", async () => {

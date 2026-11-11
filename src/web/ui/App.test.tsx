@@ -15,7 +15,8 @@ describe("login", () => {
       storage: { persist, persisted: async () => true, estimate: async () => null },
     });
     await screen.findByRole("region", { name: "Anmelden" });
-    expect(history.path()).toBe("/login");
+    // the page can render before the redirect has updated the history
+    await waitFor(() => expect(history.path()).toBe("/login"));
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Mit Passwort anmelden" }));
     await user.type(screen.getByLabelText("Benutzername"), "anna");
