@@ -4,6 +4,10 @@ Ein kleiner, animierter Smiley, der immer im Vordergrund über allen Fenstern sc
 
 Plattform: **Windows 10/11 (x64)**, gebaut mit Tauri 2, React 18, TypeScript und TipTap 3.
 
+**Neu in 0.4.0 (v4):** Ein Konto legst du direkt in Display Buddy an (Einstellungen → „Konto & Handy“), Standard
+ist der Server **buddy.pev-point.de**; wer selbst hostet, trägt seine Adresse ein. Das Handy meldet sich per
+**QR-Code** an, den der PC zeigt. Dazu: Wiederherstellungscode, Geräteliste, Passwort ändern, Export, Konto löschen.
+
 **Neu in 0.3.0 (v3):** Notizen und Erinnerungen lassen sich über einen eigenen Server (VPS) zwischen PC und Handy
 synchronisieren. Am Handy gibt es eine **installierbare Web-App** (offline nutzbar, Erinnerungen per Web Push) und
 eine **native Android/iOS-App**, die Erinnerungen lokal plant und deshalb auch ohne Internet klingelt. Jede
@@ -44,8 +48,9 @@ Einrichtung: Server `deploy/README.md`, Handy-App `mobile/README.md`.
 - Ein zweiter Start öffnet nur die Notizen der laufenden Instanz
 - Globales Tastenkürzel `Strg+Alt+N` (abschaltbar)
 
-**Synchronisation (v3, optional)**
-- Einstellungen → „Synchronisation“: Server-Adresse, Benutzer, Passwort, Gerätename → „Verbinden“
+**Konto & Handy (optional)**
+- Einstellungen → „Konto & Handy“: „Konto anlegen“ oder „Anmelden“ (Standard-Server oder „Eigenen Server
+  verwenden …“), danach „Handy verbinden“ → QR-Code mit der Handy-Kamera oder in der App scannen
 - Arbeitet offline weiter („Offline – n Änderungen warten“) und gleicht automatisch ab; die neueste Änderung gewinnt
 - Das Geräte-Token liegt in der Windows-Anmeldeinformationsverwaltung, nie in `settings.json`
 - Erinnerungen: Zeitzone wählbar; weicht sie ab, zeigt der PC zusätzlich die Originalzeit („03:00 (09:00 Berlin)“)
@@ -66,7 +71,7 @@ Einrichtung: Server `deploy/README.md`, Handy-App `mobile/README.md`.
 
 ## Installation
 
-1. `Display Buddy_0.3.0_x64-setup.exe` ausführen. Die Installation läuft nur für den aktuellen Benutzer, Administratorrechte sind nicht nötig.
+1. `Display Buddy_0.4.0_x64-setup.exe` ausführen. Die Installation läuft nur für den aktuellen Benutzer, Administratorrechte sind nicht nötig.
 2. Fehlt die WebView2-Laufzeit (unter Windows 11 und aktuellem Windows 10 ist sie vorinstalliert), lädt der Installer sie automatisch nach.
 3. Der Installer ist **nicht signiert**. Windows SmartScreen kann deshalb warnen („Weitere Informationen“ → „Trotzdem ausführen“).
 
@@ -110,6 +115,7 @@ npm run tauri dev
 | `cd server && cargo test` | Sync-Server (Auth, Sync, Web Push, FCM) |
 | `cd crates/buddy-core && cargo test` | gemeinsame Logik (Zeitzonen, LWW, Uhr) gegen die Testvektoren |
 | `npm run e2e` | Ende-zu-Ende: echter Server + Web-App in Chromium (vorher `build:web` und Server-Release-Build) |
+| `npm run e2e:v4` | v4-Abnahme: echter Server in WSL (`cargo build` dort vorher), Konten/Pairing über HTTP, `/pair` in Chromium |
 
 Cross-Build von Linux (so wurde v1 gebaut, siehe `docs/DECISIONS.md` D-17):
 
