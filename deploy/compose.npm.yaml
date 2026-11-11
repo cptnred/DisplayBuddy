@@ -25,8 +25,31 @@ services:
       # Subnetz des Netzes "proxy" (dort liegt NPM), damit die Login-Bremse die echte Client-IP zählt.
       BUDDY_TRUSTED_PROXIES: ${PROXY_SUBNET:-172.18.0.0/16}
       RUST_LOG: ${RUST_LOG:-info,sqlx=warn,tower_http=warn}
-      # Phase N2 (nur Android/FCM, optional): Dienstkonto-JSON ins Daten-Volume legen und aktivieren.
-      # BUDDY_FCM_SERVICE_ACCOUNT_FILE: /data/fcm-service-account.json
+      # Nur Android/FCM, optional (D-105): Dienstkonto-JSON ins Daten-Volume legen und in .env
+      # BUDDY_FCM_SERVICE_ACCOUNT_FILE=/data/fcm-service-account.json setzen. Leer = kein nativer Push.
+      BUDDY_FCM_SERVICE_ACCOUNT_FILE: ${BUDDY_FCM_SERVICE_ACCOUNT_FILE:-}
+      BUDDY_FCM_PAYLOAD: ${BUDDY_FCM_PAYLOAD:-full}
+      # v4-Konten (PLAN_V4 §11.2, server/src/config.rs). Werte in .env ändern, nicht hier.
+      # Standard = Selbst-Hosting: Registrierung zu, keine Kontingente (leer = unbegrenzt).
+      # buddy.pev-point.de setzt in seiner .env (docs/OPERATIONS.md):
+      #   BUDDY_REGISTRATION=open          # erst, wenn Impressum + Datenschutz online sind
+      #   BUDDY_QUOTA_BYTES=52428800
+      #   BUDDY_QUOTA_NOTES=5000
+      #   BUDDY_QUOTA_DEVICES=10
+      #   BUDDY_IMPRINT_URL=https://…      # URLs stehen noch nicht fest (D-112)
+      #   BUDDY_PRIVACY_URL=https://…
+      #   BUDDY_OPERATOR_NAME=pev-point.de
+      #   BUDDY_FCM_PAYLOAD=minimal
+      BUDDY_REGISTRATION: ${BUDDY_REGISTRATION:-closed}
+      BUDDY_REGISTRATION_POW_BITS: ${BUDDY_REGISTRATION_POW_BITS:-22}
+      BUDDY_REGISTRATION_DAILY_LIMIT: ${BUDDY_REGISTRATION_DAILY_LIMIT:-200}
+      BUDDY_QUOTA_BYTES: ${BUDDY_QUOTA_BYTES:-}
+      BUDDY_QUOTA_NOTES: ${BUDDY_QUOTA_NOTES:-}
+      BUDDY_QUOTA_DEVICES: ${BUDDY_QUOTA_DEVICES:-}
+      BUDDY_IMPRINT_URL: ${BUDDY_IMPRINT_URL:-}
+      BUDDY_PRIVACY_URL: ${BUDDY_PRIVACY_URL:-}
+      BUDDY_TERMS_URL: ${BUDDY_TERMS_URL:-}
+      BUDDY_OPERATOR_NAME: ${BUDDY_OPERATOR_NAME:-}
     volumes:
       - buddy-data:/data
     networks:

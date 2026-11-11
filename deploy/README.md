@@ -3,6 +3,14 @@
 Diese Anleitung bringt den Sync-Server von Display Buddy auf einen gemieteten Linux-Server (VPS).
 Danach synchronisieren PC und Handy ihre Notizen und Erinnerungen über **eine** Adresse, z. B.
 `https://buddy.example.org`. Auf dem Handy läuft Display Buddy als Web-App (PWA) mit Benachrichtigungen.
+Ab Version 0.4 kann der Server mehrere Konten haben, und Handys melden sich per QR-Code vom PC an.
+
+> **Eigener Server oder Standard-Server?** Ohne eigenen Server können Sie den Standard-Server des Projekts
+> (`buddy.pev-point.de`) nutzen – dann brauchen Sie diese Anleitung nicht ([Abschnitt 10](#10-pc-verbinden)).
+> Ein eigener Server lohnt sich, wenn Ihre Notizen nur auf Ihrem Server liegen sollen.
+>
+> **Sie betreiben schon einen Server mit Version 0.3?** Dann direkt zu
+> [Upgrade auf 0.4](#131-upgrade-von-version-03-v3-auf-04-v4).
 
 Sie brauchen dafür keine Programmierkenntnisse. Jeder graue Block ist ein Befehl, den Sie komplett kopieren und
 im Terminal einfügen können. Ersetzen Sie nur die Beispielwerte (`buddy.example.org`, `martin`, …).
@@ -25,7 +33,7 @@ der Push-Schlüssel `vapid.pem`).
 | Wann? | Auf dem Server läuft noch nichts auf Port 80/443 | Port 80/443 ist schon belegt (Nginx Proxy Manager, Traefik, Caddy …) |
 | HTTPS/Zertifikat | mitgelieferter Caddy, automatisch | Ihr vorhandener Proxy |
 | Compose-Datei | `compose.yaml` (Standard) | `compose.npm.yaml` (in `.env` eingetragen) |
-| Schritte | 1 – 15 | 2, 3 (falls Docker fehlt), 5 – 15; statt Schritt 4 und 7 → [Variante B](#variante-b-hinter-nginx-proxy-manager) |
+| Schritte | 1 – 16 | 2, 3 (falls Docker fehlt), 5 – 16; statt Schritt 4 und 7 → [Variante B](#variante-b-hinter-nginx-proxy-manager) |
 
 Prüfen, ob Port 80/443 belegt ist:
 
@@ -48,13 +56,15 @@ beiden Varianten identisch.
 6. [Push-Schlüssel erzeugen (`vapid generate`)](#6-push-schlüssel-erzeugen)
 7. [Starten](#7-starten) · [Variante B: hinter Nginx Proxy Manager](#variante-b-hinter-nginx-proxy-manager)
 8. [Benutzer anlegen](#8-benutzer-anlegen)
-9. [Handy einrichten](#9-handy-einrichten)
-10. [PC verbinden](#10-pc-verbinden)
-11. [Backups](#11-backups)
-12. [Updates](#12-updates)
-13. [Fehlersuche](#13-fehlersuche)
-14. [Ausgehende Verbindungen des Servers](#14-ausgehende-verbindungen-des-servers)
-15. [Weitere Verwaltungsbefehle](#15-weitere-verwaltungsbefehle)
+9. [Konten verwalten](#9-konten-verwalten): Registrierung, Einladungscodes, Kontingente, Impressum/Datenschutz,
+   Admin-Befehle, Passwort vergessen
+10. [PC verbinden](#10-pc-verbinden) (Standard-Server oder eigener Server)
+11. [Handy einrichten](#11-handy-einrichten) (QR-Code, Passwort als Alternative)
+12. [Backups](#12-backups)
+13. [Updates](#13-updates) · [Upgrade 0.3 → 0.4](#131-upgrade-von-version-03-v3-auf-04-v4)
+14. [Fehlersuche](#14-fehlersuche)
+15. [Ausgehende Verbindungen des Servers](#15-ausgehende-verbindungen-des-servers)
+16. [Weitere Verwaltungsbefehle](#16-weitere-verwaltungsbefehle)
 
 ---
 
@@ -160,7 +170,7 @@ sudo ufw status
 > offen sein. buddy-server veröffentlicht keinen Port.
 
 Hat Ihr Anbieter zusätzlich eine Firewall im Kundenmenü, öffnen Sie dort dieselben Ports (22/tcp, 80/tcp,
-443/tcp, 443/udp). **Ausgehende** Verbindungen müssen erlaubt bleiben (siehe [Abschnitt 14](#14-ausgehende-verbindungen-des-servers)).
+443/tcp, 443/udp). **Ausgehende** Verbindungen müssen erlaubt bleiben (siehe [Abschnitt 15](#15-ausgehende-verbindungen-des-servers)).
 
 ## 5. Display Buddy herunterladen und `.env` ausfüllen
 
@@ -209,6 +219,10 @@ PROXY_SUBNET=172.18.0.0/16
 - `ACME_EMAIL`: dorthin schickt Let's Encrypt Warnungen, falls ein Zertifikat abläuft.
 - `BUDDY_VAPID_SUBJECT`: Kontaktadresse für die Push-Dienste von Google/Apple/Mozilla, mit `mailto:` davor.
 
+Die Einstellungen für Konten (Registrierung, Kontingente, Rechtslinks; ab Version 0.4) stehen auskommentiert
+am Ende der Datei. Für den Anfang brauchen Sie keine davon – ohne Eintrag ist die Registrierung aus und es gibt
+keine Kontingente ([Abschnitt 9](#9-konten-verwalten)).
+
 Speichern: `Strg+O`, `Enter`, beenden: `Strg+X`. Die Datei `.env` enthält nur Einstellungen, keine Passwörter;
 sie wird trotzdem nicht ins Git-Repository übernommen.
 
@@ -233,7 +247,7 @@ docker compose run --rm buddy buddy-server vapid generate
 Am Ende erscheint der öffentliche Schlüssel (eine lange Zeichenkette). Sie müssen ihn nirgends eintragen – die App
 holt ihn sich selbst.
 
-> **Den Schlüssel unbedingt mitsichern** (siehe [Backups](#11-backups)). Geht er verloren, müssen auf allen
+> **Den Schlüssel unbedingt mitsichern** (siehe [Backups](#12-backups)). Geht er verloren, müssen auf allen
 > Handys die Benachrichtigungen neu aktiviert werden.
 >
 > Ein zweiter Aufruf überschreibt den Schlüssel **nicht** (er bricht mit einer Meldung ab). Nur mit `--force`
@@ -258,7 +272,7 @@ Beide Dienste müssen `running` bzw. `healthy` zeigen. Test von außen (auch im 
 curl -fsS https://buddy.example.org/api/v1/health
 ```
 
-Antwort: `{"ok":true,"serverTime":"…"}`. Wenn nicht: [Fehlersuche](#13-fehlersuche).
+Antwort: `{"ok":true,"serverTime":"…"}`. Wenn nicht: [Fehlersuche](#14-fehlersuche).
 
 Die Dienste starten nach einem Neustart des VPS automatisch wieder (`restart: unless-stopped`).
 
@@ -308,37 +322,266 @@ docker compose exec -it buddy buddy-server user add martin --time-zone Europe/Be
 ```
 
 Das Passwort wird zweimal abgefragt und beim Tippen **nicht angezeigt**. Es braucht **mindestens 12 Zeichen**.
-Am Ende steht `Benutzer martin angelegt.`
+Am Ende steht `Benutzer martin angelegt. Wiederherstellungscode (nur jetzt sichtbar):` und darunter ein Code aus
+sechs Vierergruppen.
+
+> **Den Wiederherstellungscode aufheben** (Passwort-Manager oder ausgedruckt). Mit ihm setzen Sie am PC ein neues
+> Passwort, falls Sie Ihres vergessen („Passwort vergessen?“). Er wird nur dieses eine Mal angezeigt.
 
 > Ist der Server gerade nicht gestartet, geht dasselbe mit
 > `docker compose run --rm -it buddy buddy-server user add martin --time-zone Europe/Berlin`.
 
-## 9. Handy einrichten
+Weitere Konten für Familie oder Freunde legen Sie genauso an – oder Sie lassen die Personen ihr Konto selbst in der
+Display-Buddy-App am PC anlegen ([Abschnitt 9](#9-konten-verwalten)).
 
-> **Pro Handy entweder die PWA oder die native App** (siehe `mobile/README.md`) – nicht beides. Beide auf
+## 9. Konten verwalten
+
+Ab Version 0.4 kann ein Server **mehrere Konten** haben. Jedes Konto sieht nur seine eigenen Notizen und
+Erinnerungen. Verwaltet wird alles mit Befehlen auf dem Server (es gibt keine Admin-Webseite).
+
+Die Einstellungen stehen in `~/DisplayBuddy/deploy/.env`. Nach jeder Änderung dort:
+
+```sh
+cd ~/DisplayBuddy/deploy
+docker compose up -d
+```
+
+`docker compose up -d` startet `buddy` mit den neuen Werten neu (wenige Sekunden). Ein falscher Wert verhindert den
+Start; `docker compose logs --tail 20 buddy` nennt dann die Variable ([Fehlersuche](#14-fehlersuche)).
+
+### 9.1 Wer darf Konten anlegen?
+
+| `BUDDY_REGISTRATION=` | Bedeutung |
+|---|---|
+| `closed` (Standard) | Niemand kann sich selbst registrieren. Konten legen nur Sie mit `user add` an. |
+| `invite` | Wer einen **Einladungscode** von Ihnen hat, legt sein Konto selbst in der App am PC an. |
+| `open` | Jeder, der die Adresse kennt, kann ein Konto anlegen. |
+
+Registrieren geht nur in der **Display-Buddy-App am PC** (Einstellungen → „Konto & Handy“ → „Konto anlegen“),
+nicht am Handy. Handys kommen danach per QR-Code dazu ([Abschnitt 11](#11-handy-einrichten)).
+
+Beispiel Einladungen einschalten – in `.env` die Zeile ergänzen bzw. das `#` entfernen:
+
+```ini
+BUDDY_REGISTRATION=invite
+```
+
+Dann `docker compose up -d` und prüfen:
+
+```sh
+curl -fsS https://buddy.example.org/api/v1/info
+```
+
+In der Antwort steht `"registration":"invite"`.
+
+> **`open` nur mit Bedacht.** Dann betreiben Sie einen Dienst für fremde Menschen: Sie brauchen in der Regel ein
+> Impressum und eine Datenschutzerklärung ([9.4](#94-impressum-und-datenschutz)) und sollten Kontingente setzen
+> ([9.3](#93-kontingente)). Der Server bremst Massen-Registrierungen ab (eine kleine Rechenaufgabe für den PC,
+> höchstens 3 Konten pro Stunde und 10 pro Tag je IP-Adresse, insgesamt
+> `BUDDY_REGISTRATION_DAILY_LIMIT` = 200 pro Tag) – verhindern kann er sie nicht. Für Familie und Freunde ist
+> `invite` die bessere Wahl.
+
+Feineinstellungen (meist nicht nötig):
+
+| Variable | Standard | Bedeutung |
+|---|---|---|
+| `BUDDY_REGISTRATION_POW_BITS` | `22` | Schwierigkeit der Rechenaufgabe (1–32). Jede Stufe mehr verdoppelt die Rechenzeit am PC (22 ≈ unter einer Sekunde). |
+| `BUDDY_REGISTRATION_DAILY_LIMIT` | `200` | Registrierungen pro Tag insgesamt |
+
+### 9.2 Einladungscodes
+
+Nur sinnvoll mit `BUDDY_REGISTRATION=invite`. Einen Code erzeugen (hier 7 Tage gültig, mit einer Notiz für Sie):
+
+```sh
+cd ~/DisplayBuddy/deploy
+docker compose exec buddy buddy-server invite create --expires 7d --label "für Anna"
+```
+
+Es erscheint `Einladungscode (nur jetzt sichtbar):` und der Code. Geben Sie ihn der Person; sie trägt ihn beim
+„Konto anlegen“ am PC ins Feld **„Einladungscode“** ein. Jeder Code gilt für **ein** Konto.
+
+- Gültigkeit: `--expires 7d` (Tage), `--expires 24h` (Stunden) oder `--expires 30m` (Minuten). Ohne `--expires`
+  läuft der Code nicht ab.
+- Alle Einladungen anzeigen (wer welchen Code benutzt hat):
+
+  ```sh
+  docker compose exec buddy buddy-server invite list
+  ```
+
+  Die erste Spalte `id` ist **nicht** der Code, nur eine Kennung zum Löschen.
+- Eine unbenutzte Einladung zurückziehen (`<id>` aus `invite list`, 12 Zeichen):
+
+  ```sh
+  docker compose exec buddy buddy-server invite revoke <id>
+  ```
+
+### 9.3 Kontingente
+
+Kontingente begrenzen, wie viel ein Konto speichern darf. **Standard: unbegrenzt.** Für alle Konten zugleich in
+`.env`:
+
+```ini
+BUDDY_QUOTA_BYTES=52428800
+BUDDY_QUOTA_NOTES=5000
+BUDDY_QUOTA_DEVICES=10
+```
+
+(52428800 Byte = 50 MB; gezählt werden Notizen, Erinnerungen und die aufbewahrten älteren Fassungen.) Eine Zeile
+weglassen bzw. leer lassen = unbegrenzt.
+
+Einzelne Konten abweichend einstellen und nachsehen:
+
+```sh
+docker compose exec buddy buddy-server user quota anna --bytes 104857600 --devices 20
+docker compose exec buddy buddy-server user show anna
+```
+
+- `--bytes`, `--notes`, `--devices` einzeln oder zusammen; `default` statt einer Zahl setzt das Konto auf den
+  Wert aus `.env` zurück, z. B. `user quota anna --notes default`.
+- `0` heißt wirklich null (nichts erlaubt). Ein Konto ohne Grenze bei gesetztem Server-Standard: eine sehr große
+  Zahl eintragen.
+- `user show` zeigt Verbrauch und Grenze, z. B. `bytes: 1048576 / 104857600`.
+
+Ist das Kontingent voll, bleiben alle Daten erhalten; nur **neue** Inhalte werden nicht mehr hochgeladen. Die App
+sagt „Der Speicher deines Kontos ist voll. …“. Löschen und Kürzen geht immer. Bei zu vielen Geräten meldet die
+Anmeldung „Zu viele Geräte. Bitte zuerst ein altes Gerät abmelden.“
+
+### 9.4 Impressum und Datenschutz
+
+Lassen Sie Fremde Konten anlegen, verlinken die Apps Ihre Rechtsseiten (bei „Konto anlegen“, auf der
+Anmeldeseite und in den Einstellungen). Eintragen in `.env` – nur `https://`-Adressen, sonst startet der Server
+nicht:
+
+```ini
+BUDDY_IMPRINT_URL=https://example.org/impressum
+BUDDY_PRIVACY_URL=https://example.org/datenschutz
+BUDDY_TERMS_URL=https://example.org/nutzungsbedingungen
+BUDDY_OPERATOR_NAME=example.org
+```
+
+`BUDDY_TERMS_URL` (Nutzungsbedingungen) und `BUDDY_OPERATOR_NAME` (Ihr Name bzw. Ihre Domain) sind optional. Was
+in Impressum und Datenschutzerklärung gehört, listet `docs/OPERATIONS.md` (Checkliste, **kein Rechtsrat**).
+
+### 9.5 Admin-Befehle
+
+Alle im Ordner `~/DisplayBuddy/deploy`, jeweils mit `docker compose exec buddy buddy-server` davor
+(z. B. `docker compose exec buddy buddy-server user list`). Befehle, die ein Passwort abfragen, brauchen
+`docker compose exec -it buddy buddy-server` (mit `-it`):
+
+| Zweck | Befehl |
+|---|---|
+| Alle Konten anzeigen (Geräte, Wiederherstellungscode vorhanden, gesperrt) | `user list` |
+| Ein Konto im Detail (Zeitzone, Verbrauch, Kontingente) | `user show anna` |
+| Konto anlegen (mit `-it`, fragt das Passwort ab; gibt einen Wiederherstellungscode aus) | `user add anna --time-zone Europe/Berlin` |
+| Konto sperren – alle Geräte bekommen sofort „Das Konto ist gesperrt.“ | `user disable anna` |
+| Sperre aufheben | `user enable anna` |
+| Konto **mit allen Daten sofort löschen** | `user delete anna --yes` |
+| Kontingente setzen ([9.3](#93-kontingente)) | `user quota anna --bytes 104857600 --notes 10000 --devices 20` |
+| Neuen Wiederherstellungscode ausgeben (der alte gilt dann nicht mehr) | `user recovery anna` |
+| Passwort setzen (mit `-it`); beendet die Web-Anmeldungen | `user passwd anna` |
+| … und zusätzlich alle PCs und Apps abmelden (mit `-it`) | `user passwd anna --revoke-devices` |
+| Einladung erzeugen / anzeigen / zurückziehen ([9.2](#92-einladungscodes)) | `invite create --expires 7d --label "für Anna"` · `invite list` · `invite revoke <id>` |
+| Geräte aller Konten anzeigen / eins abmelden | `device list` · `device revoke <Geräte-ID>` |
+| Hilfe zu einem Befehl | `user --help`, `invite create --help` |
+
+> `user delete` fragt nicht nach – ohne `--yes` bricht es nur mit einem Hinweis ab. Gelöschte Konten stecken noch
+> bis zu 14 Tage in den täglichen Sicherungen; einzelne Konten lassen sich daraus **nicht** zurückholen.
+
+### 9.6 Passwort vergessen
+
+Das können die Nutzer meist selbst:
+
+- **Am PC mit dem Wiederherstellungscode:** Anmelden → „Passwort vergessen?“ → Benutzername, Code, neues
+  Passwort. Danach sind alle anderen Geräte abgemeldet und es gibt einen neuen Code.
+- **Auf einem Gerät, das noch angemeldet ist** (PC oder Handy-App, seit mindestens 24 Stunden): „Passwort ändern“
+  → „Ich kenne mein aktuelles Passwort nicht“.
+
+Geht beides nicht, helfen Sie als Admin – **nur, wenn Sie sicher wissen, wer fragt**:
+
+```sh
+docker compose exec buddy buddy-server user recovery anna
+```
+
+Der neue Code erscheint einmal; die Person setzt damit am PC über „Passwort vergessen?“ selbst ein neues Passwort.
+Alternativ setzen Sie es direkt mit `user passwd anna` (Tabelle oben).
+
+## 10. PC verbinden
+
+In Display Buddy am PC (ab Version 0.4):
+
+1. **Einstellungen** öffnen → Abschnitt **„Konto & Handy“**.
+2. Dort steht **„Server: buddy.pev-point.de“** – das ist der **Standard-Server** des Projekts. Für Ihren eigenen
+   Server auf **„Eigenen Server verwenden …“** klicken und als **Server-Adresse** `https://buddy.example.org`
+   eintragen.
+3. **„Anmelden“** wählen: Benutzername und Passwort aus Schritt 8, **Gerätename** z. B. „Büro-PC“.
+   Wer noch kein Konto hat und Sie die Registrierung erlaubt haben ([9.1](#91-wer-darf-konten-anlegen)), wählt
+   stattdessen **„Konto anlegen“**.
+4. Beim ersten Verbinden werden die Notizen des PCs mit denen auf dem Server zusammengeführt – es geht nichts
+   verloren.
+
+**Standard-Server oder eigener Server?**
+
+| | Standard-Server `buddy.pev-point.de` | Eigener Server (diese Anleitung) |
+|---|---|---|
+| Einrichtung | keine – „Konto anlegen“ in der App | VPS, Docker, diese Anleitung |
+| Wer betreibt ihn / sieht die Daten? | das Display-Buddy-Projekt | nur Sie |
+| Konten | Registrierung, sobald der Betreiber sie öffnet; Kontingente | wie Sie es in [Abschnitt 9](#9-konten-verwalten) einstellen |
+
+**„Standard-Server verwenden“** stellt zurück. Ist der PC gerade mit einem anderen Server verbunden, zuerst
+„Trennen (nur dieser PC)“ – die Notizen bleiben auf dem PC.
+
+> **Display Buddy 0.3 am PC:** Abschnitt heißt dort **„Synchronisation“**; Server-Adresse, Benutzer, Passwort und
+> Gerätename eintragen und **„Verbinden“** klicken. Konto anlegen und „Handy verbinden“ gibt es erst ab 0.4.
+
+Weitere PCs genauso verbinden. Der PC funktioniert auch ohne Server weiter wie bisher und gleicht nach, sobald er
+wieder Verbindung hat.
+
+## 11. Handy einrichten
+
+> **Pro Handy entweder die Web-App (PWA) oder die native App** (siehe `mobile/README.md`) – nicht beides. Beide auf
 > demselben Handy funktionieren zwar, jede Erinnerung käme dann aber doppelt.
 
-### 9.1 Öffnen und anmelden
+Das Handy meldet sich am einfachsten per **QR-Code vom PC** an – kein Abtippen von Adresse, Name und Passwort.
+Dazu muss der PC schon verbunden sein ([Abschnitt 10](#10-pc-verbinden)).
+
+### 11.1 Web-App installieren
 
 1. Auf dem Handy im Browser `https://buddy.example.org` öffnen – unter Android in **Chrome**, auf dem iPhone/iPad
    in **Safari**.
-2. Benutzername und Passwort aus Schritt 8 eingeben, einen Gerätenamen wählen (z. B. „Handy Martin“) und
-   anmelden.
-
-### 9.2 Installieren (Symbol auf dem Startbildschirm)
-
-- **Android (Chrome):** Menü **⋮** → **„App installieren“** (bzw. „Zum Startbildschirm hinzufügen“). Erscheint in
-  der App der Knopf „App installieren“, geht es auch darüber.
-- **iPhone/iPad (Safari):** unten (iPad: oben) auf **Teilen** (Quadrat mit Pfeil) → **„Zum Home-Bildschirm“** →
-  „Hinzufügen“.
-
-Danach Display Buddy **über das neue Symbol** öffnen und gegebenenfalls noch einmal anmelden.
+2. Installieren (Symbol auf dem Startbildschirm):
+   - **Android (Chrome):** Menü **⋮** → **„App installieren“** (bzw. „Zum Startbildschirm hinzufügen“). Erscheint
+     in der App der Knopf „App installieren“, geht es auch darüber.
+   - **iPhone/iPad (Safari):** unten (iPad: oben) auf **Teilen** (Quadrat mit Pfeil) → **„Zum Home-Bildschirm“** →
+     „Hinzufügen“.
+3. Display Buddy ab jetzt **über das neue Symbol** öffnen.
 
 > **iPhone/iPad:** Benachrichtigungen gibt es nur für die installierte App (ab iOS 16.4), nicht im Safari-Tab.
 > Außerdem löscht Safari Daten nicht installierter Web-Apps nach einigen Tagen ohne Nutzung. Bitte also immer
 > installieren.
 
-### 9.3 Benachrichtigungen aktivieren
+### 11.2 Anmelden per QR-Code
+
+1. **Am PC:** Einstellungen → „Konto & Handy“ → **„Handy verbinden“**. Ein QR-Code erscheint, darunter ein Code
+   zum Abtippen (`XXXX-XXXX-XXXX`). Beides gilt **3 Minuten** und nur einmal.
+2. **Am Handy** in der installierten App auf der Anmeldeseite **„QR-Code scannen“** tippen, den Kamera-Zugriff
+   erlauben und den QR-Code am PC scannen.
+   - Kein Kamera-Zugriff oder die Kamera startet nicht: **„Code eingeben“** wählen und den Code vom PC abtippen.
+   - Alternativ mit der **Kamera-App** des Handys scannen: Es öffnet sich die Seite „Dieses Gerät anmelden“ im
+     Browser → **„Hier anmelden“**. Das meldet den Browser an – die installierte App ist dann nicht unbedingt
+     mit angemeldet (auf dem iPhone öffnet die Kamera immer Safari). Deshalb besser in der installierten App
+     scannen oder dort den Code eingeben; die Seite zeigt ihn dafür auch an.
+3. Der PC zeigt **„✓ ‚…‘ ist jetzt angemeldet.“** Waren Sie das nicht, sofort **„Das war ich nicht – abmelden“**
+   klicken.
+
+**Mit Passwort anmelden** geht weiterhin: auf der Anmeldeseite „Mit Passwort anmelden“ → Benutzername, Passwort,
+Gerätename. Das ist auch der Weg, wenn der PC noch Version 0.3 hat.
+
+> **Native Android-App:** Sie ist beim Bauen auf einen Server eingestellt (Standard: buddy.pev-point.de). Für Ihren
+> Server auf der Anmeldeseite bei „Server: … · ändern“ `https://buddy.example.org` eintragen – oder einfach den
+> QR-Code Ihres PCs scannen: Die App fragt dann „Anderer Server“ und zeigt Ihre Adresse; nur bestätigen, wenn es
+> wirklich Ihr Server ist. Details: `mobile/README.md`.
+
+### 11.3 Benachrichtigungen aktivieren
 
 1. In der App **Einstellungen → Benachrichtigungen** öffnen.
 2. Auf **„Benachrichtigungen aktivieren“** tippen und die Rückfrage des Systems mit **„Erlauben“** bestätigen.
@@ -349,24 +592,13 @@ Kommt keine: [Fehlersuche → Keine Benachrichtigung](#keine-benachrichtigung-au
 > Die Web-App benachrichtigt über das Internet. Ist das Handy offline, kommt die Erinnerung, sobald es wieder
 > Netz hat. Wer Erinnerungen auch ganz ohne Netz braucht, nimmt auf diesem Handy die native App.
 
-## 10. PC verbinden
-
-In Display Buddy am PC (ab Version 0.3):
-
-1. **Einstellungen** öffnen → Abschnitt **„Synchronisation“**.
-2. **Server-Adresse:** `https://buddy.example.org`
-3. **Benutzer** und **Passwort** aus Schritt 8, **Gerätename** z. B. „Büro-PC“.
-4. **„Verbinden“** klicken. Beim ersten Verbinden werden die Notizen des PCs mit denen auf dem Server
-   zusammengeführt – es geht nichts verloren.
-
-Weitere PCs genauso verbinden. Der PC funktioniert auch ohne Server weiter wie bisher und gleicht nach, sobald er
-wieder Verbindung hat.
-
-## 11. Backups
+## 12. Backups
 
 **Automatisch auf dem Server:** buddy-server legt einmal am Tag (UTC) eine Kopie der Datenbank unter
 `/data/backups/buddy-JJJJMMTT.db` an und behält die letzten 14. Diese Kopien liegen aber auf demselben Server –
-**holen Sie regelmäßig eine Kopie herunter**, inklusive des Push-Schlüssels `vapid.pem`.
+**holen Sie regelmäßig eine Kopie herunter**, inklusive des Push-Schlüssels `vapid.pem` (und, falls vorhanden,
+`fcm-service-account.json`). Eine automatische, verschlüsselte Sicherung außer Haus mit restic beschreibt
+`docs/OPERATIONS.md`.
 
 ### Sicherung auf dem VPS einsammeln
 
@@ -389,6 +621,9 @@ scp -r root@203.0.113.10:buddy-backup ./buddy-backup
 
 > `vapid.pem` ist ein privater Schlüssel: nicht weitergeben, nicht in Cloud-Ordner ohne Verschlüsselung legen.
 > Geht er verloren, müssen alle Handys „Benachrichtigungen aktivieren“ erneut tippen (bzw. sich neu anmelden).
+>
+> Die Sicherungen enthalten die Notizen **aller** Konten im Klartext. Heben Sie heruntergeladene Kopien nicht
+> länger als nötig auf – gelöschte Konten sollen nach 14 Tagen auch aus den Sicherungen verschwunden sein.
 
 ### Wiederherstellen
 
@@ -406,9 +641,13 @@ Von einer heruntergeladenen Sicherung (liegt auf dem VPS z. B. unter `~/buddy-ba
 ```sh
 cd ~/DisplayBuddy/deploy
 docker compose stop buddy
-docker compose run --rm --no-deps -v ~/buddy-backup:/restore:ro buddy sh -c 'cp /restore/backups/buddy-20261105.db /data/buddy.db && cp /restore/vapid.pem /data/vapid.pem && chmod 600 /data/vapid.pem && rm -f /data/buddy.db-wal /data/buddy.db-shm'
+docker compose run --rm --no-deps -T buddy sh -c 'umask 077 && cat > /data/buddy.db && rm -f /data/buddy.db-wal /data/buddy.db-shm' < ~/buddy-backup/backups/buddy-20261105.db
+docker compose run --rm --no-deps -T buddy sh -c 'umask 077 && cat > /data/vapid.pem' < ~/buddy-backup/vapid.pem
 docker compose start buddy
 ```
+
+(Die Dateien werden über `<` hineingereicht, weil der Container nicht als `root` läuft und Ihre geschützten
+Sicherungsdateien nicht selbst lesen darf.)
 
 Geräte gleichen danach automatisch ab. Neuere Änderungen, die nur auf einem PC oder Handy liegen, werden beim
 nächsten Sync wieder hochgeladen.
@@ -417,9 +656,9 @@ Einzelne ältere Fassungen einer Notiz (Verlierer von Konflikten, 30 Tage aufbew
 `docker compose exec buddy buddy-server revisions`, zurückholen mit
 `docker compose exec buddy buddy-server restore <Nummer>`.
 
-## 12. Updates
+## 13. Updates
 
-Vorher eine [Sicherung](#11-backups) ziehen. Dann:
+Vorher eine [Sicherung](#12-backups) ziehen. Dann:
 
 ```sh
 cd ~/DisplayBuddy
@@ -429,14 +668,83 @@ docker compose up -d --build
 docker image prune -f
 ```
 
-Die Web-App auf dem Handy merkt das Update beim nächsten Öffnen und zeigt den Hinweis **„Eine neue Version von Display Buddy ist verfügbar.“** – auf
-„Aktualisieren“ tippen, dann lädt sie neu. Der PC braucht nur dann ein Update, wenn eine neue Display-Buddy-Version
-veröffentlicht wird.
+Die Web-App auf dem Handy merkt das Update beim nächsten Öffnen und zeigt den Hinweis **„Eine neue Version von
+Display Buddy ist verfügbar.“** – auf „Aktualisieren“ tippen, dann lädt sie neu. Der PC braucht nur dann ein
+Update, wenn eine neue Display-Buddy-Version veröffentlicht wird.
 
-Caddy (nur Variante A) und die Basis-Images sind mit festen Versionen eingetragen; sie ändern sich nur mit einem `git pull`,
-nie von selbst.
+Caddy (nur Variante A) und die Basis-Images sind mit festen Versionen eingetragen; sie ändern sich nur mit einem
+`git pull`, nie von selbst.
 
-## 13. Fehlersuche
+### 13.1 Upgrade von Version 0.3 (v3) auf 0.4 (v4)
+
+**Was sich für Sie ändert: zunächst nichts.** Die Registrierung bleibt **aus** (`closed`), alle Konten, Geräte und
+Anmeldungen bleiben gültig, die Adresse der Web-App bleibt gleich. PCs und Handys mit der alten Version
+synchronisieren weiter wie bisher.
+
+**Was neu ist** (alles optional):
+
+- Konten in der PC-App anlegen – nur wenn Sie es erlauben ([9.1](#91-wer-darf-konten-anlegen)), auch per
+  [Einladungscode](#92-einladungscodes).
+- Handy per **QR-Code** anmelden ([11.2](#112-anmelden-per-qr-code)); Passwort-Anmeldung bleibt.
+- **Wiederherstellungscode** gegen vergessene Passwörter; Passwort ändern, Daten exportieren, Konto löschen und
+  Geräte abmelden direkt in den Apps.
+- [Kontingente](#93-kontingente), [Rechtslinks](#94-impressum-und-datenschutz) und neue
+  [Admin-Befehle](#95-admin-befehle).
+- `https://buddy.example.org/api/v1/info` zeigt Version und Registrierungsmodus (ohne Anmeldung, für die Apps).
+
+**So geht's:**
+
+1. Frische Sicherung direkt vor dem Update (für den Fall, dass Sie zurück auf 0.3 müssen):
+
+   ```sh
+   cd ~/DisplayBuddy/deploy
+   docker compose stop buddy
+   docker compose run --rm --no-deps buddy sh -c 'mkdir -p /data/vor-v4 && cp -a /data/buddy.db* /data/vor-v4/'
+   git -C ~/DisplayBuddy rev-parse HEAD > ~/displaybuddy-vor-v4.txt
+   ```
+
+   Die letzte Zeile merkt sich den bisherigen Programmstand.
+
+2. Update wie oben: `cd ~/DisplayBuddy && git pull && cd deploy && docker compose up -d --build`.
+   Beim ersten Start ergänzt der Server die Datenbank automatisch (Migration `0003_accounts`); vorhandene Daten
+   werden dabei nicht verändert.
+3. Prüfen:
+
+   ```sh
+   docker compose ps
+   curl -fsS https://buddy.example.org/api/v1/info
+   docker compose exec buddy buddy-server user list
+   ```
+
+   `buddy` ist `healthy`, die Antwort enthält `"apiLevel":2` und `"registration":"closed"`, Ihre Konten sind da.
+4. **Wiederherstellungscode nachholen.** Konten aus der Zeit vor 0.4 haben noch keinen (`user list`, Spalte
+   `recovery` = `no`). Entweder am PC mit Display Buddy 0.4 unter „Konto & Handy“ → „Code erzeugen“ oder hier:
+
+   ```sh
+   docker compose exec buddy buddy-server user recovery martin
+   ```
+
+5. Danach nach Wunsch: Registrierung oder Einladungen einschalten, Kontingente setzen ([Abschnitt 9](#9-konten-verwalten)).
+   Ein PC mit Display Buddy 0.4 braucht nichts Neues: Er bleibt mit Ihrem Server verbunden und zeigt
+   „Eigener Server: …“.
+
+**Zurück auf 0.3?** Ein 0.3-Server startet mit der ergänzten Datenbank nicht mehr. Deshalb zuerst die Sicherung
+aus Schritt 1 zurückspielen, dann den alten Programmstand bauen:
+
+```sh
+cd ~/DisplayBuddy/deploy
+docker compose stop buddy
+docker compose run --rm --no-deps buddy sh -c 'rm -f /data/buddy.db-wal /data/buddy.db-shm && cp -a /data/vor-v4/. /data/'
+git -C ~/DisplayBuddy checkout "$(cat ~/displaybuddy-vor-v4.txt)"
+docker compose up -d --build
+```
+
+Konten und Einstellungen aus der Zeit nach dem Update gehen dabei verloren; Notizen, die Geräte seitdem geändert
+haben, laden diese beim nächsten Sync erneut hoch. Später wieder auf den aktuellen Stand: `git -C ~/DisplayBuddy
+checkout -` und die Update-Schritte. Läuft 0.4 einige Tage stabil, können
+Sie die Kopie löschen: `docker compose exec buddy rm -r /data/vor-v4`.
+
+## 14. Fehlersuche
 
 Die wichtigsten Befehle (immer im Ordner `~/DisplayBuddy/deploy`):
 
@@ -447,7 +755,8 @@ docker compose logs --tail 100 caddy   # nur Variante A
 docker compose logs -f
 ```
 
-(`-f` zeigt laufend neue Zeilen, beenden mit `Strg+C`.) Die Logs enthalten keine Notizen, Passwörter oder Schlüssel.
+(`-f` zeigt laufend neue Zeilen, beenden mit `Strg+C`.) Die Logs enthalten keine Notizen, Passwörter, Codes oder
+Schlüssel. Docker behält je Dienst höchstens 5 × 10 MB Log und löscht Älteres selbst.
 
 ### Die Seite lädt nicht / Zertifikatsfehler
 
@@ -466,6 +775,10 @@ docker compose logs -f
 | `reading VAPID key /data/vapid.pem` | Schritt 6 fehlt: `docker compose run --rm buddy buddy-server vapid generate` |
 | `BUDDY_PUBLIC_URL must …` | `BUDDY_DOMAIN` in `.env` ohne `https://` und ohne `/` am Ende eintragen |
 | `BUDDY_VAPID_SUBJECT must start with mailto: or https://` | in `.env` `mailto:` vor die Adresse setzen |
+| `BUDDY_REGISTRATION must be open, invite or closed` | in `.env` genau `open`, `invite` oder `closed` (klein geschrieben) |
+| `BUDDY_QUOTA_BYTES must be a whole number from 1 to …` (ebenso `_NOTES`, `_DEVICES`, `BUDDY_REGISTRATION_…`) | nur Ziffern, ohne Einheit („50MB“ geht nicht: `52428800`); für „unbegrenzt“ die Zeile weglassen |
+| `BUDDY_IMPRINT_URL must be an https:// URL` (ebenso `PRIVACY`, `TERMS`) | vollständige Adresse mit `https://` eintragen oder die Zeile weglassen |
+| `BUDDY_FCM_PAYLOAD must be minimal or full` | in `.env` `minimal` oder `full` |
 | `set BUDDY_DOMAIN in deploy/.env` (beim `docker compose`-Befehl) | `.env` fehlt oder Wert leer – Schritt 5 |
 | `Pool overlaps with other one on this address space` (Variante A) | das Netz 172.30.0.0/24 ist schon belegt: in `.env` z. B. `BUDDY_SUBNET=172.31.250.0/24`, `BUDDY_IP_RANGE=172.31.250.128/25` und `CADDY_IP=172.31.250.10` setzen, dann `docker compose up -d` |
 | `network proxy declared as external, but could not be found` (Variante B) | `PROXY_NETWORK` in `.env` stimmt nicht: Netznamen mit `docker network ls` nachsehen und eintragen |
@@ -475,9 +788,18 @@ docker compose logs -f
 ### Anmeldung klappt nicht
 
 - Nach 5 falschen Versuchen sperrt der Server die Anmeldung für diesen Namen von dieser IP-Adresse – erst kurz,
-  bei weiteren Fehlversuchen bis zu 15 Minuten. Abwarten.
-- Passwort vergessen: `docker compose exec -it buddy buddy-server user passwd martin`
-  (beendet alle Web-Anmeldungen; mit `--revoke-devices` zusätzlich alle PCs und Apps).
+  bei weiteren Fehlversuchen bis zu 15 Minuten. Nach 30 Fehlversuchen in einer Stunde (egal mit welchem Namen)
+  ist die IP-Adresse 15 Minuten gesperrt. Abwarten.
+- **QR-Code / Anmeldecode:** „Der Code ist ungültig, abgelaufen oder wurde schon benutzt.“ – am PC
+  „Neuen Code“ holen (gilt 3 Minuten). Nach 10 falschen Codes in 10 Minuten sperrt der Server diese IP-Adresse
+  15 Minuten lang.
+- „Das Konto ist gesperrt.“ – `docker compose exec buddy buddy-server user enable <name>`.
+- „Zu viele Geräte.“ – altes Gerät abmelden (in der App unter „Geräte“ oder mit `device revoke`) oder
+  das [Kontingent](#93-kontingente) anheben.
+- „Dieser Server ist zu alt für diese Funktion“ – der Server läuft noch mit 0.3: [Upgrade](#131-upgrade-von-version-03-v3-auf-04-v4).
+- „Auf diesem Server kann man sich nicht selbst registrieren.“ – gewollt bei `BUDDY_REGISTRATION=closed`
+  ([9.1](#91-wer-darf-konten-anlegen)).
+- Passwort vergessen: [9.6](#96-passwort-vergessen).
 
 ### Keine Benachrichtigung auf dem Handy
 
@@ -485,7 +807,7 @@ docker compose logs -f
 - In den Systemeinstellungen des Handys prüfen, ob Benachrichtigungen für Display Buddy bzw. Chrome erlaubt sind
   (und kein „Nicht stören“/Fokus aktiv ist).
 - „Testbenachrichtigung senden“ erneut tippen und dabei `docker compose logs -f buddy` beobachten. Fehler beim
-  Versand deuten meist auf gesperrte **ausgehende** Verbindungen hin ([Abschnitt 14](#14-ausgehende-verbindungen-des-servers)).
+  Versand deuten meist auf gesperrte **ausgehende** Verbindungen hin ([Abschnitt 15](#15-ausgehende-verbindungen-des-servers)).
 - Wurde `vapid.pem` neu erzeugt, auf jedem Handy „Benachrichtigungen aktivieren“ noch einmal tippen.
 
 ### PC zeigt „Abgemeldet – bitte neu verbinden“
@@ -498,7 +820,7 @@ erhalten und werden danach hochgeladen.
 Weicht die Uhr eines Geräts stark ab, warnt Display Buddy. Auf dem VPS mit `timedatectl` prüfen (Schritt 1), am
 PC/Handy die automatische Zeiteinstellung einschalten.
 
-## 14. Ausgehende Verbindungen des Servers
+## 15. Ausgehende Verbindungen des Servers
 
 Der VPS muss nach außen über **HTTPS (TCP 443)** und **DNS (Port 53)** erreichen können; dazu NTP (UDP 123) für
 die Uhrzeit. Eingehend sind nur 80/443 nötig. Hat Ihr Anbieter eine Firewall für ausgehende Verbindungen, müssen
@@ -518,9 +840,9 @@ Genau welche Push-Adresse benutzt wird, bestimmt der Browser des Handys beim Akt
 einfachsten ist es, ausgehendes HTTPS generell zu erlauben – das ist bei fast allen VPS-Anbietern die
 Voreinstellung.
 
-## 15. Weitere Verwaltungsbefehle
+## 16. Weitere Verwaltungsbefehle
 
-Alle im Ordner `~/DisplayBuddy/deploy`:
+Alle im Ordner `~/DisplayBuddy/deploy` (Konten, Einladungen, Kontingente: [Abschnitt 9.5](#95-admin-befehle)):
 
 | Zweck | Befehl |
 |---|---|
@@ -536,10 +858,31 @@ Alle im Ordner `~/DisplayBuddy/deploy`:
 > `docker compose down -v` würde zusätzlich **alle Daten löschen** (Volumes). Nicht verwenden, außer Sie wollen
 > wirklich neu anfangen.
 
-### Optional: native Android-App mit Firebase (Phase N2)
+### Optional: native Android-App mit Firebase
 
-Nur wenn Sie die native Android-App mit Push über Firebase nutzen: Die Dienstkonto-Datei von Firebase in das
-Daten-Volume kopieren und in `compose.yaml` (Variante B: `compose.npm.yaml`) die Zeile `BUDDY_FCM_SERVICE_ACCOUNT_FILE` hinzufügen bzw. einkommentieren. Die
-genaue Anleitung steht in `mobile/README.md`. Diese Datei ist ein Geheimnis – niemals ins Git-Repository legen.
-Nach `docker compose up -d` steht im Log (`docker compose logs buddy`) „native push via FCM HTTP v1 enabled“;
-ist die Datei unlesbar oder kein Dienstkonto-Schlüssel, startet der Server nicht und nennt den Grund.
+Ohne Firebase holt sich die native Android-App neue Erinnerungen selbst im Hintergrund (etwa alle 3 Minuten).
+Firebase (FCM) weckt sie nur schneller. Es funktioniert nur, wenn die App mit **Ihrem eigenen** Firebase-Projekt
+gebaut ist (`mobile/README.md`) – die offizielle App bekommt von Ihrem Server keine Firebase-Weckrufe.
+
+1. Die Dienstkonto-Datei von Firebase auf den VPS kopieren (z. B. nach `~/fcm-service-account.json`) und in das
+   Daten-Volume legen:
+
+   ```sh
+   cd ~/DisplayBuddy/deploy
+   docker compose run --rm --no-deps -T buddy sh -c 'umask 077 && cat > /data/fcm-service-account.json' < ~/fcm-service-account.json
+   rm ~/fcm-service-account.json
+   ```
+
+2. In `.env` eintragen und `docker compose up -d`:
+
+   ```ini
+   BUDDY_FCM_SERVICE_ACCOUNT_FILE=/data/fcm-service-account.json
+   ```
+
+3. Im Log (`docker compose logs buddy`) steht „native push via FCM HTTP v1 enabled“; ist die Datei unlesbar oder
+   kein Dienstkonto-Schlüssel, startet der Server nicht und nennt den Grund.
+
+Mit `BUDDY_FCM_PAYLOAD=minimal` zeigt die Benachrichtigung nur „Erinnerung fällig“ statt Titel und Text – dann
+sieht Google keine Inhalte (Web Push ist ohnehin verschlüsselt). Standard ist `full`.
+
+Diese Datei ist ein Geheimnis – niemals ins Git-Repository legen, aber mitsichern ([Abschnitt 12](#12-backups)).

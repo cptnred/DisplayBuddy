@@ -54,9 +54,32 @@ services:
       # Only Caddy's address; then the login brake counts per real client IP.
       BUDDY_TRUSTED_PROXIES: ${CADDY_IP:-172.30.0.10}/32
       RUST_LOG: ${RUST_LOG:-info,sqlx=warn,tower_http=warn}
-      # Phase N2 (Android/FCM only, optional): put the Firebase service-account JSON into
-      # the data volume and uncomment. Never commit that file.
-      # BUDDY_FCM_SERVICE_ACCOUNT_FILE: /data/fcm-service-account.json
+      # Android/FCM only, optional (D-105): put the Firebase service-account JSON into the
+      # data volume and set BUDDY_FCM_SERVICE_ACCOUNT_FILE=/data/fcm-service-account.json
+      # in .env. Empty = no native push. Never commit that file.
+      BUDDY_FCM_SERVICE_ACCOUNT_FILE: ${BUDDY_FCM_SERVICE_ACCOUNT_FILE:-}
+      BUDDY_FCM_PAYLOAD: ${BUDDY_FCM_PAYLOAD:-full}
+      # v4 accounts (PLAN_V4 §11.2, server/src/config.rs). Change them in .env, not here.
+      # Defaults = self-hosting: registration closed, no quotas (empty = unlimited).
+      # buddy.pev-point.de sets in its .env (docs/OPERATIONS.md):
+      #   BUDDY_REGISTRATION=open          # only once imprint + privacy policy are online
+      #   BUDDY_QUOTA_BYTES=52428800
+      #   BUDDY_QUOTA_NOTES=5000
+      #   BUDDY_QUOTA_DEVICES=10
+      #   BUDDY_IMPRINT_URL=https://…      # URLs not decided yet (D-112)
+      #   BUDDY_PRIVACY_URL=https://…
+      #   BUDDY_OPERATOR_NAME=pev-point.de
+      #   BUDDY_FCM_PAYLOAD=minimal
+      BUDDY_REGISTRATION: ${BUDDY_REGISTRATION:-closed}
+      BUDDY_REGISTRATION_POW_BITS: ${BUDDY_REGISTRATION_POW_BITS:-22}
+      BUDDY_REGISTRATION_DAILY_LIMIT: ${BUDDY_REGISTRATION_DAILY_LIMIT:-200}
+      BUDDY_QUOTA_BYTES: ${BUDDY_QUOTA_BYTES:-}
+      BUDDY_QUOTA_NOTES: ${BUDDY_QUOTA_NOTES:-}
+      BUDDY_QUOTA_DEVICES: ${BUDDY_QUOTA_DEVICES:-}
+      BUDDY_IMPRINT_URL: ${BUDDY_IMPRINT_URL:-}
+      BUDDY_PRIVACY_URL: ${BUDDY_PRIVACY_URL:-}
+      BUDDY_TERMS_URL: ${BUDDY_TERMS_URL:-}
+      BUDDY_OPERATOR_NAME: ${BUDDY_OPERATOR_NAME:-}
     volumes:
       - buddy-data:/data # database, backups/, vapid.pem – back this up
     networks:
