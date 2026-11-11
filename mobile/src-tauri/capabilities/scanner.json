@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "scanner",
+  "description": "QR login (PLAN_V4 §6.2): camera permission and scanning. The plugin exists only on Android and iOS (tauri-docs plugin/barcode-scanner).",
+  "windows": [
+    "main"
+  ],
+  "platforms": [
+    "android",
+    "iOS"
+  ],
+  "permissions": [
+    "barcode-scanner:default"
+  ]
+}
