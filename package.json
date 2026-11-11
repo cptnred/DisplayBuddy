@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "node e2e/v3-e2e.mjs",
+    "e2e:v4": "node e2e/v4-e2e.mjs",
     "test:tz": "TZ=America/New_York vitest run && TZ=Asia/Tokyo vitest run",
     "typecheck": "tsc --noEmit",
     "build:web": "tsc && vite build --config vite.web.config.ts",
