@@ -331,7 +331,7 @@ dependencies = [
 
 [[package]]
 name = "buddy-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -345,7 +345,7 @@ dependencies = [
 
 [[package]]
 name = "buddy-server"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "argon2",

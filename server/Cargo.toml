@@ -1,6 +1,6 @@
 [package]
 name = "buddy-server"
-version = "0.3.0"
+version = "0.4.0"
 description = "Display Buddy sync server: accounts, devices, LWW sync, PWA hosting (PLAN_V3_SYNC §7)"
 edition = "2024"
 publish = false
