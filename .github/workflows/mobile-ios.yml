@@ -10,7 +10,10 @@
 #              IOS_CERTIFICATE, IOS_CERTIFICATE_PASSWORD, IOS_MOBILE_PROVISION (tauri-docs
 #              distribute/sign/ios), APPLE_DEVELOPMENT_TEAM.
 #
-# Variable (not secret): BUDDY_PUBLIC_URL (server origin; placeholder otherwise).
+# Variable (not secret): BUDDY_PUBLIC_URL (default server of the app; without it
+# https://buddy.pev-point.de, PLAN_V4 §6.5, D-97 – the log says so).
+# The simulator build checks that NSCameraUsageDescription (mobile/src-tauri/Info.ios.plist,
+# QR login) reached the app's Info.plist.
 name: mobile-ios
 
 on:
@@ -37,7 +40,7 @@ env:
   RUST_TOOLCHAIN: "1.97.0"
   NODE_VERSION: "22"
   CARGO_TERM_COLOR: always
-  BUDDY_PUBLIC_URL: ${{ vars.BUDDY_PUBLIC_URL || 'https://buddy.example.org' }}
+  BUDDY_PUBLIC_URL: ${{ vars.BUDDY_PUBLIC_URL || 'https://buddy.pev-point.de' }}
 
 jobs:
   rust-ios:
@@ -64,6 +67,13 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Default server of this build
+        run: |
+          if [ -z "${{ vars.BUDDY_PUBLIC_URL }}" ]; then
+            echo "::notice::Repository variable BUDDY_PUBLIC_URL is not set – building with the default server $BUDDY_PUBLIC_URL (PLAN_V4 §6.5)."
+          else
+            echo "Default server of this build: $BUDDY_PUBLIC_URL"
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -87,6 +97,13 @@ jobs:
       - name: Built products
         if: always()
         run: find mobile/src-tauri/gen/apple/build -maxdepth 3 \( -name "*.app" -o -name "*.ipa" \) -print || true
+      - name: Camera usage text is in the built Info.plist (QR login, PLAN_V4 §7.2)
+        run: |
+          APP="$(find mobile/src-tauri/gen/apple/build -name '*.app' -type d | head -n1)"
+          test -n "$APP"
+          TEXT="$(/usr/libexec/PlistBuddy -c 'Print :NSCameraUsageDescription' "$APP/Info.plist")"
+          echo "NSCameraUsageDescription: $TEXT"
+          test "$TEXT" = "Display Buddy nutzt die Kamera nur, um den Anmelde-QR-Code von deinem PC zu scannen."
 
   signed:
     runs-on: macos-latest

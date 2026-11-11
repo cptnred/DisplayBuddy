@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Android emulator test of the native shell (PLAN_V3_SYNC §13, scenarios 28 and 29).
+ * Android emulator test of the native shell (PLAN_V3_SYNC §13, scenarios 28 and 29; PLAN_V4 §13
+ * scenarios 6 and 29: sign-in with a pairing code, background sync after that sign-in).
  * Runs in GitHub Actions (mobile-android.yml, job "emulator") – not in the cloud sandbox.
  *
  * Needs: a running buddy-server on the runner (port 8080, user from E2E_USER/E2E_PASSWORD),
@@ -9,8 +10,11 @@
  * protocol with Node's built-in WebSocket – no extra dependencies).
  *
  * Flow:
- *  1. install, grant POST_NOTIFICATIONS, start, log in through the UI;
- *  2. a "PC" (API client, kind desktop) creates a note + reminder → the app syncs → the
+ *  1. install, grant POST_NOTIFICATIONS, start; a "PC" (API client, kind desktop) creates a
+ *     pairing code (POST /pairing) and the app signs in with „Code eingeben“ (the camera
+ *     scanner cannot run in the emulator; the scan path is covered by Vitest with a mocked
+ *     plugin). „QR-Code scannen“ must be offered;
+ *  2. the PC creates a note + reminder → the app syncs → the
  *     plugin's pending() holds exactly that instant;
  *  3. scenario 29: the PC moves the reminder → after the app's sync only the new instant is
  *     pending (old plan cancelled);
@@ -162,7 +166,15 @@ async function connectWebView() {
   return lastApp;
 }
 
-const LOGIN_JS = (user, password) => `(() => {
+const CLICK_JS = (label) => `(() => {
+  const b = document.querySelector('button[aria-label=${JSON.stringify(label)}]');
+  if (!b) return false;
+  b.click();
+  return true;
+})()`;
+
+/** Fills the inputs (by aria-label) of the open login form and submits it. */
+const FILL_JS = (fields, submit) => `(() => {
   const set = (label, v) => {
     const el = document.querySelector('input[aria-label="' + label + '"]');
     if (!el) return false;
@@ -170,9 +182,10 @@ const LOGIN_JS = (user, password) => `(() => {
     el.dispatchEvent(new Event("input", { bubbles: true }));
     return true;
   };
-  if (!set("Benutzername", ${JSON.stringify(user)}) || !set("Passwort", ${JSON.stringify(password)})) return false;
+  const fields = ${JSON.stringify(fields)};
+  if (!Object.entries(fields).every(([label, v]) => set(label, v))) return false;
   set("Gerätename", "CI-Emulator");
-  document.querySelector('button[type="submit"][aria-label="Anmelden"]').click();
+  document.querySelector('button[type="submit"][aria-label=${JSON.stringify(submit)}]').click();
   return true;
 })()`;
 
@@ -229,14 +242,39 @@ async function main() {
   adb("shell", "cmd", "connectivity", "airplane-mode", "disable");
   bringToFront();
 
-  let app = await connectWebView();
-  await until("login form", () => app.evaluate(`!!document.querySelector('input[aria-label="Benutzername"]')`), 60_000);
-  log("login through the UI");
-  await app.evaluate(LOGIN_JS(USER, PASSWORD));
-  await until("signed in", () => app.evaluate(`!location.pathname.startsWith("/login")`), 60_000);
-
   const login = await api("POST", "/devices", { username: USER, password: PASSWORD, deviceName: "CI-PC", kind: "desktop" });
   const pc = { deviceId: login.deviceId, token: login.token };
+
+  let app = await connectWebView();
+  await until("login page", () => app.evaluate(`!!document.querySelector('button[aria-label="Code eingeben"]')`), 60_000);
+  if (!(await app.evaluate(`!!document.querySelector('button[aria-label="QR-Code scannen"]')`))) {
+    throw new Error("„QR-Code scannen“ is missing in the Android app");
+  }
+  // the code only travels from the PC to the WebView, never into the log
+  const pairing = await api("POST", "/pairing", {}, pc.token).catch((e) => {
+    if (/→ 404$/.test(e.message)) return null;
+    throw e;
+  });
+  if (pairing) {
+    const formatted = `${pairing.code.slice(0, 4)}-${pairing.code.slice(4, 8)}-${pairing.code.slice(8)}`;
+    await app.evaluate(CLICK_JS("Code eingeben"));
+    await until("code form", () => app.evaluate(FILL_JS({ Anmeldecode: formatted }, "Mit Code anmelden")), 30_000);
+    await until("signed in", () => app.evaluate(`!location.pathname.startsWith("/login")`), 60_000);
+    const status = await api("GET", `/pairing/${pairing.pairingId}`, undefined, pc.token);
+    if (status.state !== "redeemed") throw new Error(`pairing state ${status.state}`);
+    log("signed in with „Code eingeben“, PC sees the pairing as redeemed ✓");
+  } else {
+    // server without the pairing endpoints (PLAN_V4 phase P not integrated yet)
+    console.log("::warning::server has no POST /pairing – password login instead of „Code eingeben“");
+    await app.evaluate(CLICK_JS("Mit Passwort anmelden"));
+    await until(
+      "password form",
+      () => app.evaluate(FILL_JS({ Benutzername: USER, Passwort: PASSWORD }, "Anmelden")),
+      30_000,
+    );
+    await until("signed in", () => app.evaluate(`!location.pathname.startsWith("/login")`), 60_000);
+    log("signed in with the password");
+  }
   const noteId = randomUUID();
   const t = Date.now();
   await api(
