@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-barcode-scanner": "2.5.3",
     "@tauri-apps/plugin-http": "2.8.3",
     "@tauri-apps/plugin-notification": "2.8.0",
     "@tiptap/core": "^3.32.3",

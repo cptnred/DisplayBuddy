@@ -6,6 +6,11 @@
 //! `http://` only for loopback hosts and the Android emulator's alias of the host
 //! machine (`10.0.2.2`, Android emulator networking docs), used by the CI emulator test.
 
+/// Default server when the build has no `BUDDY_PUBLIC_URL` (PLAN_V4 §6.5, D-97).
+// used by build.rs (the app gets it as BUDDY_SERVER_ORIGIN) and the tests
+#[cfg_attr(not(test), allow(dead_code))]
+pub const FALLBACK_ORIGIN: &str = "https://buddy.pev-point.de";
+
 /// Hosts that may use plain `http://` (development and emulator tests only).
 const PLAIN_HTTP_HOSTS: &[&str] = &["localhost", "127.0.0.1", "[::1]", "10.0.2.2"];
 
@@ -119,6 +124,11 @@ mod tests {
         ] {
             assert!(normalize(bad).is_err(), "{bad:?} must be rejected");
         }
+    }
+
+    #[test]
+    fn fallback_origin_is_normalised() {
+        assert_eq!(normalize(FALLBACK_ORIGIN).as_deref(), Ok(FALLBACK_ORIGIN));
     }
 
     #[test]

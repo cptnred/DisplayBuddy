@@ -9,7 +9,7 @@ geschlossener App** pünktlich.
 > Erinnerung melden, du bekämst sie doppelt. Wenn du von der PWA auf die App wechselst:
 > in der PWA unter „Einstellungen“ abmelden und die PWA vom Home-Bildschirm entfernen.
 
-Inhalt: [Server-Adresse](#server-adresse) · [Android](#android) ·
+Inhalt: [Server-Adresse](#server-adresse) · [Anmelden per QR-Code](#anmelden-per-qr-code) · [Android](#android) ·
 [Push über Firebase (Android, optional)](#push-über-firebase-android-optional) · [iOS](#ios) ·
 [Benachrichtigungen prüfen](#benachrichtigungen-prüfen) · [Grenzen](#grenzen) ·
 [Für Entwickler](#für-entwickler)
@@ -18,16 +18,45 @@ Inhalt: [Server-Adresse](#server-adresse) · [Android](#android) ·
 
 ## Server-Adresse
 
-Die App kennt genau einen Server. Seine Adresse wird **beim Bauen** festgelegt und ist danach
-nicht änderbar (Sicherheit: die App darf nur mit diesem Server sprechen):
+Die App spricht immer mit **genau einem** Server (Sicherheit: der HTTP-Zugriff der App ist auf
+`<Server>/api/v1/*` begrenzt).
 
-- in GitHub: _Settings → Secrets and variables → Actions → Variables_ → neue Variable
+**Standard-Server (beim Bauen):**
+
+- in GitHub: _Settings → Secrets and variables → Actions → Variables_ → Variable
   **`BUDDY_PUBLIC_URL`** = `https://buddy.<deine-domain>` (ohne Pfad, ohne `/` am Ende);
 - auf dem eigenen Rechner: `export BUDDY_PUBLIC_URL=https://buddy.<deine-domain>` vor dem Bauen.
 
-Ohne die Variable baut die App mit dem Platzhalter `https://buddy.example.org` (CI) bzw. zeigt
-beim Start „Diese App wurde ohne Server-Adresse gebaut“. Erlaubt ist nur `https://`
-(`http://` nur für `localhost` und den Android-Emulator `10.0.2.2`).
+Ohne die Variable ist der Standard **`https://buddy.pev-point.de`** (der öffentliche Dienst); der
+CI-Lauf schreibt das als Hinweis ins Log. Erlaubt ist nur `https://` (`http://` nur für
+`localhost`, `127.0.0.1`, `[::1]` und den Android-Emulator `10.0.2.2`), ohne Pfad.
+
+**Eigener Server (zur Laufzeit):** Auf der Anmeldeseite steht „Server: … · ändern“. Dort lässt
+sich die Adresse des eigenen Servers eintragen bzw. mit „Standard-Server verwenden“
+zurücksetzen. Das geht nur, **solange niemand angemeldet ist** (das Anmelde-Token gehört zu einem
+Server); danach startet die Oberfläche neu. Die Wahl liegt in `server.json` im
+Konfigurationsordner der App und übersteht Updates. Scannst du einen QR-Code eines anderen
+Servers, fragt die App vorher nach („Anderer Server“, Standard ist „Abbrechen“).
+
+Updates: Baue v4 mit demselben Schlüssel und derselben `BUDDY_PUBLIC_URL` wie die bisherige App,
+dann bleibt alles angemeldet. Passt das gespeicherte Konto nicht zum eingestellten Server (z. B.
+ein Build mit anderer Variable), synchronisiert die App **nicht** und sagt: „Diese App-Version ist
+für einen anderen Server eingerichtet … Melde dich ab und neu an.“ Nichts geht verloren, bis du
+dich abmeldest.
+
+## Anmelden per QR-Code
+
+Ein Konto legst du am PC an (Display Buddy → _Einstellungen → Konto & Handy_). Dann am PC
+**„Handy verbinden“** → in der App **„QR-Code scannen“** und den Code auf dem PC-Bildschirm
+filmen. Der Code gilt 3 Minuten und nur einmal. Ohne Kamera: **„Code eingeben“** und die zwölf
+Zeichen (`XXXX-XXXX-XXXX`) abtippen. **„Mit Passwort anmelden“** gibt es weiterhin.
+
+**Kamera-Erlaubnis:** Beim ersten Scan fragt die App nach der Kamera („Display Buddy nutzt die
+Kamera nur, um den Anmelde-QR-Code von deinem PC zu scannen.“). Abgelehnt? Dann
+_Einstellungen → Apps → Display Buddy → Berechtigungen → Kamera_ (Android) bzw.
+_Einstellungen → Display Buddy → Kamera_ (iOS) erlauben – oder den Code eingeben. Die Kamera läuft
+nur während des Scans; „Abbrechen“ beendet ihn. Android-Geräte ohne Kamera können die App
+trotzdem installieren (die Kamera ist im Manifest als optional markiert).
 
 ---
 
@@ -248,8 +277,18 @@ Im Hintergrund holt die App alle 3 Minuten (per exaktem Alarm, ohne Dauer-Benach
 Änderungen vom Server und plant neue oder verschobene Erinnerungen als lokale Alarme – auch wenn die
 App geschlossen oder weggewischt ist. Das braucht keine Firebase-Einrichtung, nur den normalen Login:
 
-- Start automatisch nach dem Anmelden, nach einem Neustart des Handys und nach einem App-Update;
-  nach dem Abmelden stoppt der Abgleich.
+- Start automatisch nach dem Anmelden (Passwort, QR-Code oder Code), nach einem Neustart des Handys
+  und nach einem App-Update; nach dem Abmelden oder Konto-Löschen stoppt der Abgleich.
+- Er fragt immer den **eingestellten Server** ab – den Standard-Server oder deinen eigenen (siehe
+  [Server-Adresse](#server-adresse)). Den Server wechseln geht nur abgemeldet; der Abgleich hält
+  also nie eine alte Adresse. Er akzeptiert dieselben Adressen wie die App (`https://`, `http://`
+  nur lokal bzw. Emulator).
+- Wird das Gerät am PC abgemeldet („Das war ich nicht – abmelden“) oder das Konto gelöscht,
+  bekommt der Abgleich beim nächsten Lauf „nicht angemeldet“, vergisst seine Zugangsdaten und hört
+  auf. Ist das Konto **gesperrt**, zeigt die App „Das Konto ist gesperrt.“, bleibt angemeldet und
+  startet den Abgleich nach dem Entsperren selbst wieder.
+- Meldet der Server ein neueres Datenformat, stoppt die App den Abgleich („Bitte aktualisiere
+  Display Buddy“). Einträge, die er nicht versteht, überspringt er, statt falsche Alarme zu setzen.
 - Beim ersten Mal nach der Benachrichtigungs-Erlaubnis fragt die App einmal nach der
   **Akku-Ausnahme** („Im Hintergrund ausführen“ erlauben). Ohne sie sperrt Android im Ruhezustand
   (Doze) das Netz und der Abgleich kommt nur verzögert. Später änderbar unter _Einstellungen →
@@ -261,6 +300,13 @@ App geschlossen oder weggewischt ist. Das braucht keine Firebase-Einrichtung, nu
   ankommen; sofort ginge nur mit [Firebase-Push](#push-über-firebase-android-optional).
 
 ## Push über Firebase (Android, optional)
+
+> **Nur mit dem Firebase-Projekt des Server-Betreibers (D-105).** FCM-Token und Dienstkonto
+> gehören zu einem Firebase-Projekt. Eine App, die mit Firebase-Projekt A gebaut ist, bekommt nur
+> von einem Server mit dem Dienstkonto von A Weckrufe. Nutzt du die App eines anderen Erstellers
+> mit deinem eigenen Server, gibt es keinen FCM-Weckruf – unter Android übernimmt dann der
+> [Hintergrundabgleich](#hintergrundabgleich-android-ohne-firebase) (höchstens etwa 3 Minuten
+> Verzögerung). Wer FCM für den eigenen Server will, baut die App mit dem eigenen Firebase-Projekt.
 
 Ohne Push klingeln alle Erinnerungen, die das Handy schon kennt – auch offline. Der
 [Hintergrundabgleich](#hintergrundabgleich-android-ohne-firebase) holt neue Erinnerungen vom PC
@@ -311,10 +357,18 @@ Der Server meldet sich mit einem Dienstkonto bei FCM an (FCM HTTP v1, OAuth 2.0)
    (wie ein Passwort): nicht ins Repository, nicht per Mail verschicken.
 2. Unter _Projekteinstellungen → Cloud Messaging_ muss **„Firebase Cloud Messaging API (V1)“**
    aktiviert sein (bei neuen Projekten Standard).
-3. Datei auf den Server in das Daten-Volume kopieren und in `deploy/compose.yaml` die Zeile
-   `BUDDY_FCM_SERVICE_ACCOUNT_FILE: /data/fcm-service-account.json` einkommentieren
-   (Details in `deploy/README.md`, Abschnitt „Optional: native Android-App mit Firebase“), dann
-   `docker compose up -d`. Im Log steht „native push via FCM HTTP v1 enabled“.
+3. Datei auf den Server kopieren (z. B. nach `~/fcm-service-account.json`) und per stdin in das
+   Daten-Volume schreiben, dann die Kopie löschen:
+
+   ```sh
+   cd ~/DisplayBuddy/deploy
+   docker compose run --rm --no-deps -T buddy sh -c 'umask 077 && cat > /data/fcm-service-account.json' < ~/fcm-service-account.json
+   rm ~/fcm-service-account.json
+   ```
+
+   In `deploy/.env` **`BUDDY_FCM_SERVICE_ACCOUNT_FILE=/data/fcm-service-account.json`** eintragen,
+   dann `docker compose up -d` (Details in `deploy/README.md`, Abschnitt 16 „Optional: native
+   Android-App mit Firebase“). Im Log steht „native push via FCM HTTP v1 enabled“.
 4. Ausgehend muss der Server `oauth2.googleapis.com` und `fcm.googleapis.com` erreichen (HTTPS).
 
 ### 4. Prüfen
@@ -427,7 +481,7 @@ dem Handy und wird beim nächsten Online-Sein übertragen.
 
 ```sh
 npm run build:mobile                     # Oberfläche → mobile/dist (ohne Service Worker)
-cd mobile/src-tauri && cargo test        # Rust-Teil (Host), BUDDY_PUBLIC_URL optional
+cd mobile/src-tauri && cargo test        # Rust-Teil (Host), BUDDY_PUBLIC_URL optional (Standard pev-point)
 cd mobile && npx tauri android dev       # braucht Android SDK/NDK (nicht in der Cloud-Umgebung)
 cd mobile && npx tauri ios dev --open    # nur auf macOS
 ```
@@ -436,7 +490,15 @@ cd mobile && npx tauri ios dev --open    # nur auf macOS
   Desktop-Projekt `src-tauri/`).
 - `mobile/src-tauri/gen/` (Android-/Xcode-Projekt) wird nicht eingecheckt, sondern mit
   `tauri android init` / `tauri ios init` erzeugt (CI und Mac). Manifest-Berechtigungen für
-  exakte Alarme ergänzt `build.rs` beim Bauen automatisch.
+  exakte Alarme und die optionale Kamera (`uses-feature … required="false"`) ergänzt `build.rs`
+  beim Bauen automatisch; `NSCameraUsageDescription` kommt aus `src-tauri/Info.ios.plist` (die
+  Tauri-CLI mischt sie in die Info.plist der App).
+- QR-Scanner: `tauri-plugin-barcode-scanner` 2.5.3 (nur Android/iOS, Capability
+  `capabilities/scanner.json`). Die App scannt mit `windowed: true` (Kamera hinter der
+  durchsichtigen Oberfläche) und zeigt einen eigenen „Abbrechen“-Knopf
+  (`src/web/notify/native-scanner.ts`).
+- Server-Wahl: Commands `server_get`/`server_set` (`src-tauri/src/lib.rs`, `server_store.rs`);
+  beim Start bekommt genau die wirksame Origin eine HTTP-Capability.
 - Daten liegen in IndexedDB des WebViews (Origin `https://tauri.localhost` bzw.
   `tauri://localhost`). Abmelden löscht sie; das Token liegt im Schlüsselbund (iOS) bzw.
   Keystore-verschlüsselt (Android).

@@ -3,8 +3,10 @@
 #
 # - checks:   Vitest (also TZ=New York/Tokyo), build:mobile, Rust fmt/clippy/test of the shell
 # - apk:      release APK (aarch64, armv7, x86_64); signed with apksigner when the
-#             keystore secrets exist, otherwise uploaded unsigned; manifest permissions checked
-# - emulator: scenarios 28/29 against a real buddy-server in an Android emulator (KVM)
+#             keystore secrets exist, otherwise uploaded unsigned; manifest permissions and the
+#             optional camera feature checked; Kotlin unit tests of the buddy-push plugin
+# - emulator: v3 scenarios 28/29 and v4 scenarios 6/29 („Code eingeben“, background sync after
+#             that sign-in) against a real buddy-server in an Android emulator (KVM)
 #
 # Secrets (Settings → Secrets and variables → Actions), never in the repo:
 #   ANDROID_KEYSTORE_BASE64   base64 of the .jks keystore (base64 -w0 release.jks)
@@ -13,8 +15,9 @@
 #   ANDROID_KEY_PASSWORD      key password (often the same as the keystore password)
 #   GOOGLE_SERVICES_JSON_BASE64  optional: base64 of google-services.json (Firebase, native
 #                             push over FCM, phase N2). Without it the APK has no push.
-# Variable (not secret): BUDDY_PUBLIC_URL, e.g. https://buddy.example.org (the server origin
-#   baked into the app; without it the build uses the placeholder https://buddy.example.org).
+# Variable (not secret): BUDDY_PUBLIC_URL, e.g. https://buddy.example.org (the DEFAULT server
+#   of the app; the user can choose another one at runtime). Without it the build uses
+#   https://buddy.pev-point.de (PLAN_V4 §6.5, D-97) and says so in the log.
 #
 # Sources: tauri-docs start/prerequisites (Android: SDK platform, platform-tools, NDK,
 # build-tools, cmdline-tools; JAVA_HOME/ANDROID_HOME/NDK_HOME; rustup targets),
@@ -91,9 +94,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      BUDDY_PUBLIC_URL: ${{ vars.BUDDY_PUBLIC_URL || 'https://buddy.example.org' }}
+      BUDDY_PUBLIC_URL: ${{ vars.BUDDY_PUBLIC_URL || 'https://buddy.pev-point.de' }}
     steps:
       - uses: actions/checkout@v4
+      - name: Default server of this build
+        run: |
+          if [ -z "${{ vars.BUDDY_PUBLIC_URL }}" ]; then
+            echo "::notice::Repository variable BUDDY_PUBLIC_URL is not set – building with the default server $BUDDY_PUBLIC_URL (PLAN_V4 §6.5)."
+          else
+            echo "Default server of this build: $BUDDY_PUBLIC_URL"
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -140,10 +150,22 @@ jobs:
           echo "path=$APK" >> "$GITHUB_OUTPUT"
           BT="$ANDROID_HOME/build-tools/$BUILD_TOOLS"
           "$BT/aapt2" dump permissions "$APK" | tee permissions.txt
-          for p in POST_NOTIFICATIONS USE_EXACT_ALARM SCHEDULE_EXACT_ALARM RECEIVE_BOOT_COMPLETED; do
+          for p in POST_NOTIFICATIONS USE_EXACT_ALARM SCHEDULE_EXACT_ALARM RECEIVE_BOOT_COMPLETED CAMERA; do
             grep -q "android.permission.$p" permissions.txt || { echo "missing permission $p"; exit 1; }
           done
-          "$BT/aapt2" dump badging "$APK" | grep -E "^package:|sdkVersion|targetSdkVersion"
+          "$BT/aapt2" dump badging "$APK" > badging.txt
+          grep -E "^package:|sdkVersion|targetSdkVersion|uses-feature" badging.txt
+          # camera optional (build.rs replaces the plugin's implicitly required uses-feature)
+          for f in android.hardware.camera.any android.hardware.camera; do
+            grep -q "uses-feature-not-required: name='$f'" badging.txt || { echo "$f is still required"; exit 1; }
+          done
+          if grep -E "^\s*uses-feature: name='android.hardware.camera" badging.txt; then
+            echo "a camera feature is still required"; exit 1
+          fi
+      - name: Kotlin unit tests of the buddy-push plugin (ServerUrl, ReminderMath)
+        working-directory: mobile/src-tauri/gen/android
+        # AGP 9 creates unit-test tasks only for the tested build type (debug)
+        run: ./gradlew --no-daemon :tauri-plugin-buddy-push:testDebugUnitTest
       - name: Sign APK (only with keystore secrets)
         id: sign
         env:
@@ -224,7 +246,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Scenarios 28/29 in the emulator
+      - name: Scenarios 28/29 (v3) and 6/29 (v4) in the emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34

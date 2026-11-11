@@ -27,6 +27,10 @@ enum class SyncResult { OK, OFFLINE, ERROR, UNAUTHORIZED, UNCONFIGURED }
  *
  * Only reads from the server; never sends notes or the device state. Logs no tokens, titles or
  * note content.
+ *
+ * Records it cannot read (e.g. a future encrypted content format, D-101) are skipped: no alarm is
+ * set or cancelled for them, the cursor still moves on (the app handles them itself), and the
+ * run reports [SyncResult.ERROR] (PLAN_V4 §7.2).
  */
 internal object BackgroundSync {
     private const val CHANNEL_ID = "reminders"
@@ -47,6 +51,7 @@ internal object BackgroundSync {
         val generation = settings.generation()
         val deadline = System.currentTimeMillis() + DEADLINE_MS
         var resynced = false
+        var skipped = 0
         while (true) {
             if (System.currentTimeMillis() >= deadline) return SyncResult.ERROR
             val response = try {
@@ -75,13 +80,16 @@ internal object BackgroundSync {
             } catch (_: Exception) {
                 return SyncResult.ERROR
             }
-            val titles = try {
+            val cursor = page.optLong("cursor", -1L)
+            if (cursor < 0) return SyncResult.ERROR
+            val applied = try {
                 apply(context, settings, page)
             } catch (_: Exception) {
                 return SyncResult.ERROR
             }
-            if (!settings.commit(generation, page.getLong("cursor"), titles)) return SyncResult.OK
-            if (!page.optBoolean("hasMore")) return SyncResult.OK
+            skipped += applied.skipped
+            if (!settings.commit(generation, cursor, applied.titles)) return SyncResult.OK
+            if (!page.optBoolean("hasMore")) return if (skipped > 0) SyncResult.ERROR else SyncResult.OK
         }
     }
 
@@ -107,8 +115,28 @@ internal object BackgroundSync {
         }
     }
 
-    /** Applies one page and returns the updated note titles (stored by the caller together with the cursor). */
-    private fun apply(context: Context, settings: BackgroundSettings, page: JSONObject): JSONObject {
+    private class Applied(val titles: JSONObject, val skipped: Int)
+
+    /** A note record this service understands: id + deleted, or a note object. */
+    private fun readableNote(record: JSONObject?): Boolean {
+        if (record == null || record.optString("id").isEmpty()) return false
+        return record.optBoolean("deleted") || record.optJSONObject("note") != null
+    }
+
+    /** A reminder record this service understands: noteId + deleted, or a reminder with a known state and instant. */
+    private fun readableReminder(record: JSONObject?): Boolean {
+        if (record == null || record.optString("noteId").isEmpty()) return false
+        if (record.optBoolean("deleted")) return true
+        val reminder = record.optJSONObject("reminder") ?: return false
+        return reminder.optString("state") in setOf("scheduled", "due", "done") &&
+            ReminderMath.parseInstant(reminder.optString("at")) != null
+    }
+
+    /**
+     * Applies one page and returns the updated note titles (stored by the caller together with the
+     * cursor) and the number of records it could not read.
+     */
+    private fun apply(context: Context, settings: BackgroundSettings, page: JSONObject): Applied {
         val storage = NotificationStorage(context, notificationMapper())
         val manager = TauriNotificationManager(storage, null, context, null)
         val enabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
@@ -116,9 +144,14 @@ internal object BackgroundSync {
 
         val titles = settings.titles()
         val renamed = HashSet<String>()
+        var skipped = 0
         val notes: JSONArray = page.optJSONArray("notes") ?: JSONArray()
         for (i in 0 until notes.length()) {
-            val record = notes.getJSONObject(i)
+            val record = notes.optJSONObject(i)
+            if (record == null || !readableNote(record)) {
+                skipped++
+                continue
+            }
             val id = record.getString("id")
             val note = record.optJSONObject("note")
             if (record.optBoolean("deleted") || note == null) {
@@ -141,7 +174,11 @@ internal object BackgroundSync {
         val reminders: JSONArray = page.optJSONArray("reminders") ?: JSONArray()
         val touched = HashSet<String>()
         for (i in 0 until reminders.length()) {
-            val record = reminders.getJSONObject(i)
+            val record = reminders.optJSONObject(i)
+            if (record == null || !readableReminder(record)) {
+                skipped++
+                continue
+            }
             val noteId = record.getString("noteId")
             touched.add(noteId)
             val reminder = record.optJSONObject("reminder")
@@ -173,7 +210,7 @@ internal object BackgroundSync {
                 }
             }
         }
-        return titles
+        return Applied(titles, skipped)
     }
 
     private fun schedule(

@@ -24,7 +24,14 @@ tauri-plugin-http = "=2.8.3"
 tauri-plugin-buddy-push = { path = "../plugins/buddy-push" }
 keyring-core = "=1.0.1"
 serde = { version = "1", features = ["derive"] }
+# server.json (already a dependency of tauri)
+serde_json = "1"
 log = "0.4"
+
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+# QR login (PLAN_V4 §6.2, D-99); mobile-only plugin (tauri-docs plugin/barcode-scanner).
+# Android CAMERA permission comes from its manifest.
+tauri-plugin-barcode-scanner = "=2.5.3"
 
 [target.'cfg(target_os = "ios")'.dependencies]
 # iOS only has the data-protection keychain → feature "protected" (crate README)
@@ -34,9 +41,6 @@ apple-native-keyring-store = { version = "=1.0.2", features = ["protected"] }
 # SharedPreferences encrypted with an Android Keystore key. Needs ndk-context, which tao
 # initialises in the activity's onCreate (tao 0.37 platform_impl/android/ndk_glue.rs).
 android-native-keyring-store = "=1.0.0"
-
-[dev-dependencies]
-serde_json = "1"
 
 # Patched copy of the official plugin (same version 2.8.0): UTC date parsing on iOS
 # (PLAN §10.4, D-50), no crash for notifications of an earlier process on iOS, UTC dates

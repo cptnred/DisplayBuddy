@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- QR login (PLAN_V4 §7.2). Merged into the app's Info.plist by the Tauri CLI
+	     (tauri-utils config: "Tauri also looks for a Info.plist and Info.ios.plist file in the
+	     same directory as the Tauri configuration file"). The barcode-scanner plugin refuses to
+	     scan without this key (plugin source, BarcodeScannerPlugin.swift). -->
+	<key>NSCameraUsageDescription</key>
+	<string>Display Buddy nutzt die Kamera nur, um den Anmelde-QR-Code von deinem PC zu scannen.</string>
+</dict>
+</plist>

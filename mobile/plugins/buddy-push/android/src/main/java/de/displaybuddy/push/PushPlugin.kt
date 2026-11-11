@@ -109,16 +109,20 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
         invoke.resolve(result)
     }
 
-    /** Server address + device token for the background sync (see [BackgroundScheduler]); starts it. */
+    /**
+     * Server address + device token for the background sync (see [BackgroundScheduler]); starts it.
+     * The address must pass the same rule as `server_url::normalize` ([ServerUrl], PLAN_V4 §7.2).
+     */
     @Command
     fun startBackgroundSync(invoke: Invoke) {
         val args = invoke.parseArgs(BackgroundArgs::class.java)
-        if (!Regex("^https?://[^/?#\\s]+$").matches(args.baseUrl) || args.token.isBlank()) {
+        val origin = ServerUrl.normalize(args.baseUrl)
+        if (origin == null || args.token.isBlank()) {
             invoke.reject("invalid background sync configuration", "INVALID")
             return
         }
         try {
-            BackgroundSettings(activity).configure(args.baseUrl, args.token)
+            BackgroundSettings(activity).configure(origin, args.token)
             BackgroundScheduler.start(activity)
             invoke.resolve()
         } catch (e: Exception) {
