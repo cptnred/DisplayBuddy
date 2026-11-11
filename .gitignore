@@ -27,3 +27,7 @@ dist-web
 # Agent worktrees
 .claude/worktrees/
 release/
+
+# Kontaktangaben der Landingpage (Privatdaten)
+deploy/landing/kontakt.txt
+deploy/site/

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Datenschutz – Display Buddy</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- VORLAGE: [[...]]-Felder ausfüllen (siehe README.md in diesem Ordner). Keine Rechtsberatung: Rechtsgrundlagen,
+       Auftragsverarbeitung und Drittlandtransfer vom Betreiber prüfen lassen. Die Fristen unten müssen auf dem
+       Server wirklich eingehalten werden (docs/OPERATIONS.md §5, §7; Log-Frist steht in kontakt.txt). Wird später Firebase (FCM) oder eine
+       Außer-Haus-Sicherung eingerichtet, diese Erklärung vorher anpassen. -->
+  <header class="wrap"><a href="./">Display Buddy</a></header>
+
+  <main class="wrap">
+    <h1>Datenschutzerklärung</h1>
+    <p class="note">Stand: [[STAND_DATUM]]</p>
+
+    <h2>1. Verantwortlicher</h2>
+    <p>Verantwortlich für den Display-Buddy-Server (buddy.pev-point.de) ist die im
+      <a href="impressum.html">Impressum</a> genannte Person. Kontakt: [[EMAIL]]</p>
+
+    <h2>2. Worum es geht</h2>
+    <p>Display Buddy für Windows funktioniert <strong>ohne Konto</strong>; die Daten bleiben dann auf deinem PC.
+      Nur wenn du ein Konto anlegst, gleicht der Server deine Notizen und Erinnerungen zwischen PC, Handy-App und
+      Web-App ab und schickt Benachrichtigungen. Das Konto ist freiwillig.</p>
+
+    <h2>3. Welche Daten wir verarbeiten</h2>
+    <table>
+      <tr><th>Daten</th><th>Wofür</th></tr>
+      <tr><td>Benutzername, Passwort (nur als Argon2id-Hash gespeichert), Zeitzone</td><td>Konto und Anmeldung</td></tr>
+      <tr><td>Notizen und Erinnerungen, <strong>im Klartext auf dem Server</strong></td><td>Abgleich zwischen deinen Geräten</td></tr>
+      <tr><td>Gerätename, Gerätetyp, Zeitpunkt der Anlage und der letzten Aktivität</td><td>Geräteliste, Abmelden einzelner Geräte</td></tr>
+      <tr><td>Web-Push-Abo (Adresse des Push-Dienstes deines Browsers)</td><td>Erinnerungen als Benachrichtigung in der Web-App</td></tr>
+      <tr><td>Wiederherstellungs-, Einladungs- und Anmeldecodes (nur als SHA-256-Hash)</td><td>Passwort zurücksetzen, Registrierung, Handy per QR-Code anmelden</td></tr>
+      <tr><td>Sitzungs-Cookie der Web-App</td><td>Anmeldung; technisch notwendig</td></tr>
+      <tr><td>IP-Adresse und Zeitpunkt jeder Anfrage (Zugriffs-Logs), Fehlversuche bei Anmeldung</td><td>Sicherheit, Schutz vor Missbrauch, Fehlersuche</td></tr>
+    </table>
+    <p>Die Web-App speichert deine Notizen zusätzlich im lokalen Speicher deines Browsers, damit sie offline
+      funktioniert.</p>
+
+    <h2>4. Rechtsgrundlagen</h2>
+    <p>Betrieb des Kontos und Abgleich: Art. 6 Abs. 1 lit. b DSGVO (Nutzungsvertrag). Sicherheit,
+      Bremsen gegen Missbrauch und Logs: Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse am sicheren Betrieb).</p>
+
+    <h2>5. Keine Ende-zu-Ende-Verschlüsselung</h2>
+    <p>Die Übertragung läuft verschlüsselt über HTTPS. Auf dem Server liegen deine Notizen aber lesbar. Der
+      Betreiber könnte sie technisch einsehen. Die Logs enthalten keine Notizinhalte, Passwörter oder Codes.</p>
+
+    <h2>6. IP-Adressen und Hintergrundabfragen</h2>
+    <p>IP-Adressen stehen höchstens [[LOG_AUFBEWAHRUNG]] in den Logs. Kurzzeitig (höchstens 1 Tag) merkt sich der
+      Server sie im Arbeitsspeicher, um zu viele Anmelde- und Registrierungsversuche zu bremsen. Die
+      Android-App fragt im Hintergrund etwa alle 3 Minuten beim Server nach neuen Erinnerungen (rund 480 Abfragen
+      pro Gerät und Tag); jede Abfrage steht mit IP-Adresse und Zeit im Zugriffs-Log.</p>
+
+    <h2>7. Empfänger</h2>
+    <ul>
+      <li><strong>Hosting:</strong> [[HOSTING]]</li>
+      <li><strong>Push-Dienste der Browser-Hersteller</strong> (Google, Apple, Mozilla, Microsoft), wenn du Web-Push
+        nutzt. Der Inhalt ist bis zu deinem Browser verschlüsselt; die Dienste sehen Zeitpunkt und
+        Empfängeradresse. Sie können Daten in den USA verarbeiten (Grundlage: [[DRITTLAND_GRUNDLAGE]]).</li>
+      <li>Google Firebase (FCM) wird <strong>derzeit nicht</strong> eingesetzt.</li>
+    </ul>
+    <p>Wir setzen keine Analyse-, Tracking- oder Werbedienste ein und laden keine Schriften oder Skripte von
+      Dritten.</p>
+
+    <h2>8. Speicherdauer</h2>
+    <ul>
+      <li>Konto und Notizen: bis du das Konto löschst. „Konto löschen“ in der App löscht sofort.</li>
+      <li>Tägliche Sicherungen der Datenbank auf dem Server: 14 Tage. Danach sind gelöschte Konten auch dort weg.</li>
+      <li>Ältere Fassungen einer Notiz (nach Konflikten): 30 Tage. Löschmarker ohne Inhalt: 180 Tage.
+        Abgemeldete Geräte: 30 Tage.</li>
+      <li>Logs mit IP-Adresse: höchstens [[LOG_AUFBEWAHRUNG]].</li>
+    </ul>
+
+    <h2>9. Passwort vergessen</h2>
+    <p>Zurücksetzen geht nur mit deinem Wiederherstellungscode oder von einem angemeldeten Gerät aus. Der Betreiber
+      stellt auf diesem Dienst keine Codes aus. Bewahre den Code sicher auf.</p>
+
+    <h2>10. Deine Rechte</h2>
+    <p>Du hast das Recht auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung, Widerspruch und
+      Datenübertragbarkeit. In den Apps kannst du deine Daten selbst exportieren („Daten exportieren“, JSON) und
+      dein Konto löschen („Konto löschen“). Für alles andere schreib an [[EMAIL]]. Außerdem kannst du dich bei einer
+      Datenschutz-Aufsichtsbehörde beschweren, zum Beispiel der für deinen Wohnort oder für den Sitz des
+      Verantwortlichen zuständigen.</p>
+  </main>
+
+  <footer class="wrap">
+    <a href="./">Startseite</a>
+    <a href="impressum.html">Impressum</a>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,36 @@
+# Deine Kontaktangaben für Impressum und Datenschutzerklärung.
+#
+# So geht's:
+#   1. Diese Datei kopieren und die Kopie "kontakt.txt" nennen (im selben Ordner).
+#   2. Hinter jedes "=" deinen Text schreiben, ohne Anführungszeichen. Alle Felder sind Pflicht.
+#   3. Im Projektordner ausführen:  node deploy/landing/build.mjs
+#      Fertig sind die Seiten dann im Ordner deploy/landing/dist/ – den Ordner auf die Website laden.
+#
+# "kontakt.txt" kommt nicht ins Git (steht in .gitignore). Zeilen mit # werden ignoriert.
+
+# Impressum: Name und ladungsfähige Anschrift
+NAME=
+STRASSE_NR=
+PLZ_ORT=
+
+# Kontakt: E-Mail (auch für Datenschutz und Missbrauchsmeldungen) und ein zweiter schneller Kontaktweg
+EMAIL=
+TELEFON=
+
+# Datenschutz: wer hostet den Server? Ein Satz, z. B.
+#   Der Server wird vom Verantwortlichen selbst betrieben.
+# oder Name und Sitz des Hosting-Anbieters, mit dem ein Auftragsverarbeitungsvertrag besteht.
+HOSTING=
+
+# Datenschutz: Rechtsgrundlage für Push-Dienste in den USA, z. B. Angemessenheitsbeschluss (Data Privacy Framework).
+# Vom Betreiber zu prüfen.
+DRITTLAND_GRUNDLAGE=
+
+# Datenschutz: wie lange Logs mit IP-Adressen höchstens aufbewahrt werden – muss auf dem Server wirklich stimmen.
+#   7 Tage    erst, wenn docs/OPERATIONS.md §7 (Skript + cron) eingerichtet ist
+#   11 Wochen ohne §7: Nginx Proxy Manager rotiert wöchentlich, behält Zugriffs-Logs 4 und Fehler-Logs 10 Wochen
+#             (das Docker-Log von buddy wird erst beim nächsten Update gelöscht)
+LOG_AUFBEWAHRUNG=
+
+# Das Datum "Stand" setzt das Skript automatisch auf heute. Zum Überschreiben die nächste Zeile aktivieren:
+# STAND_DATUM=11.11.2026

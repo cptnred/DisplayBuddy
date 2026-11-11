@@ -1,0 +1,58 @@
+/* Gemeinsames Design für Landingpage, Impressum und Datenschutz. Keine externen Schriften oder Skripte
+   (die Datenschutzerklärung sagt: keine Drittanbieter). */
+:root {
+  --bg: #fffdf7;
+  --fg: #2b2a26;
+  --muted: #6b675d;
+  --accent: #e0a100;
+  --accent-fg: #2b2a26;
+  --card: #ffffff;
+  --line: #e8e2d0;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1d1c19;
+    --fg: #f1eee4;
+    --muted: #a9a496;
+    --card: #26251f;
+    --line: #3a382f;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 1rem/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.wrap { max-width: 44rem; margin: 0 auto; padding: 0 16px; }
+header.wrap { padding-top: 24px; padding-bottom: 8px; }
+header a { color: var(--fg); font-weight: 700; font-size: 1.15rem; text-decoration: none; }
+header .face { display: inline-block; width: 1.6rem; height: 1.6rem; vertical-align: -0.3rem; margin-right: 0.4rem; }
+h1 { font-size: 2rem; line-height: 1.2; margin: 1.6rem 0 0.6rem; }
+h2 { font-size: 1.25rem; margin: 2rem 0 0.5rem; }
+p, li { max-width: 40rem; }
+a { color: inherit; text-underline-offset: 3px; }
+.lead { font-size: 1.15rem; color: var(--muted); }
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin: 1rem 0;
+}
+.button {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--accent-fg);
+  padding: 0.6rem 1.1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.button:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.note { color: var(--muted); font-size: 0.9rem; }
+footer.wrap { margin-top: 3rem; padding-top: 1rem; padding-bottom: 2rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; }
+footer a { margin-right: 1rem; }
+table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+th, td { text-align: left; vertical-align: top; padding: 0.4rem 0.6rem 0.4rem 0; border-bottom: 1px solid var(--line); }
