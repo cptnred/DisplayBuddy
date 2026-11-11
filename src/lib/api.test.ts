@@ -50,7 +50,7 @@ const COMMAND_CASES: CommandCase[] = [
   ["toggleNotes", [], "toggle_notes"],
   ["showNotes", [], "show_notes"],
   ["hideNotes", [], "hide_notes"],
-  ["openSettings", [], "open_settings"],
+  ["openSettings", [], "open_settings", { section: null }],
   ["showBuddyMenu", [], "show_buddy_menu"],
   ["flushDone", [], "flush_done"],
   ["quitApp", [], "quit_app"],
@@ -77,6 +77,21 @@ const COMMAND_CASES: CommandCase[] = [
   ["syncConnect", ["https://buddy.example.org", "anna", "pw", "Büro-PC"], "sync_connect", { serverUrl: "https://buddy.example.org", username: "anna", password: "pw", deviceName: "Büro-PC" }],
   ["syncDisconnect", [], "sync_disconnect"],
   ["syncNow", [], "sync_now"],
+  // v4 (PLAN_V4 §7.1)
+  ["accountServerInfo", [""], "account_server_info", { serverUrl: "" }],
+  ["accountRegister", ["", "anna", "pw", "PC"], "account_register", { serverUrl: "", username: "anna", password: "pw", deviceName: "PC", inviteCode: null }],
+  ["accountRecover", ["", "anna", "CODE", "pw", "PC"], "account_recover", { serverUrl: "", username: "anna", recoveryCode: "CODE", newPassword: "pw", deviceName: "PC" }],
+  ["accountInfo", [], "account_info"],
+  ["accountDevices", [], "account_devices"],
+  ["accountRevokeDevice", ["d1"], "account_revoke_device", { deviceId: "d1", password: null }],
+  ["accountChangePassword", [null, "neu"], "account_change_password", { currentPassword: null, newPassword: "neu" }],
+  ["accountNewRecoveryCode", ["pw"], "account_new_recovery_code", { password: "pw" }],
+  ["accountExport", [], "account_export"],
+  ["accountDelete", ["pw", "anna"], "account_delete", { password: "pw", confirmUsername: "anna" }],
+  ["accountOpenLink", ["privacy"], "account_open_link", { kind: "privacy" }],
+  ["pairingStart", [], "pairing_start"],
+  ["pairingStatus", ["p1"], "pairing_status", { pairingId: "p1" }],
+  ["pairingCancel", ["p1"], "pairing_cancel", { pairingId: "p1" }],
 ];
 
 /**
@@ -121,6 +136,20 @@ const PLAN_COMMANDS = [
   "sync_connect",
   "sync_disconnect",
   "sync_now",
+  "account_server_info",
+  "account_register",
+  "account_recover",
+  "account_info",
+  "account_devices",
+  "account_revoke_device",
+  "account_change_password",
+  "account_new_recovery_code",
+  "account_export",
+  "account_delete",
+  "account_open_link",
+  "pairing_start",
+  "pairing_status",
+  "pairing_cancel",
 ];
 
 describe("api commands", () => {
@@ -146,6 +175,21 @@ describe("api commands", () => {
     expect([...commands].sort()).toEqual([...PLAN_COMMANDS].sort());
     const commandMethods = Object.keys(api).filter((k) => !/^on[A-Z]/.test(k));
     expect(commandMethods.sort()).toEqual(COMMAND_CASES.map((c) => c[0]).sort());
+  });
+
+  it("openSettings and register pass the optional arguments (v4)", async () => {
+    await api.openSettings("account");
+    expect(invokeMock).toHaveBeenLastCalledWith("open_settings", { section: "account" });
+    await api.accountRegister("https://own.example", "anna", "pw", "PC", "INVITE");
+    expect(invokeMock).toHaveBeenLastCalledWith("account_register", {
+      serverUrl: "https://own.example",
+      username: "anna",
+      password: "pw",
+      deviceName: "PC",
+      inviteCode: "INVITE",
+    });
+    await api.accountRevokeDevice("d1", "pw");
+    expect(invokeMock).toHaveBeenLastCalledWith("account_revoke_device", { deviceId: "d1", password: "pw" });
   });
 
   it("setReminder passes the reminder time zone (v3)", async () => {
@@ -192,6 +236,7 @@ describe("api events", () => {
       skinsChanged: "skins-changed",
       syncStatus: "sync-status",
       notesChanged: "notes-changed",
+      settingsSection: "settings-section",
     });
   });
 
@@ -223,6 +268,7 @@ describe("api events", () => {
     ["onSkinsChanged", "skins-changed", [], [[]]],
     ["onSyncStatus", "sync-status", { state: "idle" }, [{ state: "idle" }]],
     ["onNotesChanged", "notes-changed", { notes: [], deletedIds: ["n"], order: null }, [{ notes: [], deletedIds: ["n"], order: null }]],
+    ["onSettingsSection", "settings-section", "account", ["account"]],
   ] as const)("%s listens to %s and unwraps the payload", async (method, event, payload, expected) => {
     const cb = vi.fn();
     await (api[method] as (c: unknown) => Promise<unknown>)(cb);

@@ -37,6 +37,8 @@ tauri-plugin-log = "2.10.1"
 # v3 sync client (D-51/D-52): only the re-exported reqwest is used, Rust-side (rustls + ring,
 # builds with x86_64-pc-windows-gnu). The plugin itself is not registered (no JS fetch).
 tauri-plugin-http = "=2.8.3"
+# v4: QR code of the pairing link as SVG (D-109; only the svg renderer, no image crate).
+qrcode = { version = "=0.14.1", default-features = false, features = ["svg"] }
 
 # Windows: rewrite the autostart Run value with a quoted exe path (see src/autostart.rs).
 [target.'cfg(windows)'.dependencies]

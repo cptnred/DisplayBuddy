@@ -150,11 +150,11 @@ impl Client {
         })
     }
 
-    fn url(&self, path: &str) -> String {
+    pub(super) fn url(&self, path: &str) -> String {
         format!("{}{path}", self.base)
     }
 
-    async fn send<T: DeserializeOwned>(
+    pub(super) async fn send<T: DeserializeOwned>(
         &self,
         req: reqwest::RequestBuilder,
         timeout: Duration,
@@ -210,7 +210,7 @@ impl Client {
         })
     }
 
-    async fn json<T: DeserializeOwned>(
+    pub(super) async fn json<T: DeserializeOwned>(
         &self,
         req: reqwest::RequestBuilder,
         timeout: Duration,
@@ -225,17 +225,35 @@ impl Client {
         })
     }
 
-    fn post_json(
+    pub(super) fn post_json(
         &self,
+        path: &str,
+        body: &impl Serialize,
+    ) -> Result<reqwest::RequestBuilder, ClientError> {
+        self.with_json(reqwest::Method::POST, path, body)
+    }
+
+    /// A request with a JSON body (bodies are never logged).
+    pub(super) fn with_json(
+        &self,
+        method: reqwest::Method,
         path: &str,
         body: &impl Serialize,
     ) -> Result<reqwest::RequestBuilder, ClientError> {
         let bytes = serde_json::to_vec(body).map_err(|e| ClientError::Protocol(e.to_string()))?;
         Ok(self
             .http
-            .post(self.url(path))
+            .request(method, self.url(path))
             .header("Content-Type", "application/json")
             .body(bytes))
+    }
+
+    pub(super) fn get(&self, path: &str) -> reqwest::RequestBuilder {
+        self.http.get(self.url(path))
+    }
+
+    pub(super) fn delete(&self, path: &str) -> reqwest::RequestBuilder {
+        self.http.delete(self.url(path))
     }
 
     /// `POST /devices` – registers this PC, returns device id and token.

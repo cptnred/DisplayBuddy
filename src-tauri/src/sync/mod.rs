@@ -6,6 +6,8 @@
 //!   into the outbox.
 //! - [`engine`]: one cycle = push (≤ 200 per package) → pull → merge.
 //! - [`secret`]: the token in the Windows Credential Manager.
+//! - [`account`], [`pairing`]: v4 account and QR-pairing calls (PLAN_V4 §7.1); they
+//!   reuse [`finish_connect`] / [`disconnect_local`] and never hold a lock on the net.
 //!
 //! Flow: changes wake the worker after 2 s; it also runs every 60 s, when the notes
 //! window is shown, on start and on "Jetzt synchronisieren". At start-up it pulls
@@ -25,12 +27,14 @@
 //! storage/reminders lock and therefore never read settings (they use the
 //! `enabled` atomic) and never compute or emit the status.
 
+pub mod account;
 pub mod client;
 pub mod core;
 pub mod engine;
 pub mod merge;
 pub mod meta;
 pub mod outbox;
+pub mod pairing;
 pub mod secret;
 
 use std::collections::HashSet;
@@ -48,7 +52,7 @@ use self::core::SyncCore;
 use self::engine::{Engine, LocalData, SyncError, enqueue_all};
 use self::outbox::Kind;
 use self::secret::TokenStore;
-use crate::model::{NotesChangedPayload, Reminder, SyncState, SyncStatus};
+use crate::model::{DEFAULT_SYNC_SERVER_URL, NotesChangedPayload, Reminder, SyncState, SyncStatus};
 use crate::state::lock;
 use crate::storage::Storage;
 
@@ -375,7 +379,7 @@ fn run_cycle(app: &AppHandle, mode: Mode) {
         }
     };
     let client = match Client::new(
-        &settings.sync_server_url,
+        server_or_default(&settings.sync_server_url),
         Some(token),
         Arc::new(SystemClock),
     ) {
@@ -425,9 +429,59 @@ fn run_cycle(app: &AppHandle, mode: Mode) {
 
 // ---- commands ----------------------------------------------------------------------
 
+/// `""` = the standard server (D-96). Returns (value stored in `syncServerUrl`,
+/// normalised URL to talk to); the default stays `""` so it follows the standard.
+pub fn resolve_server(input: &str) -> Result<(String, String), String> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Ok((String::new(), DEFAULT_SYNC_SERVER_URL.to_string()));
+    }
+    let server = client::normalize_server_url(input).map_err(|e| e.to_string())?;
+    Ok((server.clone(), server))
+}
+
+/// The server a stored `syncServerUrl` means (`""` = standard server).
+pub fn server_or_default(stored: &str) -> &str {
+    if stored.trim().is_empty() {
+        DEFAULT_SYNC_SERVER_URL
+    } else {
+        stored
+    }
+}
+
+/// Trimmed device name, 1–64 characters.
+pub fn check_device_name(name: &str) -> Result<String, String> {
+    let name = name.trim();
+    if name.is_empty() || name.chars().count() > DEVICE_NAME_MAX {
+        return Err("invalid_input: device name".into());
+    }
+    Ok(name.to_string())
+}
+
+/// A client with the stored token for the account commands (no lock held afterwards).
+pub fn signed_in_client(app: &AppHandle) -> Result<Client, String> {
+    let settings = crate::state::current_settings(app);
+    if !settings.sync_enabled {
+        return Err("not_connected".into());
+    }
+    let token = module(app)
+        .ok_or("not_ready: sync module")?
+        .tokens
+        .get()
+        .map_err(|e| format!("keyring: {e}"))?
+        .ok_or("unauthorized")?;
+    Client::new(
+        server_or_default(&settings.sync_server_url),
+        Some(token),
+        Arc::new(SystemClock),
+    )
+    .map_err(|e| e.to_string())
+}
+
 /// Error strings of `sync_connect` start with a code the UI maps to German texts:
-/// `invalid_url`, `invalid_input`, `unauthorized`, `offline`, `server`, `protocol`,
-/// `keyring`, `not_ready` (`ClientError`'s `Display` already starts with its code).
+/// `invalid_url`, `invalid_input`, `unauthorized`, `offline`, `protocol`, `keyring`,
+/// `not_ready`, a server code (`too_many_requests`, `device_limit`, `account_disabled`, …)
+/// or `server` (see [`account::error_text`]).
 pub async fn connect(
     app: AppHandle,
     server_url: String,
@@ -435,39 +489,49 @@ pub async fn connect(
     password: String,
     device_name: String,
 ) -> Result<SyncStatus, String> {
-    let server = client::normalize_server_url(&server_url).map_err(|e| e.to_string())?;
+    let (stored, server) = resolve_server(&server_url)?;
     let username = username.trim().to_string();
-    let device_name = device_name.trim().to_string();
     if username.is_empty() || password.is_empty() {
         return Err("invalid_input: username and password required".into());
     }
-    if device_name.is_empty() || device_name.chars().count() > DEVICE_NAME_MAX {
-        return Err("invalid_input: device name".into());
-    }
+    let device_name = check_device_name(&device_name)?;
     let client = Client::new(&server, None, Arc::new(SystemClock)).map_err(|e| e.to_string())?;
     let resp = client
         .register(&username, &password, &device_name)
         .await
-        .map_err(|e| e.to_string())?;
-    log::info!(
-        "sync: registered this PC as device {}",
-        resp.value.device_id
-    );
+        .map_err(|e| account::error_text(e, None))?;
+    finish_connect(
+        &app,
+        &stored,
+        &device_name,
+        &resp.value.device_id,
+        &resp.value.token,
+        resp.offset_sample,
+    )
+}
 
+/// After a successful `POST /devices`, `POST /accounts` or `POST /accounts/recover`:
+/// token into the Credential Manager, fresh sync state, unite local data with the
+/// server, sync on. No network here (it runs under the `cycle` lock).
+pub fn finish_connect(
+    app: &AppHandle,
+    stored_url: &str,
+    device_name: &str,
+    device_id: &str,
+    token: &str,
+    offset_sample: Option<i64>,
+) -> Result<SyncStatus, String> {
+    log::info!("sync: registered this PC as device {device_id}");
     {
-        let m = module(&app).ok_or("not_ready: sync module")?;
+        let m = module(app).ok_or("not_ready: sync module")?;
         let _cycle = lock(&m.cycle);
-        m.tokens
-            .set(&resp.value.token)
-            .map_err(|e| format!("keyring: {e}"))?;
-        let device_id = resp.value.device_id.clone();
-        let sample = resp.offset_sample;
+        m.tokens.set(token).map_err(|e| format!("keyring: {e}"))?;
         let offset = m.core.meta_update(|meta| {
             *meta = meta::SyncMeta {
-                device_id: Some(device_id),
+                device_id: Some(device_id.to_string()),
                 ..Default::default()
             };
-            if let Some(s) = sample {
+            if let Some(s) = offset_sample {
                 meta.clock_offsets.push(s);
             }
             meta.clock_offsets.offset_ms()
@@ -477,12 +541,12 @@ pub async fn connect(
         // the switch (a double outbox entry is harmless).
         m.enabled.store(true, Ordering::SeqCst);
         // first connect: unite local data with the server (by id, LWW per id)
-        let united = enqueue_all(&AppLocal { app: &app }, &m.core).and_then(|()| {
-            crate::state::update_settings(&app, |s| {
+        let united = enqueue_all(&AppLocal { app }, &m.core).and_then(|()| {
+            crate::state::update_settings(app, |s| {
                 let mut s = s.clone();
                 s.sync_enabled = true;
-                s.sync_server_url = server.clone();
-                s.sync_device_name = device_name.clone();
+                s.sync_server_url = stored_url.to_string();
+                s.sync_device_name = device_name.to_string();
                 Ok(s)
             })
         });
@@ -494,11 +558,11 @@ pub async fn connect(
             }
         };
         *lock(&m.run_state) = (SyncState::Idle, None);
-        crate::state::emit_settings_changed(&app, &new);
+        crate::state::emit_settings_changed(app, &new);
         m.wake_now();
     }
-    emit_status(&app);
-    Ok(status(&app))
+    emit_status(app);
+    Ok(status(app))
 }
 
 pub async fn disconnect(app: AppHandle) -> Result<SyncStatus, String> {
@@ -511,7 +575,7 @@ pub async fn disconnect(app: AppHandle) -> Result<SyncStatus, String> {
         .flatten();
     if let Some(token) = token
         && let Ok(client) = Client::new(
-            &settings.sync_server_url,
+            server_or_default(&settings.sync_server_url),
             Some(token),
             Arc::new(SystemClock),
         )
@@ -520,8 +584,13 @@ pub async fn disconnect(app: AppHandle) -> Result<SyncStatus, String> {
         // best effort: the device can also be revoked on the server
         log::info!("sync: could not sign out on the server: {e}");
     }
+    disconnect_local(&app)
+}
+
+/// Sync off, token and outbox gone; local notes stay. Also used after `account_delete`.
+pub fn disconnect_local(app: &AppHandle) -> Result<SyncStatus, String> {
     {
-        let m = module(&app).ok_or("not_ready: sync module")?;
+        let m = module(app).ok_or("not_ready: sync module")?;
         let _cycle = lock(&m.cycle);
         m.enabled.store(false, Ordering::SeqCst);
         if let Err(e) = m.tokens.delete() {
@@ -530,15 +599,15 @@ pub async fn disconnect(app: AppHandle) -> Result<SyncStatus, String> {
         m.core.reset();
         crate::clock::set_offset_ms(0);
         *lock(&m.run_state) = (SyncState::Off, None);
-        let (_, new) = crate::state::update_settings(&app, |s| {
+        let (_, new) = crate::state::update_settings(app, |s| {
             let mut s = s.clone();
             s.sync_enabled = false;
             Ok(s)
         })?;
-        crate::state::emit_settings_changed(&app, &new);
+        crate::state::emit_settings_changed(app, &new);
     }
-    emit_status(&app);
-    Ok(status(&app))
+    emit_status(app);
+    Ok(status(app))
 }
 
 pub fn sync_now(app: &AppHandle) -> Result<SyncStatus, String> {

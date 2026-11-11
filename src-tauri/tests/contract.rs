@@ -58,7 +58,7 @@ fn plan_commands() -> BTreeMap<&'static str, Vec<&'static str>> {
         ("toggle_notes", vec![]),
         ("show_notes", vec![]),
         ("hide_notes", vec![]),
-        ("open_settings", vec![]),
+        ("open_settings", vec!["section"]), // v4: + section
         ("show_buddy_menu", vec![]),
         ("flush_done", vec![]),
         ("quit_app", vec![]),
@@ -88,6 +88,42 @@ fn plan_commands() -> BTreeMap<&'static str, Vec<&'static str>> {
         ),
         ("sync_disconnect", vec![]),
         ("sync_now", vec![]),
+        // v4 (PLAN_V4 §7.1)
+        ("account_server_info", vec!["server_url"]),
+        (
+            "account_register",
+            vec![
+                "server_url",
+                "username",
+                "password",
+                "device_name",
+                "invite_code",
+            ],
+        ),
+        (
+            "account_recover",
+            vec![
+                "server_url",
+                "username",
+                "recovery_code",
+                "new_password",
+                "device_name",
+            ],
+        ),
+        ("account_info", vec![]),
+        ("account_devices", vec![]),
+        ("account_revoke_device", vec!["device_id", "password"]),
+        (
+            "account_change_password",
+            vec!["current_password", "new_password"],
+        ),
+        ("account_new_recovery_code", vec!["password"]),
+        ("account_export", vec![]),
+        ("account_delete", vec!["password", "confirm_username"]),
+        ("account_open_link", vec!["kind"]),
+        ("pairing_start", vec![]),
+        ("pairing_status", vec!["pairing_id"]),
+        ("pairing_cancel", vec!["pairing_id"]),
     ])
 }
 
@@ -261,7 +297,7 @@ fn capabilities_only_reference_known_commands() {
     // Commands no window may call: only reachable via tray/menu/Rust (load_note is kept
     // for the PLAN contract but no window needs it, so no capability grants it).
     // If a window starts using one, add it to its capability and remove it here.
-    let rust_only: BTreeSet<String> = ["load_note", "show_notes", "open_settings", "quit_app"]
+    let rust_only: BTreeSet<String> = ["load_note", "show_notes", "quit_app"]
         .into_iter()
         .map(String::from)
         .collect();

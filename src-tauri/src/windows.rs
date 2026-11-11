@@ -416,12 +416,24 @@ static CREATING_SETTINGS: AtomicBool = AtomicBool::new(false);
 
 /// Focuses the settings window or creates it on demand.
 pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
+    open_settings_at(app, None)
+}
+
+/// Event to an open settings window: scroll to this section (payload: section name).
+pub const SETTINGS_SECTION: &str = "settings-section";
+
+/// Opens the settings; `section` (e.g. "account", PLAN_V4 §7.1) is passed as URL fragment
+/// to a new window and as [`SETTINGS_SECTION`] event to an open one.
+pub fn open_settings_at(app: &AppHandle, section: Option<&str>) -> tauri::Result<()> {
     if let Some(w) = app.get_webview_window(SETTINGS) {
         if w.is_minimized().unwrap_or(false) {
             w.unminimize()?;
         }
         w.show()?;
         w.set_focus()?;
+        if let Some(section) = section {
+            w.emit_to(SETTINGS, SETTINGS_SECTION, section)?;
+        }
         return Ok(());
     }
     if CREATING_SETTINGS.swap(true, Ordering::SeqCst) {
@@ -430,18 +442,21 @@ pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
     // Window creation must not happen on the main thread from a sync command or
     // event handler (WebView2 deadlock on Windows), so build on a helper thread.
     let app = app.clone();
+    let page = section.map_or_else(
+        || "settings.html".to_string(),
+        |s| format!("settings.html#{s}"),
+    );
     std::thread::spawn(move || {
-        let result =
-            WebviewWindowBuilder::new(&app, SETTINGS, WebviewUrl::App("settings.html".into()))
-                .title("Einstellungen – Display Buddy")
-                .inner_size(520.0, 640.0)
-                .min_inner_size(420.0, 480.0)
-                // The notes window is always on top; keep settings above it while open.
-                .always_on_top(true)
-                .resizable(true)
-                .center()
-                .focused(true)
-                .build();
+        let result = WebviewWindowBuilder::new(&app, SETTINGS, WebviewUrl::App(page.into()))
+            .title("Einstellungen – Display Buddy")
+            .inner_size(520.0, 640.0)
+            .min_inner_size(420.0, 480.0)
+            // The notes window is always on top; keep settings above it while open.
+            .always_on_top(true)
+            .resizable(true)
+            .center()
+            .focused(true)
+            .build();
         CREATING_SETTINGS.store(false, Ordering::SeqCst);
         match result {
             Ok(w) => {

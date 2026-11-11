@@ -24,9 +24,13 @@ pub fn hide_notes(app: AppHandle) -> Result<(), String> {
 }
 
 /// Async on purpose: creating a window from a sync command deadlocks WebView2.
+/// `section`: only "account" (v4, the account hint of the notes window).
 #[tauri::command]
-pub async fn open_settings(app: AppHandle) -> Result<(), String> {
-    windows::open_settings(&app).map_err(err)
+pub async fn open_settings(app: AppHandle, section: Option<String>) -> Result<(), String> {
+    match section.as_deref() {
+        None | Some("account") => windows::open_settings_at(&app, section.as_deref()).map_err(err),
+        Some(_) => Err("invalid_input: section".into()),
+    }
 }
 
 #[tauri::command]

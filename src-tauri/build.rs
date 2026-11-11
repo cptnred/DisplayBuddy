@@ -40,6 +40,21 @@ const COMMANDS: &[&str] = &[
     "sync_connect",
     "sync_disconnect",
     "sync_now",
+    // v4 (PLAN_V4 §7.1)
+    "account_server_info",
+    "account_register",
+    "account_recover",
+    "account_info",
+    "account_devices",
+    "account_revoke_device",
+    "account_change_password",
+    "account_new_recovery_code",
+    "account_export",
+    "account_delete",
+    "account_open_link",
+    "pairing_start",
+    "pairing_status",
+    "pairing_cancel",
 ];
 
 fn main() {

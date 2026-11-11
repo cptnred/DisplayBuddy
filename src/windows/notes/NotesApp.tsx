@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ComponentType, type Reac
 import type { JSONContent } from "@tiptap/core";
 import { api } from "../../lib/api";
 import type { Note, NoteColor } from "../../types";
+import { AccountHint } from "./AccountHint";
 import { Carousel } from "./Carousel";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ActiveNoteCard, DefaultPreview, PreviewNoteCard, UNTITLED, type NoteEditorProps } from "./NoteCard";
@@ -278,6 +279,7 @@ export function NotesApp({ Editor, renderPreview = defaultRenderPreview, footer 
         )}
       </main>
 
+      <AccountHint />
       {footer}
 
       <ConfirmDialog

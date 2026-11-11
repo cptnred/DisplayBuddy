@@ -1,0 +1,25 @@
+.card {
+  margin: 6px 10px 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  font-size: 13px;
+  animation: enter 180ms ease-out;
+}
+.title { margin: 0 0 2px; font-weight: 600; }
+.text { margin: 0 0 8px; color: #374151; }
+.buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.primary, .secondary {
+  font: inherit; border-radius: 8px; padding: 4px 10px; cursor: pointer; border: 1px solid #bfdbfe; background: #fff;
+}
+.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+.primary:focus-visible, .secondary:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+
+@keyframes enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card { animation: none; }
+}

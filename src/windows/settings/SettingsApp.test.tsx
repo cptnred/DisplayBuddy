@@ -46,6 +46,10 @@ vi.mock("../../lib/api", () => ({
     syncConnect: vi.fn(),
     syncDisconnect: vi.fn(),
     syncNow: vi.fn(),
+    accountServerInfo: vi.fn(async () => {
+      throw "offline: test";
+    }),
+    onSettingsSection: vi.fn(async () => () => undefined),
   },
 }));
 import { api } from "../../lib/api";
