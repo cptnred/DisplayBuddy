@@ -725,3 +725,68 @@ In der Cloud automatisch geprüft ist, was in §31 steht; alles hier braucht ech
   (genau einmal, Retry, 410), Dedupe für native Geräte, Desktop-Sync gegen einen Mock-Server.
 - `npm run e2e`: echter Server + PWA in Chromium (Zeitzone New York) + PC-Protokoll (Szenarien 1–4, 9, 12–15, 19, 24).
 - Android-APK und Emulator-Szenarien 28/29 in GitHub Actions (`mobile-android`), iOS-Simulator-Build (`mobile-ios`).
+
+## 32. v4 – Konto anlegen am PC (Windows-Installer)
+1. Einstellungen → „Konto & Handy“: Zeile „Server: buddy.pev-point.de“. Auf einem frisch installierten PC ohne Konto
+   erscheint im Notizfenster einmal die Karte „Notizen auch aufs Handy?“; „Später“ blendet sie bis zum nächsten Start
+   aus, „Nicht mehr zeigen“ dauerhaft. Verbunden erscheint sie nie.
+2. „Konto anlegen“ gegen buddy.pev-point.de (erst wenn dort `BUDDY_REGISTRATION=open` gesetzt ist): „Konto wird
+   angelegt …“ dauert höchstens wenige Sekunden. Danach der Pflicht-Dialog „Dein Wiederherstellungscode“: Esc schließt
+   ihn **nicht**, „Weiter“ erst nach dem Kästchen, „Kopieren“ legt den Code in die Zwischenablage.
+3. Fehltexte: vergebener Name, Name mit `@`, Passwort < 12 Zeichen, „Passwörter stimmen nicht überein“.
+4. „Eigenen Server verwenden …“ mit deinem Server ohne Registrierung → „Auf diesem Server kann man sich nicht selbst
+   registrieren.“; „Standard-Server verwenden“ setzt zurück.
+5. Links „Datenschutz“/„Impressum“ öffnen den Browser (nur sichtbar, wenn der Server sie meldet).
+6. Ein v3-Konto (bestehende Installation, verbunden): bleibt nach dem Update verbunden; Hinweis „Für dieses Konto
+   gibt es noch keinen Wiederherstellungscode.“ → „Code erzeugen“ (Passwort) → Pflicht-Dialog.
+
+## 33. v4 – Handy per QR verbinden
+1. PC: „Handy verbinden“ → QR erscheint erst nach dem Klick, Countdown 3:00, Code als Text darunter.
+   **QR bei 100 %, 150 % und 200 % Windows-Skalierung mit dem Handy scannen** (muss jeweils klappen).
+2. Android, Kamera-App → Link öffnet Chrome auf `/pair`: Adresszeile zeigt **kein** `#c=…` mehr, nichts passiert ohne
+   Tipp auf „Hier anmelden“; danach angemeldet. Am PC: „✓ ‚…‘ ist jetzt angemeldet.“
+3. iPhone, Kamera-App → Safari `/pair` → „Hier anmelden“. Danach die Web-App vom Home-Bildschirm öffnen: Ist sie
+   angemeldet? (Cookie-Übernahme hängt von der iOS-Version ab, PLAN_V4 §14.) Wenn nicht: dort „Code eingeben“.
+4. Installierte PWA (Android und iOS): „QR-Code scannen“ → Kamera-Erlaubnis → Code wird erkannt; „Abbrechen“ gibt
+   die Kamera frei (Kamera-Symbol des Systems erlischt). Kamera verweigert → Hinweis, Code-Eingabe geht weiter.
+5. Native Android-App: „QR-Code scannen“ → Erlaubnis → angemeldet, Erinnerungen werden geplant.
+6. Native iOS-App (Xcode, eigener Mac): erster Scan fragt nach der Kamera mit dem Text „Display Buddy nutzt die
+   Kamera nur, um den Anmelde-QR-Code von deinem PC zu scannen.“ (fehlt der Text, stürzt die App beim Scannen ab).
+7. Code eines **anderen** Servers in der nativen App → Dialog „Anderer Server“ mit der Adresse groß; „Abbrechen“ ist
+   vorausgewählt. In der PWA: „Dieser Code gehört zu einem anderen Server (…). Öffne ihn dort.“
+8. Code 3 Minuten liegen lassen → PC zeigt „Der Code ist abgelaufen.“ + „Neuen Code“; Handy meldet „ungültig,
+   abgelaufen oder schon benutzt“.
+9. PC: „Das war ich nicht – abmelden“ direkt nach dem Verbinden → Handy ist beim nächsten Sync abgemeldet.
+
+## 34. v4 – Konto verwalten
+1. Geräteliste am PC: Typen „PC“, „Handy-App“, „Web-App“, „Dieses Gerät“, „zuletzt aktiv“. Das Handy meldet den
+   älteren PC ab → Passwortabfrage; falsches Passwort → „Das Passwort ist falsch.“ (Handy bleibt angemeldet).
+2. „Passwort ändern“ mit altem Passwort → alle anderen Geräte abgemeldet. „Ich kenne mein aktuelles Passwort nicht“
+   auf einem PC, der jünger als 24 h ist → Hinweis, dass das Passwort nötig ist; nach 24 h geht es.
+3. „Passwort vergessen?“ am zweiten PC mit dem Wiederherstellungscode → alle anderen Geräte abgemeldet, **neuer**
+   Code im Pflicht-Dialog; der alte Code funktioniert nicht mehr.
+4. „Daten exportieren“ → Speichern-Dialog mit `display-buddy-export-<name>-<Datum>.json`; Datei enthält Notizen, keine
+   Tokens.
+5. „Konto löschen …“: Knopf erst aktiv bei richtigem Benutzernamen; nach dem Löschen sind die Notizen **am PC noch
+   da**, das Handy ist abgemeldet (PWA: lokale Daten gelöscht).
+6. Server-Admin: `buddy-server user disable <name>` → alle Geräte zeigen „Das Konto ist gesperrt.“; `enable` → läuft
+   wieder, ohne Neuanmeldung.
+7. Kontingent (`user quota <name> --bytes …` klein) → am PC „Der Speicher deines Kontos ist voll …“, Änderungen
+   warten; Notiz löschen → Sync läuft wieder.
+
+## 35. v4 – Betrieb buddy.pev-point.de (siehe docs/OPERATIONS.md)
+1. Upgrade an Ort und Stelle: vorher Sicherung; nach dem Start `GET /api/v1/info` → `"registration":"closed"`,
+   `"apiLevel":2`; bestehende Geräte synchronisieren weiter.
+2. Hinter Nginx Proxy Manager: 11 falsche Pairing-Codes von **einem** Handy → 429; ein zweites Handy (anderes Netz)
+   ist nicht betroffen (echte Client-IP über `BUDDY_TRUSTED_PROXIES`).
+3. Erst nach Impressum + Datenschutzerklärung: `BUDDY_REGISTRATION=open`, Links in `/info` prüfen.
+4. Backup-Skript und Rücksicherung einmal echt ausführen (die Befehle sind ohne Docker nur gelesen, nicht gelaufen).
+
+## 36. Anhang v4: Auf dem Windows-PC automatisiert geprüft
+- `npm test` (+ TZ New York/Tokio): Pairing-/Code-Vektoren, Konto-Nachrichten, Konto & Handy am PC (Zustände,
+  Pflicht-Dialog, Countdown), PWA Code/QR/`/pair`, Scanner mit gemockter Kamera, Konto löschen.
+- `cargo test` in `crates/buddy-core`, `src-tauri`, `server` (WSL), `mobile/src-tauri`: Codes, PoW, Migration 0003
+  auf einer v3-Datenbank, Registrierung/Wiederherstellung/`/me/*`/Kontingente/Limits/CLI, Pairing inkl. parallelem
+  Einlösen, Desktop-Client gegen einen HTTP-Mock, Logs ohne Geheimnisse.
+- `npm run e2e:v4`: echter Server-Prozess (WSL), 19 Szenarien aus PLAN_V4 §13 über HTTP und `/pair` im echten
+  Chromium; Server-Log auf alle verwendeten Geheimnisse geprüft.
