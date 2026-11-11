@@ -172,6 +172,8 @@ Umgesetzt nach `docs/PLAN_V4_ACCOUNTS.md`, Entscheidungen D-85…D-117 (Orchestr
 - Desktop: `src-tauri/src/sync/{account,pairing}.rs`, `src/windows/settings/AccountSection.tsx` (+ Dialog, Pairing,
   Verwaltung), `src/windows/notes/AccountHint.tsx`.
 - Betrieb: `deploy/` (Variablen nur in `.env`), `docs/OPERATIONS.md` (pev-point: Upgrade an Ort und Stelle, D-112).
+- **Live seit 2026-11-11:** buddy.pev-point.de läuft mit 0.4, Registrierung `open`, Rechtsseiten unter `/info/`
+  (D-119). Server-Zugang, Pfade und Update: `docs/OPERATIONS.md` §1, `docs/UPDATE.md`.
 - Abnahme: `npm run e2e:v4` (19 Szenarien gegen den echten Server, `/pair` in Chromium), Handtests `MANUAL_TESTS.md`
   §32–36.
 
@@ -185,6 +187,11 @@ Umgesetzt nach `docs/PLAN_V4_ACCOUNTS.md`, Entscheidungen D-85…D-117 (Orchestr
 - Falsches Bestätigungs-Passwort ist **403**, nicht 401 – sonst melden sich die Clients ab (D-113).
 - Ein 0.3-Server startet nach Migration 0003 nicht mehr: vor dem Update sichern.
 - Stundenlimit: Mehrere parallele Agenten erreichen es schnell; nach dem Reset per SendMessage fortsetzen.
+- **Server-Pfad:** Die Installation liegt in `/home/martin/displaybuddy-src` (Benutzer `martin`, `docker` ohne
+  `sudo`), nicht in `/root/DisplayBuddy` oder `~/DisplayBuddy` (dort nur kopierte Anleitungen). Den echten Ordner
+  zeigt `docker inspect <container> --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}'`.
+- **Service Worker und eigene Seiten:** Die `NavigationRoute` fängt jede Navigation im Scope `/` ab – neue Pfade
+  auf der PWA-Domain brauchen einen Eintrag in der `denylist` (`src/web/sw.ts`, D-119).
 
 ## 8. ToDo-Liste (vom Benutzer bestätigt)
 

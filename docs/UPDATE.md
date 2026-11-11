@@ -11,7 +11,8 @@ Stand: 2026-11-11 · Kurzanleitung für den Betreiber. Ausführliches dazu: `dep
 | Programm (Git-Ordner) | `~/displaybuddy-src` = `/home/martin/displaybuddy-src`, Branch `claude/display-buddy-v3-c9w0c8` |
 | **Arbeitsordner für alle Befehle** | `~/displaybuddy-src/deploy` – hier liegt die `.env` |
 | Container / Daten | `displaybuddy-buddy-1` · Docker-Volume `displaybuddy_buddy-data` (Datenbank unter `/data/buddy.db`) |
-| Proxy | Nginx Proxy Manager (`COMPOSE_FILE=compose.npm.yaml` in der `.env`) |
+| Proxy | Nginx Proxy Manager, Proxy-Host Nr. 7 (`COMPOSE_FILE=compose.npm.yaml:compose.site.yaml` in der `.env`) |
+| Eigene Seiten | `~/displaybuddy-src/deploy/site` → `https://buddy.pev-point.de/info/` (nicht im Git; ein Update lässt sie unberührt) |
 
 Nicht verwechseln:
 
@@ -64,7 +65,8 @@ Beim ersten Start ergänzt der Server die Datenbank selbst (Migration); vorhande
 
 ```sh
 docker compose ps                                   # buddy = healthy
-curl -fsS https://buddy.pev-point.de/api/v1/info    # "apiLevel":2 und der Registrierungsmodus
+curl -fsS https://buddy.pev-point.de/api/v1/info    # Version, "registration":"open", legal-URLs gefüllt
+curl -fsSI https://buddy.pev-point.de/info/impressum.html | head -1   # HTTP 200
 docker compose logs --tail 50 buddy                 # keine Fehler
 docker compose exec buddy buddy-server user list    # die Konten sind da
 ```
@@ -80,7 +82,8 @@ docker compose exec buddy buddy-server user recovery <Benutzername>
 
 ## Registrierung und Anmeldung einstellen
 
-Die Anmeldung geht immer. Ob sich neue Leute selbst ein Konto anlegen dürfen, steht in der `.env`:
+Die Anmeldung geht immer. Ob sich neue Leute selbst ein Konto anlegen dürfen, steht in der `.env`
+(Stand 2026-11-11: `open`):
 
 ```sh
 cd ~/displaybuddy-src/deploy

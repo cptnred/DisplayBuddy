@@ -1,7 +1,7 @@
 # Betriebshandbuch buddy.pev-point.de
 
 Stand: 2026-11-11 (Server 0.4, v4) · Grundlage: `docs/PLAN_V4_ACCOUNTS.md` §11, §9.2, §8.2 und
-`docs/DECISIONS.md` D-86, D-94, D-102, D-105, D-107, D-112.
+`docs/DECISIONS.md` D-86, D-94, D-102, D-105, D-107, D-112, D-119.
 
 Dieses Handbuch beschreibt, was der **öffentliche Standard-Server** über die normale Einrichtung hinaus braucht.
 Installation, Befehle und Fehlersuche stehen in `deploy/README.md`; hier wird darauf verwiesen.
@@ -29,9 +29,15 @@ Installation, Befehle und Fehlersuche stehen in `deploy/README.md`; hier wird da
 
 ## 1. Überblick und Zuständigkeiten
 
-buddy.pev-point.de ist der **bestehende v3-Server**, der an Ort und Stelle auf v4 aktualisiert wird (D-112).
-Er läuft hinter **Nginx Proxy Manager** (NPM) – Variante B aus `deploy/README.md`, Compose-Datei
-`deploy/compose.npm.yaml` (in `.env`: `COMPOSE_FILE=compose.npm.yaml`).
+buddy.pev-point.de ist der bestehende v3-Server, **seit 2026-11-11 an Ort und Stelle auf 0.4 aktualisiert** (D-112),
+Registrierung `open` (D-119). Er läuft hinter **Nginx Proxy Manager** (NPM, Proxy-Host Nr. 7) – Variante B aus
+`deploy/README.md`, dazu die eigenen Seiten unter `/info/` (in `.env`: `COMPOSE_FILE=compose.npm.yaml:compose.site.yaml`).
+
+| Adresse | Inhalt |
+|---|---|
+| `https://buddy.pev-point.de/` | Web-App (PWA) |
+| `https://buddy.pev-point.de/info/` | Startseite (Platzhalter) |
+| `…/info/impressum.html`, `…/info/datenschutz.html` | Rechtsseiten, gebaut aus `deploy/landing/` ([4](#4-checkliste-vor-buddy_registrationopen)) |
 
 **Anmeldung und Pfade:** per SSH als `martin` (nicht root). Das Repository liegt in
 `/home/martin/displaybuddy-src`, der Arbeitsordner für alle `docker compose`-Befehle ist
@@ -57,33 +63,32 @@ Repository**:
 Die Werte stehen ausschließlich in `/home/martin/displaybuddy-src/deploy/.env` (die Compose-Dateien bleiben unverändert,
 damit `git pull` nie Konflikte hat). Nach jeder Änderung: `docker compose up -d`.
 
-Stand **nach dem Update auf v4** (Registrierung bleibt zu, D-112):
+Stand **2026-11-11** (0.4, Registrierung offen, D-119). Sicherung der Fassung davor:
+`~/displaybuddy-env-vor-open.bak`.
 
 ```ini
 BUDDY_DOMAIN=buddy.pev-point.de
-BUDDY_VAPID_SUBJECT=mailto:…            # wie bisher
-COMPOSE_FILE=compose.npm.yaml
-PROXY_NETWORK=…                         # wie bisher
-PROXY_SUBNET=…                          # wie bisher
+ACME_EMAIL=…                            # in Variante B ungenutzt
+BUDDY_VAPID_SUBJECT=mailto:…
+COMPOSE_FILE=compose.npm.yaml:compose.site.yaml
+PROXY_NETWORK=proxy
+PROXY_SUBNET=172.18.0.0/16
 
-# --- v4 (PLAN_V4 §11.2) ---
-# Registrierung: bleibt "closed" (Standard), bis Abschnitt 4 erledigt ist. Dann:
-#BUDDY_REGISTRATION=open
-BUDDY_REGISTRATION_POW_BITS=22
-BUDDY_REGISTRATION_DAILY_LIMIT=200
+# --- v4: Konten (docs/OPERATIONS.md §2, deploy/landing/README.md) ---
+BUDDY_REGISTRATION=open
+BUDDY_IMPRINT_URL=https://buddy.pev-point.de/info/impressum.html
+BUDDY_PRIVACY_URL=https://buddy.pev-point.de/info/datenschutz.html
+BUDDY_OPERATOR_NAME=pev-point.de
 BUDDY_QUOTA_BYTES=52428800              # 50 MB
 BUDDY_QUOTA_NOTES=5000
 BUDDY_QUOTA_DEVICES=10
-# Rechtsseiten: URLs stehen noch nicht fest. Pflicht vor BUDDY_REGISTRATION=open (nur https://).
-#BUDDY_IMPRINT_URL=https://…
-#BUDDY_PRIVACY_URL=https://…
-#BUDDY_TERMS_URL=https://…              # optional: Nutzungshinweise (Abschnitt 4.6)
-BUDDY_OPERATOR_NAME=pev-point.de
 # Firebase: später entscheiden (Abschnitt 9). Ohne Dienstkonto ist FCM aus; "minimal" ist schon gesetzt,
 # damit Google beim späteren Einschalten keine Inhalte sieht (D-102).
 BUDDY_FCM_PAYLOAD=minimal
-#BUDDY_FCM_SERVICE_ACCOUNT_FILE=/data/fcm-service-account.json
 ```
+
+Nicht gesetzt (Standardwerte): `BUDDY_REGISTRATION_POW_BITS` = 22, `BUDDY_REGISTRATION_DAILY_LIMIT` = 200,
+`BUDDY_TERMS_URL` (keine Nutzungshinweise, 4.6), `BUDDY_FCM_SERVICE_ACCOUNT_FILE`.
 
 Kontingente gelten sofort auch für die **bestehenden** Konten. Nach dem Update mit `user show <name>` prüfen und
 eigene Konten bei Bedarf anheben (`user quota <name> --bytes … --notes … --devices …`, `deploy/README.md` §9.3).
@@ -94,10 +99,14 @@ Kontrolle von außen (ohne Anmeldung):
 curl -fsS https://buddy.pev-point.de/api/v1/info
 ```
 
-Erwartet: `"apiLevel":2`, `"registration":"closed"`, `"operator":"pev-point.de"`, `"legal"` mit `null`-Werten,
-solange die URLs fehlen.
+Erwartet: `"version":"0.4.0"`, `"apiLevel":2`, `"registration":"open"`, `"operator":"pev-point.de"`, `"legal"` mit
+Impressum- und Datenschutz-URL (`termsUrl` = `null`).
 
 ## 3. Upgrade v3 → v4 an Ort und Stelle
+
+**Erledigt am 2026-11-11.** Abweichend vom Plan gab es weder Außer-Haus-Sicherung (§5 nicht eingerichtet) noch die
+Kopie aus README §13.1 Schritt 1; Rückfall wäre nur die Tagessicherung `backups/buddy-20261111.db` von 00:45 Uhr.
+Für künftige Updates: `docs/UPDATE.md`. Ursprünglicher Plan:
 
 Allgemeiner Ablauf mit Rückweg: `deploy/README.md` §13.1. Für pev-point zusätzlich:
 
@@ -119,19 +128,28 @@ Allgemeiner Ablauf mit Rückweg: `deploy/README.md` §13.1. Für pev-point zusä
 
 ## 4. Checkliste vor `BUDDY_REGISTRATION=open`
 
-Erst wenn **alle** Punkte erledigt sind (Vorlagen für Startseite, Impressum und Datenschutz: `deploy/landing/`):
+Gedacht als „erst wenn **alle** Punkte erledigt sind“. Der Betreiber hat am 2026-11-11 trotz offener Punkte
+geöffnet (D-119); die Datenschutzerklärung nennt deshalb nur, was heute gilt. Stand:
 
-- [ ] Impressum online ([4.1](#41-impressum--5-ddg)), URL in `BUDDY_IMPRINT_URL`
-- [ ] Datenschutzerklärung online ([4.2](#42-datenschutzerklärung-art-13-dsgvo)), URL in `BUDDY_PRIVACY_URL`
+- [x] Impressum online ([4.1](#41-impressum--5-ddg)): `https://buddy.pev-point.de/info/impressum.html`
+- [x] Datenschutzerklärung online ([4.2](#42-datenschutzerklärung-art-13-dsgvo)): `…/info/datenschutz.html`
+  (Hosting: Strato; Log-Frist 11 Wochen; Grundlage für US-Push-Dienste vom Betreiber zu prüfen)
 - [ ] optional Nutzungshinweise ([4.6](#46-nutzungshinweise-optional)), URL in `BUDDY_TERMS_URL`
-- [ ] AV-Vertrag mit dem VPS-Anbieter und dem Backup-Speicher ([4.3](#43-auftragsverarbeitung-art-28-dsgvo))
+- [ ] AV-Vertrag mit dem Hosting-Anbieter (Strato) und ggf. dem Backup-Speicher ([4.3](#43-auftragsverarbeitung-art-28-dsgvo))
 - [ ] Verzeichnis der Verarbeitungstätigkeiten angelegt ([4.4](#44-verzeichnis-der-verarbeitungstätigkeiten-art-30-dsgvo))
 - [ ] TOMs dokumentiert ([4.5](#45-technische-und-organisatorische-maßnahmen-art-32-dsgvo))
-- [ ] Außer-Haus-Backup läuft täglich **und** eine Rücksicherung wurde getestet ([5](#5-backups-außerhalb-des-vps-restic))
+- [ ] Außer-Haus-Backup läuft täglich **und** eine Rücksicherung wurde getestet ([5](#5-backups-außerhalb-des-vps-restic)) – nicht eingerichtet
 - [ ] Überwachung aktiv: Health, Zertifikat, Platte, Backup-Heartbeat ([6](#6-überwachung))
-- [ ] Log-Aufbewahrung 7 Tage eingerichtet ([7](#7-log-aufbewahrung-7-tage))
-- [ ] Kontingente gesetzt ([2](#2-konfiguration))
+- [ ] Log-Aufbewahrung 7 Tage eingerichtet ([7](#7-log-aufbewahrung-7-tage)) – nicht eingerichtet; danach
+  `LOG_AUFBEWAHRUNG=7 Tage` in `deploy/landing/kontakt.txt`, Seiten neu bauen und hochladen
+- [x] Kontingente gesetzt ([2](#2-konfiguration))
 - [ ] Ablauf bei Missbrauch und Datenpanne bekannt ([11](#11-vorgehen-bei-missbrauch))
+
+Seiten ändern: Angaben in `deploy/landing/kontakt.txt` (nicht im Git), `node deploy/landing/build.mjs`, dann
+`scp deploy/landing/dist/* martin@<server>:displaybuddy-src/deploy/site/` (kein Neustart nötig;
+`deploy/landing/README.md`).
+
+Ablauf beim Öffnen:
 
 Dann in `.env` `BUDDY_REGISTRATION=open` setzen, `docker compose up -d` und prüfen:
 
@@ -337,6 +355,10 @@ Außerdem regelmäßig (z. B. wöchentlich beim Log-Skript, [7](#7-log-aufbewahr
 
 ## 7. Log-Aufbewahrung: 7 Tage
 
+**Stand 2026-11-11: nicht eingerichtet.** NPM-Logs liegen auf dem Server unter
+`/opt/docker/nginx-proxy-manager/data/logs` (buddy = `proxy-host-7_*`); im Skript unten `NPM_LOGS` so setzen. Bis
+dahin nennt die Datenschutzerklärung „höchstens 11 Wochen“.
+
 IP-Adressen stehen in zwei Logs:
 
 | Log | Inhalt | Rotation von selbst |
@@ -358,7 +380,7 @@ anpassen – ermitteln mit `docker ps` und
 # Keep logs with IP addresses about 7 days (docs/OPERATIONS.md §7).
 set -eu
 NPM_CONTAINER=nginx-proxy-manager
-NPM_LOGS=/opt/nginx-proxy-manager/data/logs
+NPM_LOGS=/opt/docker/nginx-proxy-manager/data/logs
 if [ "${1:-}" = weekly ]; then
   # start a new log file now, so the current one never holds more than a week
   docker exec "$NPM_CONTAINER" logrotate -f /etc/logrotate.d/nginx-proxy-manager

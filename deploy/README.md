@@ -462,6 +462,10 @@ BUDDY_OPERATOR_NAME=example.org
 `BUDDY_TERMS_URL` (Nutzungsbedingungen) und `BUDDY_OPERATOR_NAME` (Ihr Name bzw. Ihre Domain) sind optional. Was
 in Impressum und Datenschutzerklärung gehört, listet `docs/OPERATIONS.md` (Checkliste, **kein Rechtsrat**).
 
+Keine eigene Website? `deploy/landing/` enthält Vorlagen (Startseite, Impressum, Datenschutz) und ein Skript, das
+Ihre Angaben aus **einer** Datei einsetzt. `compose.site.yaml` liefert sie unter `https://<Ihre Domain>/info/` aus –
+Anleitung: `deploy/landing/README.md`.
+
 ### 9.5 Admin-Befehle
 
 Alle im Ordner `~/displaybuddy-src/deploy`, jeweils mit `docker compose exec buddy buddy-server` davor

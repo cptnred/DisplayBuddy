@@ -645,3 +645,20 @@ FCM bleibt auf pev-point aus; Android bekommt neue Erinnerungen über den Hinter
   401, unbekanntes Format → stopp; `account_disabled` → Token bleibt, erneute Übergabe nach dem nächsten Sync).
 - Bekannt seit 2026-11-07 (v3, nicht v4): Im Emulator bleibt „Erledigt“ offline aus der Benachrichtigung bei beendeter
   App auf `due` stehen (CI-Lauf 42365550985). Muss separat untersucht werden (Umfeld D-84).
+
+**D-119 Betreiberseiten unter `/info/`, Registrierung offen (2026-11-11).**
+- Startseite, Impressum und Datenschutz liegen auf **derselben Domain** wie die Web-App (Wunsch des Betreibers):
+  `https://buddy.pev-point.de/info/…`. buddy-server liefert sie aus seinem Web-Verzeichnis; `deploy/compose.site.yaml`
+  bindet `deploy/site/` schreibgeschützt als `/app/web/info` ein (opt-in über `COMPOSE_FILE`). Kein zweiter Webserver,
+  keine NPM-Custom-Location.
+- Der Service Worker beantwortet sonst **jede** Navigation im Scope mit `index.html` → `/info/` steht neben `/api/`
+  in der `denylist` der `NavigationRoute` (`src/web/sw.ts`). Ohne das sähen PWA-Nutzer statt des Impressums die App.
+- Vorlagen `deploy/landing/` ohne JavaScript und ohne Fremd-Ressourcen (passt zur strengen CSP des Servers und zur
+  Aussage „keine Drittanbieter“). Alle Betreiberangaben in **einer** Datei `kontakt.txt` (git-ignoriert, keine
+  Privatdaten im öffentlichen Repo); `build.mjs` füllt `[[FELD]]`, escaped HTML, entfernt Vorlagen-Kommentare und
+  bricht bei fehlenden oder Platzhalter-Werten (`----`) ab.
+- Die Datenschutzerklärung nennt nur, was **heute** gilt: Log-Frist ist ein Feld (`LOG_AUFBEWAHRUNG`), derzeit
+  11 Wochen (NPM: wöchentlich, 4 Zugriffs-/10 Fehler-Archive), weil OPERATIONS §7 noch nicht eingerichtet ist; keine
+  Außer-Haus-Sicherung; Firebase „derzeit nicht“.
+- Geöffnet trotz offener Punkte der Checkliste OPERATIONS §4 (AV-Vertrag, VVT, Außer-Haus-Backup, Überwachung,
+  Log-Frist) – Entscheidung des Betreibers.
