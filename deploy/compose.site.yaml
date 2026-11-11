@@ -1,0 +1,10 @@
+# Optional: eigene statische Seiten (Startseite, Impressum, Datenschutz) unter https://<BUDDY_DOMAIN>/info/.
+# Einschalten in .env (Dateien mit ":" getrennt):
+#   COMPOSE_FILE=compose.npm.yaml:compose.site.yaml     (Variante B, hinter NPM)
+#   COMPOSE_FILE=compose.yaml:compose.site.yaml         (Variante A, mit Caddy)
+# Inhalt: Ordner deploy/site/ auf dem Server (gebaut mit deploy/landing/build.mjs, siehe deploy/landing/README.md).
+# buddy-server liefert ihn als Teil der Web-App aus; die Web-App lässt /info/ in Ruhe (src/web/sw.ts).
+services:
+  buddy:
+    volumes:
+      - ./site:/app/web/info:ro

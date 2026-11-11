@@ -19,8 +19,11 @@ declare let self: ServiceWorkerGlobalScope;
 // App shell: precache the build, drop caches of older builds.
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
-// SPA navigation fallback to the precached index.html – never for the API.
-registerRoute(new NavigationRoute(createHandlerBoundToURL("/index.html"), { denylist: [/^\/api\//] }));
+// SPA navigation fallback to the precached index.html – never for the API or the operator's
+// static pages under /info/ (deploy/compose.site.yaml: landing page, imprint, privacy policy).
+registerRoute(
+  new NavigationRoute(createHandlerBoundToURL("/index.html"), { denylist: [/^\/api\//, /^\/info\//] }),
+);
 
 // registerType 'prompt': the page asks us to activate the waiting worker.
 self.addEventListener("message", (event) => {
