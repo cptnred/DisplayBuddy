@@ -566,3 +566,63 @@ Betreiber `BUDDY_REGISTRATION=open` setzt (D-86) – sinnvollerweise erst, wenn 
 online sind (die URLs fehlen noch; in der pev-point-Konfiguration als auskommentierte Platzhalter). Firebase:
 FCM bleibt auf pev-point aus; Android bekommt neue Erinnerungen über den Hintergrundabgleich (D-105/D-107),
 `docs/OPERATIONS.md` beschreibt das spätere Nachrüsten.
+
+## v4 – Entscheidungen aus den Phasen A, B, C, P, E (2026-11-11)
+
+**D-113 Server-Konten (A).**
+- Falsches Bestätigungs-Passwort (Gerät abmelden, Konto löschen, neuer Code, Passwort ändern) → `403 forbidden`,
+  fehlendes → `403 password_required`. Bewusst nicht 401: Darauf melden sich alle Clients ab. Alle drei Clients
+  bilden 403 auf „Das Passwort ist falsch.“ ab.
+- Netto-Regel (zu D-94) präzisiert: „erhöht die Belegung“ wird an den lebenden Daten (Notizen + Erinnerungen, ohne
+  Revisionen) gemessen – sonst wäre Kürzen durch die abgelegte Revision „gewachsen“. „Über dem Kontingent“ vergleicht
+  die Gesamtsumme inkl. Revisionen. Bytes = UTF-8-Bytes (`length(CAST(payload AS BLOB))`).
+- Einladungscodes im Format der Wiederherstellungscodes (24 Zeichen, 120 Bit); `invite list` zeigt nur die ersten 12
+  Hex-Zeichen des Hashes als ID.
+- Limiter mit gleitendem Fenster; Registrierungen zählen nur bei Erfolg, Challenges jede Anfrage. Nur die Variablen aus
+  PLAN_V4 §11.2 sind konfigurierbar, die übrigen Grenzen aus §8.2 sind Konstanten.
+- Wiederherstellung: schwaches neues Passwort wird vor der Identitätsprüfung abgelehnt (verrät nichts); unbekannter
+  Name, falscher und kaputter Code geben dieselbe 401, beide Wege kosten einen Argon2-Lauf; `UPDATE … WHERE
+  recovery_hash = <alt>` hält den Code auch bei parallelen Anfragen einmalig.
+- `user disable` lässt Tokens bestehen (Entsperren stellt alle Geräte wieder her). Die Liste häufiger Passwörter gilt
+  für Registrierung, Wiederherstellung und `/me/password`; die CLI behält die v3-Regeln.
+- Ein 0.3-Server startet nach Migration 0003 nicht mehr (sqlx: fehlende Migration) → Sicherung vor dem Update
+  (deploy/README §13.1).
+
+**D-114 Pairing auf dem Server (P).**
+- Mehr als 3 offene Codes → `429` mit `Retry-After` bis zum Ablauf des ältesten (§8.2: alle Sperren 429).
+- Ein Code gilt nur, solange das erzeugende Gerät angemeldet ist (zusätzliche Bedingung im Einlöse-UPDATE).
+- Falsches `kind`/ungültiger Gerätename → `400 bad_request`, zählt nicht als Fehlversuch und verbraucht den Code
+  nicht; gesperrtes Konto (403) und Geräte-Limit (409) ebenfalls nicht – jeder Fehler nach dem UPDATE rollt zurück.
+- `DELETE /pairing/{id}` auf einen eingelösten Code widerruft das Gerät nicht (dafür `/me/devices/{id}/revoke`).
+- `POST /session` und `POST /session/pairing` teilen `api::open_web_session`/`session_response`.
+
+**D-115 Desktop (B, F).**
+- `qrcode = "=0.14.1"` ohne Standard-Features, nur `svg` (keine `image`-Abhängigkeit).
+- `404` gilt nur auf festen v4-Pfaden als `server_too_old` (auch v3 antwortet auf Unbekanntes mit JSON `not_found`).
+- `syncServerUrl = ""` wird beim Verbinden mit dem Standard-Server gespeichert: die Einstellung folgt dem Standard.
+- PoW in Stücken von 2^18 Nonces in `spawn_blocking`, Frist 60 s über `Instant`.
+- `account_change_password` sendet immer `signOutOthers: true` (OWASP Session Management).
+- `open_settings(section)` erreicht ein offenes Einstellungsfenster über das Event `settings-section`.
+- Datenformat (Abnahme 27, ergänzt in F): `GET /me/account` einmal je App-Start und Gerät vor dem ersten Lesen oder
+  Schreiben; unbekanntes Format → Sync-Fehler `content_format_unsupported`, Outbox bleibt; v3-Server (404) = Klartext.
+
+**D-116 Web (C).**
+- Scanner: `getUserMedia` mit `facingMode: {ideal: "environment"}` (nicht `exact`, sonst `OverconstrainedError` ohne
+  Rückkamera; MDN). `BarcodeDetector` nur, wenn `getSupportedFormats()` `qr_code` enthält; sonst jsQR (eigener
+  Chunk), Bild auf höchstens 800 px verkleinert. Kamera-Stream stoppt auch bei `pagehide` und `visibilitychange`.
+- Datenformat: einmal je Engine-Start und Login; 404 = Klartext; die Sperre gilt bis zum Neuladen oder nächsten Login.
+- Ausstehender Code (`sessionStorage`) nur in der nativen App mit `ServerSelector`; einmal gelesen, dann eingelöst
+  (der Benutzer hat im Dialog zugestimmt). Die PWA löst nie ohne Klick ein.
+- Code-Login in ein anderes Konto als das lokal gespeicherte: die eben angelegte Sitzung bzw. das Gerät wird sofort per
+  `DELETE` zurückgenommen, dann `account_mismatch`.
+
+**D-117 Betrieb (E).**
+- Betriebsvariablen nur in `deploy/.env` (auch `BUDDY_FCM_SERVICE_ACCOUNT_FILE`); die Compose-Dateien werden auf dem
+  VPS nicht bearbeitet, `git pull` bleibt konfliktfrei.
+- Außer-Haus-Backup (restic) sichert nur die neueste Tageskopie und behält sie 13 Tage – so hält die Zusage
+  „nach 14 Tagen aus den Sicherungen gelöscht“.
+- Logs höchstens etwa 7 Tage: Docker über Neu-Erzeugen des Containers, NPM über erzwungenes logrotate plus Löschen
+  (beide rotieren sonst nur nach Größe bzw. wöchentlich).
+- Dateien gelangen per stdin ins Volume (`docker compose run -T … sh -c 'umask 077 && cat > …' < datei`), weil der
+  Container als UID 10001 läuft.
+
