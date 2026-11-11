@@ -176,15 +176,15 @@ Hat Ihr Anbieter zusätzlich eine Firewall im Kundenmenü, öffnen Sie dort dies
 
 ```sh
 cd ~
-git clone https://github.com/cptnred/DisplayBuddy.git
-cd ~/DisplayBuddy/deploy
+git clone https://github.com/cptnred/DisplayBuddy.git displaybuddy-src
+cd ~/displaybuddy-src/deploy
 cp .env.example .env
 nano .env
 ```
 
-> Enthält der Ordner `~/DisplayBuddy` danach keine Ordner `server/` und `crates/`, liegt der Server-Code noch
+> Enthält der Ordner `~/displaybuddy-src` danach keine Ordner `server/` und `crates/`, liegt der Server-Code noch
 > nicht im Hauptzweig. Dann stattdessen den Entwicklungszweig klonen:
-> `git clone --branch claude/display-buddy-v3-c9w0c8 https://github.com/cptnred/DisplayBuddy.git`
+> `git clone --branch claude/display-buddy-v3-c9w0c8 https://github.com/cptnred/DisplayBuddy.git displaybuddy-src`
 
 In `nano` die drei Werte anpassen:
 
@@ -239,7 +239,7 @@ erzeugt und im Daten-Volume als `/data/vapid.pem` gespeichert. Der erste Aufruf 
 beim ersten Mal 5–15 Minuten.
 
 ```sh
-cd ~/DisplayBuddy/deploy
+cd ~/displaybuddy-src/deploy
 docker compose build
 docker compose run --rm buddy buddy-server vapid generate
 ```
@@ -256,7 +256,7 @@ holt ihn sich selbst.
 ## 7. Starten
 
 ```sh
-cd ~/DisplayBuddy/deploy
+cd ~/displaybuddy-src/deploy
 docker compose up -d --build
 ```
 
@@ -317,7 +317,7 @@ Ein Benutzerkonto für alle Ihre Geräte. Statt `martin` Ihren Wunschnamen, stat
 (Standardzone für Erinnerungen ohne eigene Zone):
 
 ```sh
-cd ~/DisplayBuddy/deploy
+cd ~/displaybuddy-src/deploy
 docker compose exec -it buddy buddy-server user add martin --time-zone Europe/Berlin
 ```
 
@@ -339,10 +339,10 @@ Display-Buddy-App am PC anlegen ([Abschnitt 9](#9-konten-verwalten)).
 Ab Version 0.4 kann ein Server **mehrere Konten** haben. Jedes Konto sieht nur seine eigenen Notizen und
 Erinnerungen. Verwaltet wird alles mit Befehlen auf dem Server (es gibt keine Admin-Webseite).
 
-Die Einstellungen stehen in `~/DisplayBuddy/deploy/.env`. Nach jeder Änderung dort:
+Die Einstellungen stehen in `~/displaybuddy-src/deploy/.env`. Nach jeder Änderung dort:
 
 ```sh
-cd ~/DisplayBuddy/deploy
+cd ~/displaybuddy-src/deploy
 docker compose up -d
 ```
 
@@ -393,7 +393,7 @@ Feineinstellungen (meist nicht nötig):
 Nur sinnvoll mit `BUDDY_REGISTRATION=invite`. Einen Code erzeugen (hier 7 Tage gültig, mit einer Notiz für Sie):
 
 ```sh
-cd ~/DisplayBuddy/deploy
+cd ~/displaybuddy-src/deploy
 docker compose exec buddy buddy-server invite create --expires 7d --label "für Anna"
 ```
 
@@ -464,7 +464,7 @@ in Impressum und Datenschutzerklärung gehört, listet `docs/OPERATIONS.md` (Che
 
 ### 9.5 Admin-Befehle
 
-Alle im Ordner `~/DisplayBuddy/deploy`, jeweils mit `docker compose exec buddy buddy-server` davor
+Alle im Ordner `~/displaybuddy-src/deploy`, jeweils mit `docker compose exec buddy buddy-server` davor
 (z. B. `docker compose exec buddy buddy-server user list`). Befehle, die ein Passwort abfragen, brauchen
 `docker compose exec -it buddy buddy-server` (mit `-it`):
 
@@ -603,7 +603,7 @@ Kommt keine: [Fehlersuche → Keine Benachrichtigung](#keine-benachrichtigung-au
 ### Sicherung auf dem VPS einsammeln
 
 ```sh
-cd ~/DisplayBuddy/deploy
+cd ~/displaybuddy-src/deploy
 mkdir -p ~/buddy-backup
 docker compose cp buddy:/data/backups ~/buddy-backup/
 docker compose cp buddy:/data/vapid.pem ~/buddy-backup/vapid.pem
@@ -630,7 +630,7 @@ scp -r root@203.0.113.10:buddy-backup ./buddy-backup
 Beispiel: die Sicherung vom 5. November 2026 zurückspielen.
 
 ```sh
-cd ~/DisplayBuddy/deploy
+cd ~/displaybuddy-src/deploy
 docker compose stop buddy
 docker compose run --rm --no-deps buddy sh -c 'cp /data/backups/buddy-20261105.db /data/buddy.db && rm -f /data/buddy.db-wal /data/buddy.db-shm'
 docker compose start buddy
@@ -639,7 +639,7 @@ docker compose start buddy
 Von einer heruntergeladenen Sicherung (liegt auf dem VPS z. B. unter `~/buddy-backup/backups/`):
 
 ```sh
-cd ~/DisplayBuddy/deploy
+cd ~/displaybuddy-src/deploy
 docker compose stop buddy
 docker compose run --rm --no-deps -T buddy sh -c 'umask 077 && cat > /data/buddy.db && rm -f /data/buddy.db-wal /data/buddy.db-shm' < ~/buddy-backup/backups/buddy-20261105.db
 docker compose run --rm --no-deps -T buddy sh -c 'umask 077 && cat > /data/vapid.pem' < ~/buddy-backup/vapid.pem
@@ -658,10 +658,10 @@ Einzelne ältere Fassungen einer Notiz (Verlierer von Konflikten, 30 Tage aufbew
 
 ## 13. Updates
 
-Vorher eine [Sicherung](#12-backups) ziehen. Dann:
+Vorher eine [Sicherung](#12-backups) ziehen. Dann (Schritt für Schritt für buddy.pev-point.de: `docs/UPDATE.md`):
 
 ```sh
-cd ~/DisplayBuddy
+cd ~/displaybuddy-src
 git pull
 cd deploy
 docker compose up -d --build
@@ -697,15 +697,15 @@ synchronisieren weiter wie bisher.
 1. Frische Sicherung direkt vor dem Update (für den Fall, dass Sie zurück auf 0.3 müssen):
 
    ```sh
-   cd ~/DisplayBuddy/deploy
+   cd ~/displaybuddy-src/deploy
    docker compose stop buddy
    docker compose run --rm --no-deps buddy sh -c 'mkdir -p /data/vor-v4 && cp -a /data/buddy.db* /data/vor-v4/'
-   git -C ~/DisplayBuddy rev-parse HEAD > ~/displaybuddy-vor-v4.txt
+   git -C ~/displaybuddy-src rev-parse HEAD > ~/displaybuddy-vor-v4.txt
    ```
 
    Die letzte Zeile merkt sich den bisherigen Programmstand.
 
-2. Update wie oben: `cd ~/DisplayBuddy && git pull && cd deploy && docker compose up -d --build`.
+2. Update wie oben: `cd ~/displaybuddy-src && git pull && cd deploy && docker compose up -d --build`.
    Beim ersten Start ergänzt der Server die Datenbank automatisch (Migration `0003_accounts`); vorhandene Daten
    werden dabei nicht verändert.
 3. Prüfen:
@@ -732,21 +732,21 @@ synchronisieren weiter wie bisher.
 aus Schritt 1 zurückspielen, dann den alten Programmstand bauen:
 
 ```sh
-cd ~/DisplayBuddy/deploy
+cd ~/displaybuddy-src/deploy
 docker compose stop buddy
 docker compose run --rm --no-deps buddy sh -c 'rm -f /data/buddy.db-wal /data/buddy.db-shm && cp -a /data/vor-v4/. /data/'
-git -C ~/DisplayBuddy checkout "$(cat ~/displaybuddy-vor-v4.txt)"
+git -C ~/displaybuddy-src checkout "$(cat ~/displaybuddy-vor-v4.txt)"
 docker compose up -d --build
 ```
 
 Konten und Einstellungen aus der Zeit nach dem Update gehen dabei verloren; Notizen, die Geräte seitdem geändert
-haben, laden diese beim nächsten Sync erneut hoch. Später wieder auf den aktuellen Stand: `git -C ~/DisplayBuddy
+haben, laden diese beim nächsten Sync erneut hoch. Später wieder auf den aktuellen Stand: `git -C ~/displaybuddy-src
 checkout -` und die Update-Schritte. Läuft 0.4 einige Tage stabil, können
 Sie die Kopie löschen: `docker compose exec buddy rm -r /data/vor-v4`.
 
 ## 14. Fehlersuche
 
-Die wichtigsten Befehle (immer im Ordner `~/DisplayBuddy/deploy`):
+Die wichtigsten Befehle (immer im Ordner `~/displaybuddy-src/deploy`):
 
 ```sh
 docker compose ps
@@ -842,7 +842,7 @@ Voreinstellung.
 
 ## 16. Weitere Verwaltungsbefehle
 
-Alle im Ordner `~/DisplayBuddy/deploy` (Konten, Einladungen, Kontingente: [Abschnitt 9.5](#95-admin-befehle)):
+Alle im Ordner `~/displaybuddy-src/deploy` (Konten, Einladungen, Kontingente: [Abschnitt 9.5](#95-admin-befehle)):
 
 | Zweck | Befehl |
 |---|---|
@@ -868,7 +868,7 @@ gebaut ist (`mobile/README.md`) – die offizielle App bekommt von Ihrem Server 
    Daten-Volume legen:
 
    ```sh
-   cd ~/DisplayBuddy/deploy
+   cd ~/displaybuddy-src/deploy
    docker compose run --rm --no-deps -T buddy sh -c 'umask 077 && cat > /data/fcm-service-account.json' < ~/fcm-service-account.json
    rm ~/fcm-service-account.json
    ```

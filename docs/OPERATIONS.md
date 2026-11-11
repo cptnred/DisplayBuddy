@@ -33,6 +33,11 @@ buddy.pev-point.de ist der **bestehende v3-Server**, der an Ort und Stelle auf v
 Er läuft hinter **Nginx Proxy Manager** (NPM) – Variante B aus `deploy/README.md`, Compose-Datei
 `deploy/compose.npm.yaml` (in `.env`: `COMPOSE_FILE=compose.npm.yaml`).
 
+**Anmeldung und Pfade:** per SSH als `martin` (nicht root). Das Repository liegt in
+`/home/martin/displaybuddy-src`, der Arbeitsordner für alle `docker compose`-Befehle ist
+`/home/martin/displaybuddy-src/deploy`. `docker` geht ohne `sudo`; Systemaufgaben (cron, `/usr/local/sbin`,
+restic, Abschnitte 5–7) brauchen `sudo -i`. Schritt für Schritt aktualisieren: `docs/UPDATE.md`.
+
 Der Betreiber ist Verantwortlicher im Sinne der DSGVO und besitzt (PLAN_V4 §11.1) – **nichts davon gehört ins
 Repository**:
 
@@ -42,14 +47,14 @@ Repository**:
 | VPS, Docker, NPM (Zertifikat) | VPS-Anbieter | NPM-Daten-Ordner (optional mitsichern) |
 | Datenbank `buddy.db`, tägliche Kopien `backups/` | Docker-Volume `displaybuddy_buddy-data` | [Abschnitt 5](#5-backups-außerhalb-des-vps-restic) |
 | VAPID-Schlüssel `vapid.pem` (Web Push) | dasselbe Volume | [Abschnitt 5](#5-backups-außerhalb-des-vps-restic) |
-| Konfiguration `.env` | `/root/DisplayBuddy/deploy/.env` | [Abschnitt 5](#5-backups-außerhalb-des-vps-restic) |
+| Konfiguration `.env` | `/home/martin/displaybuddy-src/deploy/.env` | [Abschnitt 5](#5-backups-außerhalb-des-vps-restic) |
 | Firebase-Projekt + Dienstkonto (FCM) | **noch keins** (D-112) | – |
 | Signierschlüssel der offiziellen APK | Rechner des Betreibers / GitHub-Secret, **nicht** auf dem VPS | eigene Sicherung (`mobile/README.md`) |
 | restic-Passwort der Außer-Haus-Sicherung | VPS + Passwort-Manager des Betreibers | Passwort-Manager |
 
 ## 2. Konfiguration
 
-Die Werte stehen ausschließlich in `/root/DisplayBuddy/deploy/.env` (die Compose-Dateien bleiben unverändert,
+Die Werte stehen ausschließlich in `/home/martin/displaybuddy-src/deploy/.env` (die Compose-Dateien bleiben unverändert,
 damit `git pull` nie Konflikte hat). Nach jeder Änderung: `docker compose up -d`.
 
 Stand **nach dem Update auf v4** (Registrierung bleibt zu, D-112):
@@ -114,7 +119,7 @@ Allgemeiner Ablauf mit Rückweg: `deploy/README.md` §13.1. Für pev-point zusä
 
 ## 4. Checkliste vor `BUDDY_REGISTRATION=open`
 
-Erst wenn **alle** Punkte erledigt sind:
+Erst wenn **alle** Punkte erledigt sind (Vorlagen für Startseite, Impressum und Datenschutz: `deploy/landing/`):
 
 - [ ] Impressum online ([4.1](#41-impressum--5-ddg)), URL in `BUDDY_IMPRINT_URL`
 - [ ] Datenschutzerklärung online ([4.2](#42-datenschutzerklärung-art-13-dsgvo)), URL in `BUDDY_PRIVACY_URL`
@@ -249,7 +254,7 @@ Deshalb wird nur die neueste Tageskopie gesichert, nicht alle 14.
    export RESTIC_REPOSITORY='sftp:backup@storage.example.net:/buddy'
    export RESTIC_PASSWORD_FILE=/root/.restic-buddy-password
    STAGE=/root/buddy-offsite
-   cd /root/DisplayBuddy/deploy
+   cd /home/martin/displaybuddy-src/deploy
    rm -rf "$STAGE"
    mkdir -m 700 "$STAGE"
    LATEST=$(docker compose exec -T buddy sh -c 'ls -1 /data/backups/buddy-*.db | tail -n 1')
@@ -292,7 +297,7 @@ ls -l "$R"
 docker run --rm -i displaybuddy/buddy-server:local sh -c 'cat > /tmp/t.db && BUDDY_DB=/tmp/t.db buddy-server user list' < "$R/buddy.db"
 # VAPID-Schlüssel passt zum laufenden Server (beide Zeilen gleich):
 docker run --rm -i displaybuddy/buddy-server:local sh -c 'cat > /tmp/k.pem && buddy-server vapid public-key --file /tmp/k.pem' < "$R/vapid.pem"
-cd /root/DisplayBuddy/deploy && docker compose exec buddy buddy-server vapid public-key
+cd /home/martin/displaybuddy-src/deploy && docker compose exec buddy buddy-server vapid public-key
 rm -rf /root/restore-test
 ```
 
@@ -358,7 +363,7 @@ if [ "${1:-}" = weekly ]; then
   # start a new log file now, so the current one never holds more than a week
   docker exec "$NPM_CONTAINER" logrotate -f /etc/logrotate.d/nginx-proxy-manager
   # recreating the container deletes its old Docker log
-  cd /root/DisplayBuddy/deploy && docker compose up -d --force-recreate buddy
+  cd /home/martin/displaybuddy-src/deploy && docker compose up -d --force-recreate buddy
 fi
 # rotated NPM files (*.log.1.gz …) are older than the current week
 find "$NPM_LOGS" -type f -name '*.log.*' -delete
@@ -418,7 +423,7 @@ RUST_LOG=info,sqlx=warn,tower_http=debug
 `docker compose up -d`, 15 Minuten warten, dann:
 
 ```sh
-cd /root/DisplayBuddy/deploy
+cd /home/martin/displaybuddy-src/deploy
 docker compose logs --no-log-prefix --since 15m buddy \
   | sed 's/\x1b\[[0-9;]*m//g' \
   | grep 'uri=/api/v1/sync/changes' | grep 'finished processing' \
@@ -499,16 +504,18 @@ ungültig machen (`user passwd <name> --revoke-devices` je Konto), bei Verdacht 
 
 ## 12. Update-Ablauf
 
+Kurzfassung mit allen Befehlen für diesen Server: `docs/UPDATE.md`.
+
 1. **Ankündigen** (z. B. auf der Projektseite), wenn das Update eine Unterbrechung oder sichtbare Änderung bringt
    (Nutzungshinweise: „Updates mit Ankündigung“).
-2. Änderungen lesen: `git -C /root/DisplayBuddy fetch` und `git -C /root/DisplayBuddy log --oneline HEAD..@{u}`;
+2. Änderungen lesen: `git -C /home/martin/displaybuddy-src fetch` und `git -C /home/martin/displaybuddy-src log --oneline HEAD..@{u}`;
    neue Variablen stehen in `deploy/.env.example` und `docs/DECISIONS.md`.
 3. Außer-Haus-Sicherung jetzt laufen lassen: `/usr/local/sbin/buddy-offsite-backup`. Bei einer neuen
    Datenbank-Migration zusätzlich die Kopie aus README §13.1 Schritt 1 (Migrationen sind nur vorwärts möglich).
 4. Aktualisieren:
 
    ```sh
-   cd /root/DisplayBuddy && git pull
+   cd /home/martin/displaybuddy-src && git pull
    cd deploy && docker compose up -d --build
    docker image prune -f
    ```

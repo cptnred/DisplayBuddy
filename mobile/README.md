@@ -361,7 +361,7 @@ Der Server meldet sich mit einem Dienstkonto bei FCM an (FCM HTTP v1, OAuth 2.0)
    Daten-Volume schreiben, dann die Kopie löschen:
 
    ```sh
-   cd ~/DisplayBuddy/deploy
+   cd ~/displaybuddy-src/deploy
    docker compose run --rm --no-deps -T buddy sh -c 'umask 077 && cat > /data/fcm-service-account.json' < ~/fcm-service-account.json
    rm ~/fcm-service-account.json
    ```
