@@ -1,8 +1,9 @@
 # Übergabe an den nächsten Agenten – Display Buddy
 
-Stand: 2026-11-06, Version **0.3.0** (v3), Branch `claude/display-buddy-v3-c9w0c8`. Diese Datei fasst zusammen, was existiert,
+Stand: 2026-11-11, Version **0.4.0** (v4), Branch `claude/display-buddy-v3-c9w0c8`. Diese Datei fasst zusammen, was existiert,
 wie man baut/testet, was gelernt wurde und was offen ist. Verbindliche Details stehen in
-`docs/PLAN.md` (Schnittstellen v1 §1–9, v2 §10–12), Begründungen in `docs/DECISIONS.md` (D-01…D-27),
+`docs/PLAN.md` (Schnittstellen v1 §1–9, v2 §10–12), `docs/PLAN_V3_SYNC.md`, `docs/PLAN_V4_ACCOUNTS.md`,
+Begründungen in `docs/DECISIONS.md` (D-01…D-117),
 die Handtest-Checkliste in `docs/MANUAL_TESTS.md`.
 
 ## 1. Was die App ist
@@ -158,13 +159,40 @@ Umgesetzt nach `docs/PLAN_V3_SYNC.md`, Entscheidungen D-28…D-80:
 - Server-Betrieb beim Benutzer: hinter Nginx Proxy Manager (`deploy/compose.npm.yaml`, Variante B).
 - Handtests: `docs/MANUAL_TESTS.md` §26–31.
 
+## 7b. v4 (0.4.0) – Stand
+
+Umgesetzt nach `docs/PLAN_V4_ACCOUNTS.md`, Entscheidungen D-85…D-117 (Orchestrierung: `docs/AGENT_PROMPT_V4.md`):
+- Konten am Desktop anlegen (Proof-of-Work, Wiederherstellungscode-Pflichtdialog), Passwort vergessen/ändern, Geräte,
+  Export, Konto löschen, Kontingente, Sperre; Admin nur per CLI (`user …`, `invite …`).
+- Handy-Anmeldung per QR (`/pair#c=…`, 3 min, einmalig) in PWA (Kamera-App, In-App-Scanner, Code) und nativer App
+  (Barcode-Scanner-Plugin, Server zur Laufzeit wählbar). Standard-Server `https://buddy.pev-point.de`.
+- Gemeinsamer Vertrag: `crates/buddy-core/src/{accounts,pairing,pow}.rs` ↔ `src/lib/sync/types.ts`,
+  `src/lib/pairing.ts`; Vektoren `pairing_vectors.json`, `pow_vectors.json` (Generator `gen_account_vectors.py`).
+- Server: `server/src/accounts/`, `server/src/pairing/`, `auth/limits.rs`, Migration `0003_accounts.sql`.
+- Desktop: `src-tauri/src/sync/{account,pairing}.rs`, `src/windows/settings/AccountSection.tsx` (+ Dialog, Pairing,
+  Verwaltung), `src/windows/notes/AccountHint.tsx`.
+- Betrieb: `deploy/` (Variablen nur in `.env`), `docs/OPERATIONS.md` (pev-point: Upgrade an Ort und Stelle, D-112).
+- Abnahme: `npm run e2e:v4` (19 Szenarien gegen den echten Server, `/pair` in Chromium), Handtests `MANUAL_TESTS.md`
+  §32–36.
+
+**Lektionen v4:**
+- v4 entstand auf dem **Windows-PC des Benutzers** (D-111): Server nur in WSL (OpenSSL), Installer nativ mit
+  `npm run tauri build` (MSVC), Android/iOS nur in GitHub Actions.
+- **Laufwerksbuchstabe:** Vitest nur aus `C:/…` starten (mit `c:/…` scheitert jede Suite); die Worktree-Isolation
+  des Agent-Werkzeugs scheitert daran ebenfalls → Worktrees von Hand unter `C:/Users/marti/Projekte/DisplayBuddy-wt/`.
+- Nicht geroutete `/api/v1/*`-Pfade laufen nicht durch die Layer des verschachtelten Routers → CSRF-Guard zusätzlich
+  an den Auffangrouten (D-110).
+- Falsches Bestätigungs-Passwort ist **403**, nicht 401 – sonst melden sich die Clients ab (D-113).
+- Ein 0.3-Server startet nach Migration 0003 nicht mehr: vor dem Update sichern.
+- Stundenlimit: Mehrere parallele Agenten erreichen es schnell; nach dem Reset per SendMessage fortsetzen.
+
 ## 8. ToDo-Liste (vom Benutzer bestätigt)
 
 - [x] **v3: Notiz-Sync, installierbare Offline-Web-App mit eigenem Web Push, native Android/iOS-Hülle
   (Erinnerungen auch ohne Internet), Erinnerungen mit eigener Zeitzone** – Plan `docs/PLAN_V3_SYNC.md`,
   Agenten-Prompts `docs/AGENT_PROMPT_V3.md`, Entscheidungen D-28…D-50. ntfy entfällt.
-- [ ] **v4: Konten mit Registrierung am Desktop, Handy-Anmeldung per QR-Code, Standard-Server
-  buddy.pev-point.de** – geplant: Plan `docs/PLAN_V4_ACCOUNTS.md`, Agenten-Prompts `docs/AGENT_PROMPT_V4.md`,
+- [x] **v4: Konten mit Registrierung am Desktop, Handy-Anmeldung per QR-Code, Standard-Server
+  buddy.pev-point.de** – umgesetzt (§7b): Plan `docs/PLAN_V4_ACCOUNTS.md`, Agenten-Prompts `docs/AGENT_PROMPT_V4.md`,
   Entscheidungs-Vorschläge D-85…D-106 (Benutzerantworten vom 2026-11-07).
 - [ ] **Windows-CI-Build mit GitHub Actions** (`windows-latest`, MSVC-Toolchain, `npm run tauri build`):
   Installer als Release-Artefakt, optional mit Code-Signing. Ersetzt den MinGW-Cross-Build aus der
