@@ -906,7 +906,7 @@ dependencies = [
 
 [[package]]
 name = "display-buddy-mobile"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "android-native-keyring-store",
  "apple-native-keyring-store",
