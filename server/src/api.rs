@@ -10,7 +10,7 @@ use buddy_core::sync::{
     SessionResponse, VapidPublicKey,
 };
 use buddy_core::zoned::{format_utc, parse_zone};
-use chrono::Duration;
+use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -186,10 +186,37 @@ async fn session_login(
     check_username(&body.username)?;
     let user_id = auth::verify_login(&state, ip, &body.username, &body.password).await?;
     let now = state.clock.now();
-    let now_str = format_utc(&now);
     let mut tx = state.db.begin_with(crate::db::BEGIN_WRITE).await?;
-    // Reuse the PWA's device if it is a live web device of this user (§6).
-    let reuse: Option<String> = match body.device_id.as_deref() {
+    let (device_id, sid) = open_web_session(
+        &mut tx,
+        &state,
+        user_id,
+        body.device_id.as_deref(),
+        &name,
+        "password",
+        now,
+    )
+    .await?;
+    tx.commit().await?;
+    tracing::info!(device = %device_id, "web session started");
+    Ok(session_response(device_id, &sid, now))
+}
+
+/// The cookie login of the PWA inside the caller's write transaction (`POST /session`,
+/// `POST /session/pairing`): reuses `reuse` if it is a live web device of this user (§6),
+/// else creates a web device (device limit, `created_via`). Always issues a new session id
+/// (session fixation). Returns (deviceId, session id).
+pub async fn open_web_session(
+    tx: &mut sqlx::SqliteConnection,
+    state: &AppState,
+    user_id: i64,
+    reuse: Option<&str>,
+    name: &str,
+    created_via: &str,
+    now: DateTime<Utc>,
+) -> ApiResult<(String, String)> {
+    let now_str = format_utc(&now);
+    let reuse: Option<String> = match reuse {
         Some(id) => sqlx::query_scalar(
             "SELECT id FROM devices WHERE id = ? AND user_id = ? AND kind = 'web' AND revoked_at IS NULL",
         )
@@ -202,12 +229,11 @@ async fn session_login(
     let device_id = match reuse {
         Some(id) => {
             sqlx::query("UPDATE devices SET name = ?, last_seen_at = ? WHERE id = ?")
-                .bind(&name)
+                .bind(name)
                 .bind(&now_str)
                 .bind(&id)
                 .execute(&mut *tx)
                 .await?;
-            // A login always issues a new session id (session fixation).
             sqlx::query("DELETE FROM sessions WHERE device_id = ?")
                 .bind(&id)
                 .execute(&mut *tx)
@@ -215,18 +241,17 @@ async fn session_login(
             id
         }
         None => {
-            crate::accounts::quota::check_device_limit(&mut tx, &state.config.quota, user_id)
-                .await?;
+            crate::accounts::quota::check_device_limit(tx, &state.config.quota, user_id).await?;
             let id = uuid::Uuid::new_v4().to_string();
             sqlx::query(
-                "INSERT INTO devices (id, user_id, kind, name, created_at, last_seen_at) \
-                 VALUES (?, ?, 'web', ?, ?, ?)",
+                "INSERT INTO devices (id, user_id, kind, name, created_at, last_seen_at, created_via)                  VALUES (?, ?, 'web', ?, ?, ?, ?)",
             )
             .bind(&id)
             .bind(user_id)
-            .bind(&name)
+            .bind(name)
             .bind(&now_str)
             .bind(&now_str)
+            .bind(created_via)
             .execute(&mut *tx)
             .await?;
             id
@@ -243,16 +268,19 @@ async fn session_login(
     .bind(format_utc(&(now + Duration::days(SESSION_DAYS))))
     .execute(&mut *tx)
     .await?;
-    tx.commit().await?;
-    tracing::info!(device = %device_id, "web session started");
+    Ok((device_id, sid))
+}
+
+/// `SessionResponse` + `Set-Cookie` for a session opened by [`open_web_session`].
+pub fn session_response(device_id: String, sid: &str, now: DateTime<Utc>) -> Response {
     let mut res = Json(SessionResponse {
         device_id,
-        server_time: now_str,
+        server_time: format_utc(&now),
     })
     .into_response();
     res.headers_mut()
-        .insert(header::SET_COOKIE, set_cookie_header(&sid));
-    Ok(res)
+        .insert(header::SET_COOKIE, set_cookie_header(sid));
+    res
 }
 
 async fn session_logout(State(state): State<AppState>, auth: Auth) -> ApiResult<Response> {
