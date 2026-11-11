@@ -23,6 +23,7 @@ pub mod config;
 pub mod db;
 pub mod error;
 pub mod housekeeping;
+pub mod pairing;
 pub mod push;
 pub mod reminders;
 pub mod sync;
@@ -102,7 +103,7 @@ pub fn build_app(state: AppState) -> Router {
     let api = api::router(state.clone())
         .merge(push::router(state.clone()))
         .merge(accounts::router())
-        // Phase P: `.merge(pairing::router(state.clone()))` goes here (PLAN_V4 §5.1/§5.2).
+        .merge(pairing::router())
         .fallback(api::api_not_found)
         .layer(middleware::from_fn_with_state(
             state.clone(),
