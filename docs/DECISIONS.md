@@ -626,3 +626,22 @@ FCM bleibt auf pev-point aus; Android bekommt neue Erinnerungen über den Hinter
 - Dateien gelangen per stdin ins Volume (`docker compose run -T … sh -c 'umask 077 && cat > …' < datei`), weil der
   Container als UID 10001 läuft.
 
+
+**D-118 Native App (N).**
+- `tauri-plugin-barcode-scanner =2.5.3` nur für Android/iOS; die Permission steht in `capabilities/scanner.json` mit
+  `platforms` (in `main.json` kennt der Host-Build sie ohne das Plugin nicht).
+- Scannen mit `windowed: true` plus eigenem „Abbrechen“-Knopf (`aria-label`, Esc): Ohne `windowed` liegt die Kamera
+  über der Oberfläche, und das Plugin hat keinen eigenen Abbrechen-Knopf (Quellcode `BarcodeScannerPlugin.kt/.swift`).
+- Kamera optional: `camera.any` mit `required=false` und `tools:node="replace"`, zusätzlich `android.hardware.camera`
+  `required=false` – die CAMERA-Berechtigung trägt diese Funktion sonst automatisch als Pflicht ein (aapt2-Badging in CI).
+- iOS: `Info.ios.plist` mit `NSCameraUsageDescription`, von der Tauri-CLI in die Info.plist gemischt (in CI geprüft).
+- `server.json` atomar; kaputt/manipuliert → Standard-Origin. Beim Start genau eine HTTP-Capability.
+- Ausstehender Code: Die Hülle stempelt `buddy-pending-pairing-at` direkt vor dem Neuladen und verwirft beim Start
+  ungestempelte, ≥ 3 min alte oder zukünftige Codes.
+- Origin-Abweichung (§9.2): Ersatz-Engine ohne jede Anfrage – das Token geht nie an einen anderen Server; Abmelden
+  löscht nur lokal.
+- Hintergrundabgleich: Adressregel `ServerUrl.kt` = `server_url::normalize` (Kotlin-Test mit denselben Fällen);
+  unlesbare Datensätze werden übersprungen (Ergebnis `ERROR`); der Dienst folgt dem Sync-Status (abgemeldet,
+  401, unbekanntes Format → stopp; `account_disabled` → Token bleibt, erneute Übergabe nach dem nächsten Sync).
+- Bekannt seit 2026-11-07 (v3, nicht v4): Im Emulator bleibt „Erledigt“ offline aus der Benachrichtigung bei beendeter
+  App auf `due` stehen (CI-Lauf 42365550985). Muss separat untersucht werden (Umfeld D-84).
