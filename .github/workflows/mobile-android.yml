@@ -156,11 +156,16 @@ jobs:
           "$BT/aapt2" dump badging "$APK" > badging.txt
           grep -E "^package:|sdkVersion|targetSdkVersion|uses-feature" badging.txt
           # camera optional (build.rs replaces the plugin's implicitly required uses-feature)
-          grep -q "uses-feature-not-required: name='android.hardware.camera.any'" badging.txt \
-            || { echo "android.hardware.camera.any is still required"; exit 1; }
+          for f in android.hardware.camera.any android.hardware.camera; do
+            grep -q "uses-feature-not-required: name='$f'" badging.txt || { echo "$f is still required"; exit 1; }
+          done
+          if grep -E "^\s*uses-feature: name='android.hardware.camera" badging.txt; then
+            echo "a camera feature is still required"; exit 1
+          fi
       - name: Kotlin unit tests of the buddy-push plugin (ServerUrl, ReminderMath)
         working-directory: mobile/src-tauri/gen/android
-        run: ./gradlew --no-daemon :tauri-plugin-buddy-push:testReleaseUnitTest
+        # AGP 9 creates unit-test tasks only for the tested build type (debug)
+        run: ./gradlew --no-daemon :tauri-plugin-buddy-push:testDebugUnitTest
       - name: Sign APK (only with keystore secrets)
         id: sign
         env:

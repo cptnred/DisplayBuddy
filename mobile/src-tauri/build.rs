@@ -38,8 +38,11 @@ const COMMANDS: &[&str] = &[
 const ANDROID_PERMISSIONS: &str = r#"<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
 <uses-permission android:name="android.permission.USE_EXACT_ALARM" />"#;
 
-// xmlns:tools on the element itself: the generated manifest root does not declare it
-const ANDROID_CAMERA_FEATURE: &str = r#"<uses-feature xmlns:tools="http://schemas.android.com/tools" android:name="android.hardware.camera.any" android:required="false" tools:node="replace" />"#;
+// xmlns:tools on the element itself: the generated manifest root does not declare it.
+// android.hardware.camera: the CAMERA permission implies it as required unless declared
+// (Android docs "<uses-feature>" → "Permissions that imply feature requirements").
+const ANDROID_CAMERA_FEATURE: &str = r#"<uses-feature xmlns:tools="http://schemas.android.com/tools" android:name="android.hardware.camera.any" android:required="false" tools:node="replace" />
+<uses-feature android:name="android.hardware.camera" android:required="false" />"#;
 
 fn main() {
     println!("cargo:rerun-if-env-changed=BUDDY_PUBLIC_URL");
