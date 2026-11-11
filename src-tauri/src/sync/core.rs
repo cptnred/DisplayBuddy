@@ -22,6 +22,9 @@ pub struct SyncCore {
     dir: PathBuf,
     outbox: Mutex<Outbox>,
     meta: Mutex<SyncMeta>,
+    /// Device whose account content format was confirmed in this run of the app (D-101):
+    /// checked once per start and per connect, not every cycle.
+    format_ok_for: Mutex<Option<String>>,
 }
 
 fn load<T: serde::de::DeserializeOwned + Default>(path: &Path) -> T {
@@ -45,7 +48,16 @@ impl SyncCore {
             dir,
             outbox: Mutex::new(outbox),
             meta: Mutex::new(meta),
+            format_ok_for: Mutex::new(None),
         }
+    }
+
+    pub fn format_checked(&self, device: &str) -> bool {
+        lock(&self.format_ok_for).as_deref() == Some(device)
+    }
+
+    pub fn set_format_checked(&self, device: &str) {
+        *lock(&self.format_ok_for) = Some(device.to_string());
     }
 
     fn save_outbox(&self, o: &Outbox) {

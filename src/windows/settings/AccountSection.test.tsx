@@ -135,6 +135,9 @@ describe("texts", () => {
     expect(staleText({ ...ON, message: "stale:2" })).toMatch(/^2 Änderungen wurden/);
     expect(syncProblemText({ ...ON, state: "error", message: "server: HTTP 413 quota_exceeded" })).toMatch(/Speicher deines Kontos ist voll/);
     expect(syncProblemText({ ...ON, state: "error", message: "server: HTTP 403 account_disabled" })).toBe("Das Konto ist gesperrt.");
+    expect(syncProblemText({ ...ON, state: "error", message: "content_format_unsupported: account format 2" })).toMatch(
+      /neueres Datenformat/,
+    );
   });
 
   it("errors map to the German texts of PLAN_V4 §10 by code", () => {

@@ -294,6 +294,11 @@ impl Client {
         self.json(req, timeout).await
     }
 
+    /// `GET /me/account` (v4; a v3 server answers 404).
+    pub async fn account(&self) -> Result<Timed<buddy_core::accounts::AccountInfo>, ClientError> {
+        self.json(self.get("/me/account"), TIMEOUT).await
+    }
+
     /// `POST /sync/push`.
     pub async fn push(&self, body: &PushRequest) -> Result<Timed<PushResponse>, ClientError> {
         let req = self.post_json("/sync/push", body)?;

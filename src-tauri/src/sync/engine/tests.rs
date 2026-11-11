@@ -29,6 +29,8 @@ struct ServerData {
     gone_once: bool,
     /// Answer every request with this status.
     fail: Option<u16>,
+    /// v4 `GET /me/account` with this content format (None = v3 server, 404).
+    content_format: Option<u32>,
 }
 
 fn same<T: PartialEq>(a: &T, b: &T) -> bool {
@@ -136,6 +138,15 @@ fn handle(data: &Mutex<ServerData>, req: &Seen) -> (u16, String) {
             server_time: SERVER_TIME.into(),
         };
         return (200, serde_json::to_string(&resp).unwrap());
+    }
+    if let (Some(format), "GET", "/api/v1/me/account") =
+        (d.content_format, req.method.as_str(), req.path.as_str())
+    {
+        let info = json!({"username": "anna", "createdAt": SERVER_TIME, "timeZone": "UTC",
+            "contentFormat": format, "usage": {"bytes": 0, "notes": 0, "devices": 1},
+            "quota": {"bytes": null, "notes": null, "devices": null},
+            "recoveryCodeCreatedAt": null, "serverTime": SERVER_TIME});
+        return (200, info.to_string());
     }
     if req.method == "GET" && req.path.starts_with("/api/v1/sync/changes") {
         if d.gone_once {
@@ -591,15 +602,41 @@ fn errors_keep_the_outbox_and_410_triggers_full_resync() {
     assert!(lock(&srv.data).notes.contains_key(A));
 }
 
+/// Abnahme 27 (D-101): an unknown content format stops the sync before any write; the
+/// outbox stays. A known format is checked once, a v3 server (404) counts as plain.
+#[test]
+fn unknown_content_format_stops_the_sync_without_writing() {
+    let srv = server();
+    let pc = TestLocal::new("pc1");
+    pc.edit(A, "x", "2026-11-06T10:00:00.000Z");
+    lock(&srv.data).content_format = Some(2);
+    assert_eq!(pc.run(&srv), Err(SyncError::ContentFormat(2)));
+    assert!(lock(&srv.data).notes.is_empty(), "nothing pushed");
+    assert_eq!(pc.core.pending_count(), 1, "outbox kept");
+    assert!(
+        SyncError::ContentFormat(2)
+            .to_string()
+            .starts_with("content_format_unsupported")
+    );
+
+    lock(&srv.data).content_format = Some(1);
+    pc.run(&srv).unwrap();
+    assert!(lock(&srv.data).notes.contains_key(A));
+    // checked once per device: a later change on the server is seen after a restart only
+    lock(&srv.data).content_format = Some(2);
+    pc.run(&srv).unwrap();
+}
+
 #[test]
 fn clock_offset_is_measured_and_handed_to_the_clock() {
     let srv = server();
     let pc = TestLocal::new("pc1");
     pc.run(&srv).unwrap();
-    // fake device clock starts at SERVER_TIME and advances 10 ms per reading:
-    // offset = server − (sent + rtt/2) = −5 ms
-    assert_eq!(*lock(&pc.offset), -5);
-    assert_eq!(pc.core.meta().clock_offsets.0, vec![-5]);
+    // fake device clock starts at SERVER_TIME and advances 10 ms per reading; the format
+    // check (GET /me/account, 404 here) reads it twice first:
+    // offset = server − (sent + rtt/2) = −25 ms
+    assert_eq!(*lock(&pc.offset), -25);
+    assert_eq!(pc.core.meta().clock_offsets.0, vec![-25]);
 }
 
 #[test]

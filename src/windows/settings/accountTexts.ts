@@ -28,6 +28,7 @@ const TEXTS: Record<string, string> = {
   account_disabled: "Das Konto ist gesperrt.",
   device_limit: "Zu viele Geräte. Bitte zuerst ein altes Gerät abmelden.",
   quota_exceeded: "Der Speicher deines Kontos ist voll. Lösche oder kürze Notizen, damit wieder synchronisiert wird.",
+  content_format_unsupported: "Dein Konto nutzt ein neueres Datenformat. Bitte aktualisiere Display Buddy.",
   pow_timeout: "Das Anlegen hat zu lange gedauert. Bitte erneut versuchen.",
   challenge_invalid: "Das Anlegen hat zu lange gedauert. Bitte erneut versuchen.",
   pairing_invalid: "Der Code ist ungültig, abgelaufen oder wurde schon benutzt.",
@@ -137,6 +138,7 @@ export function syncProblemText(s: SyncStatus): string | null {
   const m = s.message ?? "";
   if (m.includes("quota_exceeded")) return TEXTS.quota_exceeded;
   if (m.includes("account_disabled")) return TEXTS.account_disabled;
+  if (m.includes("content_format_unsupported")) return TEXTS.content_format_unsupported;
   return null;
 }
 

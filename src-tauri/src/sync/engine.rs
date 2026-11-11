@@ -10,6 +10,7 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 
+use buddy_core::accounts::CONTENT_FORMAT_PLAIN;
 use buddy_core::schedule;
 use buddy_core::sync::{
     NoteRecord, PUSH_BATCH_MAX, PushRequest, PushStatus, RecordKind, ReminderRecord, SyncChanges,
@@ -50,6 +51,8 @@ pub enum SyncError {
     /// Not connected (no device id / token).
     NotConnected,
     Local(String),
+    /// The account uses a content format this version does not know (D-101): no sync.
+    ContentFormat(u32),
 }
 
 impl From<ClientError> for SyncError {
@@ -64,6 +67,7 @@ impl std::fmt::Display for SyncError {
             Self::Net(e) => e.fmt(f),
             Self::NotConnected => write!(f, "not connected"),
             Self::Local(e) => write!(f, "local: {e}"),
+            Self::ContentFormat(n) => write!(f, "content_format_unsupported: account format {n}"),
         }
     }
 }
@@ -136,8 +140,27 @@ impl<L: LocalData> Engine<'_, L> {
         }
     }
 
+    /// Before the first read or write per device: an account in an unknown content format
+    /// (e.g. end-to-end encrypted, D-101) must never be overwritten. A v3 server (404) is plain.
+    async fn check_format(&self) -> Result<(), SyncError> {
+        let device = self.device_id()?;
+        if self.core.format_checked(&device) {
+            return Ok(());
+        }
+        match self.client.account().await {
+            Ok(t) if t.value.content_format != CONTENT_FORMAT_PLAIN => {
+                return Err(SyncError::ContentFormat(t.value.content_format));
+            }
+            Ok(_) | Err(ClientError::Server { status: 404, .. }) => {}
+            Err(e) => return Err(e.into()),
+        }
+        self.core.set_format_checked(&device);
+        Ok(())
+    }
+
     /// Push, then pull. `pull_timeout` is shorter for the start-up pull.
     pub async fn run(&self, pull_timeout: Duration) -> Result<Report, SyncError> {
+        self.check_format().await?;
         let mut report = Report::default();
         self.push(&mut report).await?;
         self.pull(pull_timeout, &mut report).await?;
@@ -146,6 +169,7 @@ impl<L: LocalData> Engine<'_, L> {
 
     /// Pull only (start-up, before the scheduler fires).
     pub async fn pull_only(&self, timeout: Duration) -> Result<Report, SyncError> {
+        self.check_format().await?;
         let mut report = Report::default();
         self.pull(timeout, &mut report).await?;
         Ok(report)
