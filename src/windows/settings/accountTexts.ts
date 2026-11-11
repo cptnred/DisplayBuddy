@@ -13,7 +13,7 @@ export function errorCode(error: unknown): string {
   return raw.split(":")[0].trim();
 }
 
-/** Context decides what "unauthorized" means. */
+/** Context decides what "unauthorized", "forbidden" and "password_required" mean. */
 export type ErrorContext = "login" | "register" | "recover" | "password" | "general";
 
 const TEXTS: Record<string, string> = {
@@ -31,18 +31,39 @@ const TEXTS: Record<string, string> = {
   pow_timeout: "Das Anlegen hat zu lange gedauert. Bitte erneut versuchen.",
   challenge_invalid: "Das Anlegen hat zu lange gedauert. Bitte erneut versuchen.",
   pairing_invalid: "Der Code ist ungültig, abgelaufen oder wurde schon benutzt.",
-  password_required: "Dieses Gerät wurde vor deinem angemeldet. Zum Abmelden bitte dein Passwort eingeben.",
   invalid_url: "Ungültige Server-Adresse. Erlaubt ist https://… (http:// nur für localhost).",
   offline: "Server nicht erreichbar. Bitte Adresse und Internetverbindung prüfen.",
   keyring: "Die Anmeldung konnte nicht im Windows-Anmeldeinformationsspeicher abgelegt werden.",
 };
 
+const SIGNED_OUT = "Abgemeldet – bitte neu verbinden.";
+
+/** 401: wrong credentials when signing in; otherwise this PC's token is no longer valid. */
 const UNAUTHORIZED: Record<ErrorContext, string> = {
   login: "Benutzername oder Passwort ist falsch.",
   register: "Der Server hat die Anfrage abgelehnt.",
   recover: "Benutzername oder Wiederherstellungscode ist falsch.",
+  password: SIGNED_OUT,
+  general: SIGNED_OUT,
+};
+
+/** 403 forbidden: the server's answer to a wrong confirmation password (Phase A). */
+const FORBIDDEN: Record<ErrorContext, string> = {
+  login: "Der Server hat die Anmeldung abgelehnt.",
+  register: "Der Server hat die Anfrage abgelehnt.",
+  recover: "Der Server hat die Anfrage abgelehnt.",
   password: "Das Passwort ist falsch.",
-  general: "Abgemeldet – bitte neu verbinden.",
+  general: "Das ist nicht erlaubt.",
+};
+
+/** 403 password_required: revoking an older device, or a password change without the current one. */
+const PASSWORD_REQUIRED: Record<ErrorContext, string> = {
+  login: "Bitte dein Passwort eingeben.",
+  register: "Bitte dein Passwort eingeben.",
+  recover: "Bitte dein Passwort eingeben.",
+  password:
+    "Bitte dein aktuelles Passwort eingeben. Ohne geht es erst, wenn dieser PC mindestens 24 Stunden angemeldet ist.",
+  general: "Dieses Gerät wurde vor deinem angemeldet. Zum Abmelden bitte dein Passwort eingeben.",
 };
 
 const INVALID_INPUT: Record<ErrorContext, string> = {
@@ -57,6 +78,8 @@ const INVALID_INPUT: Record<ErrorContext, string> = {
 export function accountErrorText(error: unknown, context: ErrorContext = "general"): string {
   const code = errorCode(error);
   if (code === "unauthorized") return UNAUTHORIZED[context];
+  if (code === "forbidden") return FORBIDDEN[context];
+  if (code === "password_required") return PASSWORD_REQUIRED[context];
   if (code === "invalid_input") return INVALID_INPUT[context];
   return TEXTS[code] ?? (context === "login" ? "Verbinden fehlgeschlagen." : "Das hat nicht geklappt. Bitte später erneut versuchen.");
 }

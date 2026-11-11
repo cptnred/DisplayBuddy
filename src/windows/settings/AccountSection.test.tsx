@@ -148,6 +148,11 @@ describe("texts", () => {
     expect(accountErrorText("account_disabled: HTTP 403")).toBe("Das Konto ist gesperrt.");
     expect(accountErrorText("unauthorized", "login")).toBe("Benutzername oder Passwort ist falsch.");
     expect(accountErrorText("unauthorized", "recover")).toBe("Benutzername oder Wiederherstellungscode ist falsch.");
+    // wrong confirmation password = 403 forbidden (server, Phase A); 401 means signed out
+    expect(accountErrorText("forbidden: HTTP 403", "password")).toBe("Das Passwort ist falsch.");
+    expect(accountErrorText("unauthorized", "password")).toBe("Abgemeldet – bitte neu verbinden.");
+    expect(accountErrorText("password_required: HTTP 403", "password")).toMatch(/mindestens 24 Stunden/);
+    expect(accountErrorText("password_required: HTTP 403")).toMatch(/vor deinem angemeldet/);
     expect(accountErrorText(new Error("?"), "login")).toBe("Verbinden fehlgeschlagen.");
   });
 
@@ -349,13 +354,32 @@ describe("connected", () => {
     expect(screen.queryByText("Pixel 8")).toBeNull();
   });
 
+  it("a wrong password when revoking or deleting says so", async () => {
+    await setup(ON);
+    h.api.accountRevokeDevice
+      .mockRejectedValueOnce("password_required: HTTP 403")
+      .mockRejectedValueOnce("forbidden: HTTP 403");
+    await click("Pixel 8 abmelden");
+    type("Passwort", "falsch");
+    await click("Mit Passwort abmelden");
+    expect(screen.getByRole("alert")).toHaveTextContent("Das Passwort ist falsch.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Konto löschen …" }));
+    const form = screen.getByRole("button", { name: "Endgültig löschen" }).closest("form")!;
+    fireEvent.change(within(form).getByLabelText("Passwort"), { target: { value: "falsch" } });
+    type("Benutzername zur Bestätigung", "anna");
+    h.api.accountDelete.mockRejectedValue("forbidden: HTTP 403");
+    await click("Endgültig löschen");
+    expect(screen.getAllByRole("alert").some((a) => a.textContent === "Das Passwort ist falsch.")).toBe(true);
+  });
+
   it("changes the password with and without the current one", async () => {
     await setup(ON);
     fireEvent.click(screen.getByRole("button", { name: "Passwort ändern" }));
     type("Aktuelles Passwort", "alt");
     type("Neues Passwort", "ein langer neuer Satz");
     type("Neues Passwort wiederholen", "ein langer neuer Satz");
-    h.api.accountChangePassword.mockRejectedValueOnce("unauthorized").mockResolvedValue(undefined);
+    h.api.accountChangePassword.mockRejectedValueOnce("forbidden: HTTP 403").mockResolvedValue(undefined);
     await act(async () => {
       fireEvent.submit(field("Neues Passwort").closest("form")!);
     });
